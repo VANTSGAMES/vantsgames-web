@@ -1,0 +1,1 @@
+{"main_module":"index.js","compatibility_date":"2026-10-01","bindings":[{"type":"service","name":"API","service":"vantscc-preview"},{"type":"service","name":"FN","service":"vants-functions"}],"tags":["preview","vantsgames-web"]}

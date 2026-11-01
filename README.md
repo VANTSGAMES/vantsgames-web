@@ -30,6 +30,14 @@ Variables:
 | `VITE_AUTH_ENABLED` | `1` para activar Auth0 |
 | `VITE_ROUTER` | `history` para URLs limpias; por defecto hash |
 
+## Preview en Cloudflare
+
+Worker **`vantsgames-web-preview`** → https://vantsgames-web-preview.vants.workers.dev
+
+- `npm run build:worker` genera `dist/worker-public` (URLs limpias) y lo embebe en `worker/assets.js`.
+- `worker/index.js` sirve los estáticos y reenvía `/api/*` a `vantscc-preview` y `/fn/*` a `vants-functions` mediante service bindings (`worker/meta.json`).
+- Se sube con la API de Cloudflare (`PUT /accounts/:id/workers/scripts/vantsgames-web-preview`). No toca el Worker `vants` de producción.
+
 ## Reglas
 
 - Trabajo solo en Preview hasta autorización expresa para producción.
