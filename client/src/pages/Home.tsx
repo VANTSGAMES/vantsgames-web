@@ -1,0 +1,196 @@
+import { Link } from "wouter";
+import { useApi } from "@/lib/useApi";
+import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream, type Badge } from "@/lib/api";
+import { assetUrl } from "@/lib/api";
+import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
+import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
+import { fecha } from "@/lib/format";
+import { PLANES } from "./Membresias";
+
+function Hero() {
+  const live = useApi<{ streams: Stream[] }>("/api/twitch/directos?limite=1", { refetchMs: 60_000 });
+  const enVivo = live.data?.streams?.length || 0;
+  return (
+    <section className="relative overflow-hidden border-b" style={{ borderColor: "var(--linea-suave)" }}>
+      <img src={pub("img/arena.jpg")} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.55 }} />
+      <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,11,.96) 0%, rgba(10,10,11,.75) 45%, rgba(10,10,11,.2) 100%)" }} />
+      <div className="wrap relative py-20 md:py-28 lg:py-36">
+        <div className="eyebrow mb-6 reveal">VALORANT · COUNTER-STRIKE 2</div>
+        <h1 className="d-hero reveal" style={{ animationDelay: "40ms" }}>
+          Compete.<br />Connect.<br /><span style={{ color: "var(--rojo)" }}>Dominate.</span>
+        </h1>
+        <p className="lead mt-6 reveal" style={{ animationDelay: "80ms" }}>
+          La plataforma competitiva de VANTS: torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
+        </p>
+        <div className="flex flex-wrap gap-3 mt-8 reveal" style={{ animationDelay: "120ms" }}>
+          <Link href="/torneos" className="btn btn-rojo" data-testid="hero-torneos">Ver torneos</Link>
+          <Link href="/sala" className="btn" data-testid="hero-sala">Entrar a la sala</Link>
+        </div>
+        {enVivo > 0 && (
+          <Link href="/en-vivo" className="inline-flex items-center gap-2 mt-8 tag tag-rojo" data-testid="hero-live">
+            <span className="dot-live" /> {enVivo} canal de VANTS en directo
+          </Link>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function List<T>({ q, empty, render, what }: { q: { isLoading: boolean; error: any; data?: T[] }; empty: JSX.Element; render: (x: T, i: number) => JSX.Element; what: string }) {
+  if (q.isLoading) return <Skel />;
+  if (q.error) return <ErrorBox error={q.error} what={what} />;
+  if (!q.data || q.data.length === 0) return empty;
+  return <>{q.data.map(render)}</>;
+}
+
+export default function Home() {
+  const destacados = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=ongoing&porPagina=4");
+  const proximos = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=upcoming&porPagina=5");
+  const live = useApi<{ data: Paged<Match> }>("/api/matches?estado=live&porPagina=5", { refetchMs: 30_000 });
+  const upcomingM = useApi<{ data: Paged<Match> }>("/api/matches?estado=upcoming&porPagina=5");
+  const teams = useApi<{ data: Team[] }>("/api/teams");
+  const gpr = useApi<any>("/api/gpr");
+  const clips = useApi<{ videos: YtVideo[] }>("/api/youtube/ultimos");
+  const streams = useApi<{ streams: Stream[]; total_canales: number }>("/api/twitch/directos?limite=3", { refetchMs: 60_000 });
+  const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
+  const badges = useApi<{ badges: Badge[] }>("/api/badges");
+
+  const torneos = [...(destacados.data?.data.items || []), ...(proximos.data?.data.items || [])].slice(0, 5);
+  const matches = [...(live.data?.data.items || []), ...(upcomingM.data?.data.items || [])].slice(0, 6);
+  const top = (gpr.data?.regions?.[0]?.equipos || []).slice(0, 5);
+
+  return (
+    <>
+      <Hero />
+
+      <Section id="torneos" eyebrow="Circuito" title="Torneos destacados" more={{ to: "/torneos", label: "Todos los torneos" }}>
+        <div className="panel">
+          <List
+            q={{ isLoading: destacados.isLoading || proximos.isLoading, error: destacados.error || proximos.error, data: torneos }}
+            what="los torneos"
+            render={(t) => <TournamentRow key={t.slug} t={t} />}
+            empty={<Empty code="torneos · 0" title="No hay torneos publicados ahora mismo" text="Cuando la organización publique un torneo desde el panel de administración aparecerá aquí con su fecha, formato y premio." />}
+          />
+        </div>
+      </Section>
+
+      <div className="wrap grid gap-8 lg:grid-cols-[1.6fr_1fr]">
+        <Section id="agenda" eyebrow="Agenda" title="Próximos enfrentamientos" more={{ to: "/agenda", label: "Agenda completa" }} className="!px-0">
+          <div className="panel">
+            <List
+              q={{ isLoading: live.isLoading || upcomingM.isLoading, error: live.error || upcomingM.error, data: matches }}
+              what="la agenda"
+              render={(m, i) => <MatchRow key={i} m={m} />}
+              empty={<Empty code="partidos · 0" title="Sin partidos programados" text="Los enfrentamientos se publican cuando un torneo genera su bracket." />}
+            />
+          </div>
+        </Section>
+        <Section id="ranking" eyebrow="Ranking" title="Power ranking VCT" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
+          <div className="panel">
+            {gpr.isLoading ? <Skel n={5} h={44} /> : gpr.error ? <ErrorBox error={gpr.error} what="el ranking" /> : top.length === 0 ? (
+              <Empty code="ranking · 0" title="Ranking sin calcular" />
+            ) : (
+              <>
+                <ol>
+                  {top.map((e: any, i: number) => (
+                    <li key={e.t + i} className="row grid-cols-[32px_1fr_auto]">
+                      <span className="num muted">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="font-semibold truncate">{e.n}</span>
+                      <span className="num">{e.p}</span>
+                    </li>
+                  ))}
+                </ol>
+                <p className="small muted px-4 py-3 border-t" style={{ borderColor: "var(--linea-suave)" }}>
+                  {gpr.data.regions[0].n} · fuente {gpr.data.source === "riot" ? "Riot Games" : gpr.data.source} · {fecha(gpr.data.calculated, { day: "2-digit", month: "short", year: "numeric" })}
+                </p>
+              </>
+            )}
+          </div>
+        </Section>
+      </div>
+
+      <Section id="equipos" eyebrow="Circuito" title="Equipos" more={{ to: "/equipos", label: "Todos los equipos" }}>
+        {teams.isLoading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los equipos" /> : (teams.data?.data || []).length === 0 ? (
+          <Empty code="equipos · 0" title="Aún no hay equipos registrados" text="Los equipos aparecen al inscribirse en el circuito." />
+        ) : (
+          <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
+            {teams.data!.data.slice(0, 8).map((t) => <TeamTile key={t.slug} t={t} />)}
+          </div>
+        )}
+      </Section>
+
+      <Section id="ranked" eyebrow="Competición" title="VANTS Ranked">
+        <div className="grid gap-px md:grid-cols-[1.3fr_1fr]" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
+          <div className="relative overflow-hidden" style={{ minHeight: 240, background: "var(--grafito-1)" }}>
+            <img src={pub("img/setup.jpg")} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.5 }} loading="lazy" />
+            <div className="relative p-6 md:p-8 h-full flex flex-col justify-end" style={{ background: "linear-gradient(0deg, rgba(10,10,11,.92), rgba(10,10,11,.1))" }}>
+              <p className="d-2">Partidas con rango propio de VANTS</p>
+              <p className="muted mt-2" style={{ maxWidth: "48ch" }}>Las posiciones se calculan en el servidor a partir de partidas verificadas.</p>
+            </div>
+          </div>
+          <div className="p-6 md:p-8" style={{ background: "var(--grafito-1)" }}>
+            <Empty code="ranked · temporada" title="La temporada de Ranked todavía no ha empezado" text="Cuando el backend publique la tabla de la temporada verás aquí las primeras posiciones." action={<Link href="/ranked" className="link-arrow">Cómo funciona <span aria-hidden>→</span></Link>} />
+          </div>
+        </div>
+      </Section>
+
+      <Section id="clips" eyebrow="Clips" title="Últimos clips" more={{ to: "/clips", label: "Ver clips" }}>
+        {clips.isLoading ? <Skel h={160} n={1} /> : clips.error ? <ErrorBox error={clips.error} what="los clips" /> : (clips.data?.videos || []).length === 0 ? (
+          <Empty code="clips · 0" title="Todavía no hay clips publicados" />
+        ) : (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {clips.data!.videos.slice(0, 4).map((v) => <VideoTile key={v.id} v={v} />)}
+          </div>
+        )}
+      </Section>
+
+      <div className="wrap grid gap-8 lg:grid-cols-[1.6fr_1fr]">
+        <Section id="twitch" eyebrow="Twitch" title="En directo" more={{ to: "/en-vivo", label: "Twitch en vivo" }} className="!px-0">
+          {streams.isLoading ? <Skel h={140} n={1} /> : streams.error ? <ErrorBox error={streams.error} what="los directos" /> : (streams.data?.streams || []).length === 0 ? (
+            <Empty code={"twitch · " + (streams.data?.total_canales ?? 0) + " canales vigilados"} title="Ningún canal de VANTS está en directo" text="Solo se muestran canales registrados en VANTS que emiten VALORANT o Counter-Strike." />
+          ) : (
+            <div className="grid gap-6 sm:grid-cols-2">{streams.data!.streams.map((s) => <StreamTile key={s.canal} s={s} />)}</div>
+          )}
+        </Section>
+        <Section id="noticias" eyebrow="Noticias" title="Anuncios" more={{ to: "/noticias", label: "Todas" }} className="!px-0">
+          <div className="panel">
+            {news.isLoading ? <Skel n={3} h={56} /> : news.error ? <ErrorBox error={news.error} what="las noticias" /> : (news.data?.data.items || []).length === 0 ? (
+              <Empty code="noticias · 0" title="Sin anuncios publicados" />
+            ) : news.data!.data.items.map((a) => (
+              <Link key={a.slug} href={"/noticias/" + a.slug} className="row grid-cols-1">
+                <span className="small muted num">{fecha(a.publicado_at)}</span>
+                <span className="font-semibold">{a.titulo}</span>
+              </Link>
+            ))}
+          </div>
+        </Section>
+      </div>
+
+      <Section id="membresias" eyebrow="Membresías" title="Juega con ventaja" more={{ to: "/membresias", label: "Comparar planes" }}>
+        <div className="grid-auto grid md:grid-cols-3">
+          {PLANES.filter((p) => p.checkout).map((p) => (
+            <Link key={p.id} href="/membresias" className="p-6 block hover:bg-[var(--grafito-2)] transition-colors" data-testid={"home-plan-" + p.id}>
+              <div className="eyebrow mb-3">{p.kicker}</div>
+              <div className="d-2">{p.nombre}</div>
+              <div className="num mt-2" style={{ color: "var(--gris-1)" }}>{p.precio}</div>
+              <p className="muted small mt-3">{p.lema}</p>
+            </Link>
+          ))}
+        </div>
+        {(badges.data?.badges || []).length > 0 && (
+          <div className="flex flex-wrap items-center gap-4 mt-6">
+            <span className="small muted">Insignias verificadas en servidor:</span>
+            {badges.data!.badges.slice(0, 8).map((b) => (
+              <img key={b.code} src={assetUrl(b.image.webp)!} alt={b.name} title={b.name} width={36} height={36} loading="lazy" />
+            ))}
+            <Link href="/insignias" className="link-arrow">Ver todas <span aria-hidden>→</span></Link>
+          </div>
+        )}
+      </Section>
+
+      <Section id="tienda" eyebrow="Tienda" title="Tienda oficial" more={{ to: "/tienda", label: "Ir a la tienda" }}>
+        <Empty code="tienda · sin catálogo" title="La tienda abrirá con la Colección 01" text="La venta se activará cuando el catálogo esté conectado al sistema de pagos. Hasta entonces no hay carrito ni compras." />
+      </Section>
+    </>
+  );
+}

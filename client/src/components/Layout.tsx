@@ -1,0 +1,166 @@
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, useLocation } from "wouter";
+import { NAV, PERFIL_LINKS } from "@/lib/nav";
+import { useAuth, AUTH_ENABLED } from "@/lib/auth";
+import { Wordmark } from "./ui-vants";
+
+function Dropdown({ label, base, links, path }: { label: string; base: string; links: { label: string; to: string; hint?: string; privado?: boolean }[]; path: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const { status } = useAuth();
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  useEffect(() => setOpen(false), [path]);
+  const activo = links.some((l) => path === l.to || (l.to !== "/" && path.startsWith(l.to + "/"))) || path.startsWith(base);
+  const visibles = links.filter((l) => !l.privado || status === "autenticado");
+  return (
+    <div className="nav-item" ref={ref} onMouseLeave={() => setOpen(false)}>
+      <button
+        className={"nav-btn" + (activo ? " activo" : "")}
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((o) => !o)}
+        onMouseEnter={() => setOpen(true)}
+        data-testid={"nav-" + base.slice(1)}
+      >
+        {label}
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 3l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" /></svg>
+      </button>
+      {open && (
+        <div className="nav-menu" role="menu">
+          {visibles.map((l) => (
+            <Link key={l.to} href={l.to} role="menuitem" data-testid={"navlink-" + l.to.replace(/\//g, "-")}>
+              {l.label}
+              {l.hint && <small>{l.hint}</small>}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountButton() {
+  const { status, user, login, logout } = useAuth();
+  if (status === "autenticado") {
+    return (
+      <div className="flex items-center gap-2">
+        <Link href="/perfil" className="btn btn-sm" data-testid="link-perfil">Mi perfil</Link>
+        <button className="btn btn-sm btn-ghost" onClick={() => logout()} data-testid="button-logout" aria-label={"Cerrar sesión" + (user?.nickname ? " de " + user.nickname : "")}>Salir</button>
+      </div>
+    );
+  }
+  if (!AUTH_ENABLED || status === "no_disponible") {
+    return <Link href="/entrar" className="btn btn-sm" data-testid="link-entrar">Entrar</Link>;
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <button className="btn btn-sm btn-ghost hidden sm:inline-flex" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
+      <button className="btn btn-sm btn-rojo" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
+    </div>
+  );
+}
+
+function MobileNav({ path }: { path: string }) {
+  const [open, setOpen] = useState(false);
+  const { status } = useAuth();
+  useEffect(() => setOpen(false), [path]);
+  useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
+  return (
+    <>
+      <button className="btn btn-sm lg:hidden" aria-expanded={open} aria-controls="menu-movil" onClick={() => setOpen((o) => !o)} data-testid="button-menu">
+        {open ? "Cerrar" : "Menú"}
+      </button>
+      {open && (
+        <nav id="menu-movil" className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto lg:hidden" style={{ background: "var(--negro)" }} aria-label="Menú principal">
+          <div className="wrap py-6 grid gap-6">
+            <Link href="/" className="d-2">Inicio</Link>
+            {NAV.map((g) => (
+              <div key={g.base}>
+                <div className="eyebrow mb-2">{g.label}</div>
+                <div className="grid">
+                  {g.links.filter((l) => !l.privado || status === "autenticado").map((l) => (
+                    <Link key={l.to} href={l.to} className="py-2 border-b" style={{ borderColor: "var(--linea-suave)", color: "var(--gris-1)" }}>{l.label}</Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {status === "autenticado" && (
+              <div>
+                <div className="eyebrow mb-2">Mi perfil</div>
+                {PERFIL_LINKS.map((l) => <Link key={l.to} href={l.to} className="block py-2" style={{ color: "var(--gris-1)" }}>{l.label}</Link>)}
+              </div>
+            )}
+          </div>
+        </nav>
+      )}
+    </>
+  );
+}
+
+export function Header() {
+  const [path] = useLocation();
+  return (
+    <header className="hdr">
+      <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 btn btn-sm">Saltar al contenido</a>
+      <div className="wrap hdr-in">
+        <Wordmark />
+        <nav className="hidden lg:flex items-center ml-4" aria-label="Principal">
+          <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} data-testid="nav-inicio">Inicio</Link>
+          {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
+        </nav>
+        <div className="ml-auto flex items-center gap-2">
+          <AccountButton />
+          <MobileNav path={path} />
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export function Footer() {
+  return (
+    <footer className="mt-16 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
+      <div className="wrap py-12 grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">
+        <div className="grid gap-4 content-start">
+          <Wordmark />
+          <p className="d-3" style={{ letterSpacing: "0.12em" }}>Compete. Connect. <span style={{ color: "var(--rojo)" }}>Dominate.</span></p>
+          <p className="muted small" style={{ maxWidth: "38ch" }}>Torneos, rankings, clips y comunidad competitiva de VALORANT y Counter-Strike 2.</p>
+        </div>
+        {[NAV[1], NAV[0], NAV[3], NAV[4]].map((g) => (
+          <div key={g.base}>
+            <div className="eyebrow mb-3">{g.label}</div>
+            <ul className="grid gap-1.5 small">
+              {g.links.filter((l) => !l.privado).slice(0, 5).map((l) => <li key={l.to}><Link href={l.to} className="muted hover:text-white">{l.label}</Link></li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+      <div className="wrap py-5 flex flex-wrap gap-x-6 gap-y-2 justify-between small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
+        <span>© {new Date().getFullYear()} VANTS GAMES. VALORANT es marca de Riot Games. Counter-Strike 2 es marca de Valve.</span>
+        <span className="flex gap-4">
+          <a href="https://www.twitch.tv/feisreal" target="_blank" rel="noopener noreferrer" className="hover:text-white">Twitch</a>
+          <a href="https://www.youtube.com/@feispla" target="_blank" rel="noopener noreferrer" className="hover:text-white">YouTube</a>
+        </span>
+      </div>
+    </footer>
+  );
+}
+
+export function Shell({ children }: { children: ReactNode }) {
+  const [path] = useLocation();
+  useEffect(() => { window.scrollTo({ top: 0 }); }, [path]);
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header />
+      <main id="contenido" className="flex-1">{children}</main>
+      <Footer />
+    </div>
+  );
+}
