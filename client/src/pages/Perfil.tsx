@@ -10,9 +10,10 @@ import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
 type Estado = "conectada" | "desconectada" | "pendiente" | "error";
 const PROVEEDORES = [
   { id: "faceit", nombre: "FACEIT", logo: "brand/logo-faceit.png", linker: "faceit" },
-  { id: "discord", nombre: "Discord", logo: "brand/logo-discord.png", linker: null },
+  { id: "discord", nombre: "Discord", logo: "brand/logo-discord.png", linker: "discord" },
   { id: "twitch", nombre: "Twitch", logo: null, linker: "twitch" },
   { id: "riot", nombre: "Riot Games", logo: null, linker: "riot" },
+  { id: "steam", nombre: "Steam", logo: null, linker: "steam" },
 ] as const;
 
 const ESTADO_UI: Record<Estado, { l: string; c: string }> = {
@@ -56,7 +57,7 @@ function Resumen() {
         </div>
       </div>
       <div className="grid gap-6 md:grid-cols-3">
-        <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch y Riot.</p></Link>
+        <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>
         <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Insignias y logros</div><p className="small muted">Validados por el motor de logros.</p></Link>
         <Link href="/perfil/membresia" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Membresía</div><p className="small muted">Estado de tu plan.</p></Link>
       </div>
@@ -79,7 +80,7 @@ function Ajustes() {
       await qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
       setSt({ k: "ok" });
     } catch (err: any) {
-      const m: Record<string, string> = { nick_invalido: "Entre 3 y 20 caracteres: letras, números, punto, guion o guion bajo.", mgmt_no_config: "El servidor no tiene configurado el guardado de perfiles.", "Origen no permitido": "Este dominio aún no está autorizado por la API para guardar perfiles." };
+      const m: Record<string, string> = { nick_invalido: "Entre 3 y 20 caracteres: letras, números, punto, guion o guion bajo.", nick_ocupado: "Ese nombre ya lo usa otra cuenta.", db_no_config: "La base de datos no está disponible.", sin_sesion: "Tu sesión caducó. Vuelve a iniciar sesión.", "Origen no permitido": "Este dominio aún no está autorizado por la API para guardar perfiles." };
       setSt({ k: "error", m: m[err.code] || "No se pudo guardar (" + err.code + ")." });
     }
   };
@@ -99,11 +100,29 @@ function Ajustes() {
   );
 }
 
+type Vinculo = { plataforma: string; usuario: string; avatar: string | null; verificada: boolean; desde: string | null };
+const ERR_LINK: Record<string, string> = {
+  state_invalido: "La autorización caducó o no es válida. Inténtalo de nuevo.",
+  sin_code: "El proveedor no devolvió la autorización.",
+};
+
 function Cuentas() {
+  const qc = useQueryClient();
   const linker = useLinker();
-  const perfil = useApi<{ redes: Record<string, any> }>("/api/account/perfil", { auth: true });
+  const perfil = useApi<{ redes: Record<string, any>; vinculos?: Vinculo[] }>("/api/account/perfil", { auth: true });
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<Record<string, string>>({});
+  const [aviso, setAviso] = useState<{ ok: boolean; m: string } | null>(null);
+  // Vuelta del proveedor: ?linked=faceit o ?linkerr=motivo
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const ok = sp.get("linked"), ko = sp.get("linkerr");
+    if (!ok && !ko) return;
+    if (ok) setAviso({ ok: true, m: "Cuenta de " + (PROVEEDORES.find((p) => p.id === ok)?.nombre || ok) + " vinculada y verificada." });
+    else if (ko) setAviso({ ok: false, m: ERR_LINK[ko] || "La vinculación no se completó (" + ko + ")." });
+    window.history.replaceState(null, "", window.location.pathname);
+    qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
+  }, [qc]);
   const conectar = async (plataforma: string) => {
     setBusy(plataforma);
     try {
@@ -113,32 +132,46 @@ function Cuentas() {
       setErr((x) => ({ ...x, [plataforma]: e.code }));
     } finally { setBusy(null); }
   };
+  const desconectar = async (plataforma: string) => {
+    setBusy(plataforma);
+    try {
+      await api("/fn/linker/api/link/unlink", { method: "POST", auth: true, body: { platform: plataforma } });
+      await qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
+    } catch (e: any) {
+      setErr((x) => ({ ...x, [plataforma]: e.code }));
+    } finally { setBusy(null); }
+  };
+  const vinculos = perfil.data?.vinculos || [];
   return (
     <div className="wrap grid gap-4">
       <p className="small muted" style={{ maxWidth: "70ch" }}>
         Una cuenta solo figura como conectada cuando el servidor completa la autorización oficial del proveedor (OAuth). Los datos escritos a mano no cuentan como vinculación.
       </p>
+      {aviso && <p className="small" role="status" style={{ color: aviso.ok ? "var(--ok)" : "#ff5468" }} data-testid="aviso-vinculo">{aviso.m}</p>}
       <div className="grid-auto grid md:grid-cols-2">
         {PROVEEDORES.map((p) => {
-          const diag = p.linker ? linker.data?.plataformas?.[p.linker] : undefined;
-          const configurado = diag === "ok";
-          const red = perfil.data?.redes?.[p.id];
+          const diag = linker.data?.plataformas?.[p.linker];
+          const configurado = diag === "ok" && linker.data?.plataformas?._linker_url === "ok";
+          const v = vinculos.find((x) => x.plataforma === p.linker);
           let estado: Estado;
-          if (linker.error || err[p.id]) estado = "error";
-          else if (!p.linker || (linker.data && !configurado)) estado = "pendiente";
+          if (err[p.id]) estado = "error";
+          else if (v && v.verificada) estado = "conectada";
+          else if (linker.error) estado = "error";
+          else if (linker.data && !configurado) estado = "pendiente";
           else estado = "desconectada";
           const ui = ESTADO_UI[estado];
           return (
             <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
               <div className="flex items-center gap-3">
-                {p.logo ? <img src={pub(p.logo)} alt="" width={32} height={32} /> : <Initials name={p.nombre} size={32} />}
+                {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : p.logo ? <img src={pub(p.logo)} alt="" width={32} height={32} /> : <Initials name={p.nombre} size={32} />}
                 <span className="d-3">{p.nombre}</span>
-                <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading ? "…" : ui.l}</span>
+                <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
               </div>
-              {red?.usuario && <p className="small muted">Usuario indicado en el perfil: <b style={{ color: "var(--gris-1)" }}>{red.usuario}</b> (sin verificar)</p>}
-              {estado === "pendiente" && <p className="small muted">{p.linker ? "La vinculación oficial con " + p.nombre + " se activará cuando la app de " + p.nombre + " esté registrada en el servidor." : "La vinculación con Discord aún no está disponible en el servicio de cuentas."}</p>}
-              {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] ? "No se pudo iniciar la vinculación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
-              {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker!)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
+              {estado === "conectada" && v && <p className="small muted">Cuenta verificada: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b></p>}
+              {estado === "pendiente" && <p className="small muted">La vinculación oficial con {p.nombre} se activará cuando la app de {p.nombre} esté registrada en el servidor.</p>}
+              {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
+              {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
+              {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : "Desconectar"}</button>}
             </div>
           );
         })}
