@@ -16,3 +16,5 @@ data.db-journal
 .DS_Store
 worker/assets.js
 !client/.env
+client/dist-web/
+dist-web/
