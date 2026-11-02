@@ -142,7 +142,11 @@ function Cuentas() {
     const v = window.open("about:blank", "vants-oauth", "width=520,height=740");
     try {
       const r = await api<{ url: string }>("/fn/linker/api/link/start", { method: "POST", auth: true, body: { platform: plataforma, return_to: window.location.origin + "/perfil/cuentas" } });
-      if (!r.url) return;
+      if (!r.url) {
+        try { v?.close(); } catch {}
+        setErr((x) => ({ ...x, [plataforma]: "sin_url" }));
+        return;
+      }
       if (v && !v.closed) {
         // FACEIT usa redirect_popup=true: su página espera una ventana que pueda cerrarse sola.
         v.location.href = r.url;
@@ -195,7 +199,7 @@ function Cuentas() {
               </div>
               {estado === "conectada" && v && <p className="small muted">Cuenta verificada: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b></p>}
               {estado === "pendiente" && <p className="small muted">La vinculación oficial con {p.nombre} se activará cuando la app de {p.nombre} esté registrada en el servidor.</p>}
-              {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
+              {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] === "sin_url" ? "No se pudo abrir la vinculación: tu sesión no está activa. Inicia sesión de nuevo e inténtalo." : err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
               {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
               {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : "Desconectar"}</button>}
             </div>
