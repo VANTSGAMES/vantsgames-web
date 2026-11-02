@@ -145,6 +145,8 @@ export function Footer() {
       <div className="wrap py-5 flex flex-wrap gap-x-6 gap-y-2 justify-between small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
         <span>© {new Date().getFullYear()} VANTS GAMES. VALORANT es marca de Riot Games. Counter-Strike 2 es marca de Valve.</span>
         <span className="flex gap-4">
+          <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
+          <Link href="/terminos" className="hover:text-white">Términos</Link>
           <a href="https://www.twitch.tv/feisreal" target="_blank" rel="noopener noreferrer" className="hover:text-white">Twitch</a>
           <a href="https://www.youtube.com/@feispla" target="_blank" rel="noopener noreferrer" className="hover:text-white">YouTube</a>
         </span>

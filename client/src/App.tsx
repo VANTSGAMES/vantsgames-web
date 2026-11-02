@@ -1,4 +1,4 @@
-import { Switch, Route, Router } from "wouter";
+import { Switch, Route, Router, Redirect } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
@@ -13,6 +13,14 @@ import { Clips, ClipsPrivado, Noticias, NoticiaDetalle, EnVivo, Creadores, Event
 import Membresias, { Insignias, Logros, Progreso } from "./pages/Membresias";
 import Tienda from "./pages/Tienda";
 import Perfil, { Acceso } from "./pages/Perfil";
+import Legal from "./pages/Legal";
+
+/** URLs de la web anterior → equivalente en la nueva (enlaces externos, buscadores, Auth0/Stripe). */
+const ANTIGUAS: [string, string][] = [
+  ["/index.html", "/"], ["/partidos", "/agenda"], ["/llaves", "/bracket"], ["/streams", "/en-vivo"],
+  ["/tienda-oficial", "/tienda"], ["/estadisticas", "/perfil/estadisticas"], ["/inventario", "/perfil"],
+  ["/play", "/torneos/competir"], ["/historia", "/comunidad"], ["/guia", "/comunidad"], ["/descargar", "/"],
+];
 
 // En Cloudflare: URLs limpias (history). En la vista previa embebida: hash.
 const HASH = import.meta.env.VITE_ROUTER !== "history";
@@ -23,6 +31,11 @@ function Rutas() {
     <Shell>
       <Switch>
         <Route path="/" component={Home} />
+        <Route path="/privacidad">{() => <Legal doc="privacidad" />}</Route>
+        <Route path="/terminos">{() => <Legal doc="terminos" />}</Route>
+        {ANTIGUAS.map(([de, a]) => <Route key={de} path={de}>{() => <Redirect to={a} replace />}</Route>)}
+        <Route path="/:lang/tournaments/*?">{() => <TorneosLista />}</Route>
+        <Route path={new RegExp("^/(?<p>.+)\\.html$")}>{(m: any) => <Redirect to={"/" + m.p} replace />}</Route>
         <Route path="/sala" component={SalaJugadores} />
         <Route path="/equipos" component={Equipos} />
         <Route path="/equipos/:slug" component={EquipoDetalle} />

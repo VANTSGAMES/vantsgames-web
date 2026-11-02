@@ -30,13 +30,17 @@ Variables:
 | `VITE_AUTH_ENABLED` | `1` para activar Auth0 |
 | `VITE_ROUTER` | `history` para URLs limpias; por defecto hash |
 
-## Preview en Cloudflare
+## Producción
 
-Worker **`vantsgames-web-preview`** → https://vantsgames-web-preview.vants.workers.dev
+La web se publica en **https://vants.vants.workers.dev** dentro del Worker `vants` (repo Vantsgames, `vants-server/public`), junto a la API. Pasos en `vants-server/WEB_PUBLICA.md` de ese repo:
 
-- `npm run build:worker` genera `dist/worker-public` (URLs limpias) y lo embebe en `worker/assets.js`.
-- `worker/index.js` sirve los estáticos y reenvía `/api/*` a `vantscc-preview` y `/fn/*` a `vants-functions` mediante service bindings (`worker/meta.json`).
-- Se sube con la API de Cloudflare (`PUT /accounts/:id/workers/scripts/vantsgames-web-preview`). No toca el Worker `vants` de producción.
+```bash
+VITE_ROUTER=history VITE_AUTH_ENABLED=1 VITE_ASSET_ORIGIN= \
+VITE_FN_ORIGIN=https://vants-functions.vants.workers.dev \
+npx vite build --base=/ --outDir /tmp/vprod --emptyOutDir
+```
+
+`worker/` contiene el Worker de preview independiente (opcional).
 
 ## Reglas
 

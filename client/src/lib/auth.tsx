@@ -49,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           authorizationParams: { audience: AUDIENCE, redirect_uri: window.location.origin + "/" },
           cacheLocation: "localstorage",
           useRefreshTokens: true,
+          useRefreshTokensFallback: true,
         });
         const q = new URLSearchParams(window.location.search);
         if (q.has("code") && q.has("state")) {

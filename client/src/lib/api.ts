@@ -8,7 +8,10 @@ const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 /** Origen público de la plataforma, para imágenes que la API devuelve con ruta relativa. */
 export const ASSET_ORIGIN: string =
-  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) || "https://vantscc-preview.vants.workers.dev";
+  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) ?? "https://vantscc-preview.vants.workers.dev";
+
+/** En producción (mismo Worker que la API) las funciones se llaman directo a vants-functions (CORS abierto). */
+const FN_ORIGIN: string = (import.meta.env.VITE_FN_ORIGIN as string | undefined) || "";
 
 export class ApiError extends Error {
   status: number;
@@ -34,7 +37,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   }
   let r: Response;
   try {
-    r = await fetch(API_BASE + path, {
+    r = await fetch((FN_ORIGIN && path.startsWith("/fn/") ? FN_ORIGIN : API_BASE) + path, {
       method: opts.method || "GET",
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

@@ -21,6 +21,8 @@ export const SEO: [RegExp, string, string][] = [
   [/^\/membresias/, "Membresías — VANTS GAMES", "Planes PRO, CREATOR y Pase de temporada."],
   [/^\/insignias/, "Insignias — VANTS GAMES", "Catálogo de insignias verificadas."],
   [/^\/tienda/, "Tienda oficial — VANTS GAMES", "Ropa y accesorios oficiales de VANTS."],
+  [/^\/privacidad/, "Política de privacidad — VANTS GAMES", "Qué datos trata VANTS GAMES y qué derechos tienes."],
+  [/^\/terminos/, "Términos de servicio — VANTS GAMES", "Reglas de uso de VANTS GAMES."],
 ];
 
 export function useSeo() {
@@ -30,5 +32,8 @@ export function useSeo() {
     document.title = hit ? hit[1] : "VANTS GAMES";
     const d = document.querySelector('meta[name="description"]');
     if (d && hit) d.setAttribute("content", hit[2]);
+    const base = String(import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/$/, "");
+    document.querySelector('link[rel="canonical"]')?.setAttribute("href", base + path);
+    document.querySelector('meta[property="og:url"]')?.setAttribute("content", base + path);
   }, [path]);
 }

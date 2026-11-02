@@ -80,7 +80,15 @@ export function Equipos() {
 function TeamView({ slug, oficial = false }: { slug: string; oficial?: boolean }) {
   const q = useApi<{ data: Team }>("/api/teams/" + slug);
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
-  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · equipo" title="Este equipo no existe" action={<Link href="/equipos" className="link-arrow">Ver equipos →</Link>} /> : <ErrorBox error={q.error} what="el equipo" />}</div>;
+  const noExiste = q.error && (q.error.status === 404 || /no encontrado/i.test(q.error.code));
+  if (q.error && oficial && noExiste)
+    return (
+      <>
+        <PageHead eyebrow="Roster oficial" title="Equipo VANTS" />
+        <div className="wrap pb-20"><Empty code="roster · 0" title="El roster oficial todavía no está publicado" text="Cuando la organización registre el equipo VANTS desde el panel de administración aparecerá aquí con su plantilla." action={<Link href="/equipos" className="link-arrow">Ver equipos del circuito →</Link>} /></div>
+      </>
+    );
+  if (q.error) return <div className="wrap py-16">{noExiste ? <Empty code="404 · equipo" title="Este equipo no existe" action={<Link href="/equipos" className="link-arrow">Ver equipos →</Link>} /> : <ErrorBox error={q.error} what="el equipo" />}</div>;
   const t = q.data!.data;
   return (
     <>
@@ -126,7 +134,7 @@ export function JugadorDetalle() {
   const { slug } = useParams<{ slug: string }>();
   const q = useApi<{ data: PtPlayer & { equipo?: Team } }>("/api/players/" + slug);
   if (q.isLoading) return <div className="wrap py-16"><Skel n={3} /></div>;
-  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · jugador" title="Este jugador no existe" action={<Link href="/sala" className="link-arrow">Ir a la sala →</Link>} /> : <ErrorBox error={q.error} what="el jugador" />}</div>;
+  if (q.error) return <div className="wrap py-16">{q.error.status === 404 || /no encontrado/i.test(q.error.code) ? <Empty code="404 · jugador" title="Este jugador no existe" action={<Link href="/sala" className="link-arrow">Ir a la sala →</Link>} /> : <ErrorBox error={q.error} what="el jugador" />}</div>;
   const p = q.data!.data;
   return (
     <>

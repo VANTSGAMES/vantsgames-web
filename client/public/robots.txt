@@ -4,4 +4,4 @@ Disallow: /perfil
 Disallow: /mi-calendario
 Disallow: /clips/publicar
 Disallow: /clips/biblioteca
-Sitemap: https://vantsgg.com/sitemap.xml
+Sitemap: https://vants.vants.workers.dev/sitemap.xml
