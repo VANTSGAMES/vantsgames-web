@@ -1,0 +1,81 @@
+name: "Web · build y publicación automática"
+
+# Publica la web en https://vants.vants.workers.dev:
+# 1) construye el cliente de este repo (única fuente de verdad del frontend)
+# 2) copia el build a VANTSGAMES/Vantsgames → vants-server/public
+# 3) ese push dispara el deploy de Cloudflare que ya existe allí
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - "shared/**"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - ".github/workflows/web-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Build del cliente (producción)
+        env:
+          VITE_ROUTER: history
+          VITE_AUTH_ENABLED: "1"
+          VITE_ASSET_ORIGIN: ""
+          VITE_FN_ORIGIN: https://vants-functions.vants.workers.dev
+          VITE_AUTH0_CLIENT_ID: totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo
+        run: npx vite build --base=/ --outDir ../dist-web --emptyOutDir
+
+      - name: Checkout de la API (VANTSGAMES/Vantsgames)
+        uses: actions/checkout@v4
+        with:
+          repository: VANTSGAMES/Vantsgames
+          ref: main
+          token: ${{ secrets.GHPAT_VANTS }}
+          path: api
+
+      - name: Publicar build en vants-server/public
+        run: |
+          P=api/vants-server/public
+          # limpiar solo lo que produce el build (los extras ya viajan dentro del build)
+          rm -rf "$P/assets" "$P/brand" "$P/img" "$P/static" "$P/.well-known" \
+                 "$P/index.html" "$P/robots.txt" "$P/sitemap.xml" "$P/llms.txt" \
+                 "$P/_headers" "$P/sw.js" "$P/admin-logros.html" \
+                 "$P/google80230e398ba4bb1f.html" "$P/googleda687349417bc44b.html" \
+                 "$P"/manicule-verification-*.txt
+          cp -r dist-web/. "$P"/
+          echo "--- contenido publicado ---"
+          ls "$P"
+
+      - name: Commit y push (dispara el deploy de Cloudflare)
+        working-directory: api
+        run: |
+          git config user.name "vantsgames-web-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A vants-server/public
+          if git diff --cached --quiet; then
+            echo "Sin cambios respecto al build anterior"
+            exit 0
+          fi
+          git commit -m "web: build desde vantsgames-web@${GITHUB_SHA::7}"
+          git push origin main

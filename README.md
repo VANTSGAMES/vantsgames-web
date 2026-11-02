@@ -32,13 +32,11 @@ Variables:
 
 ## Producción
 
-La web se publica en **https://vants.vants.workers.dev** dentro del Worker `vants` (repo Vantsgames, `vants-server/public`), junto a la API. Pasos en `vants-server/WEB_PUBLICA.md` de ese repo:
+La web se publica en **https://vants.vants.workers.dev** dentro del Worker `vants` (repo Vantsgames, `vants-server/public`), junto a la API.
 
-```bash
-VITE_ROUTER=history VITE_AUTH_ENABLED=1 VITE_ASSET_ORIGIN= \
-VITE_FN_ORIGIN=https://vants-functions.vants.workers.dev \
-npx vite build --base=/ --outDir /tmp/vprod --emptyOutDir
-```
+**Publicación automática**: el workflow `.github/workflows/web-deploy.yml` se ejecuta en cada push a `main` (y con `workflow_dispatch`): construye el cliente con `VITE_AUTH_ENABLED=1` y `VITE_AUTH0_CLIENT_ID=totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo`, copia el build a `vants-server/public` del repo Vantsgames y ese push dispara el deploy de Cloudflare. Usar este repo como única fuente del frontend; no editar `vants-server/public` a mano.
+
+Los archivos extra que el Worker sirve (`assets/badges/`, `static/`, `.well-known/`, verificaciones de Google/Manicule, `robots.txt`, `llms.txt`, `_headers`, `sw.js`, `admin-logros.html`) viven ahora en `client/public/` para que el build sea autocontenido. El Client ID de Auth0 del login es el de la app **VANTS** del tenant `vants.eu.auth0.com`.
 
 `worker/` contiene el Worker de preview independiente (opcional).
 
