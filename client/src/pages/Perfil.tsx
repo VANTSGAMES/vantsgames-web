@@ -123,13 +123,39 @@ function Cuentas() {
     window.history.replaceState(null, "", window.location.pathname);
     qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
   }, [qc]);
+  // Aviso desde la ventana del OAuth (popup): refrescar estados y mostrar el resultado.
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      const d = e.data as any;
+      if (d?.tipo !== "oauth-vuelta") return;
+      if (d.linked) setAviso({ ok: true, m: "Cuenta de " + (PROVEEDORES.find((p) => p.id === d.linked)?.nombre || d.linked) + " vinculada y verificada." });
+      else if (d.linkerr) setAviso({ ok: false, m: ERR_LINK[d.linkerr] || "La vinculación no se completó (" + d.linkerr + ")." });
+      qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [qc]);
   const conectar = async (plataforma: string) => {
     setBusy(plataforma);
+    // La ventana se abre en el propio clic (gesto del usuario): si no, el navegador la bloquea.
+    const v = window.open("about:blank", "vants-oauth", "width=520,height=740");
     try {
       const r = await api<{ url: string }>("/fn/linker/api/link/start", { method: "POST", auth: true, body: { platform: plataforma, return_to: window.location.origin + "/perfil/cuentas" } });
-      if (r.url) window.location.href = r.url;
+      if (!r.url) return;
+      if (v && !v.closed) {
+        // FACEIT usa redirect_popup=true: su página espera una ventana que pueda cerrarse sola.
+        v.location.href = r.url;
+        const t = setInterval(() => {
+          if (v.closed) { clearInterval(t); qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] }); }
+        }, 800);
+      } else {
+        // Reserva si el navegador bloqueó la ventana: misma pestaña, sin modo popup.
+        window.location.href = r.url.replace("redirect_popup=true&", "").replace("?redirect_popup=true", "?");
+      }
     } catch (e: any) {
       setErr((x) => ({ ...x, [plataforma]: e.code }));
+      try { v?.close(); } catch {}
     } finally { setBusy(null); }
   };
   const desconectar = async (plataforma: string) => {
@@ -202,6 +228,14 @@ export default function Perfil() {
   const params = useParams<{ sub?: string }>();
   const sub = SUB[params.sub || ""] ? params.sub || "" : "";
   const S = SUB[sub];
+  // Vuelta del OAuth dentro del popup: avisar a la ventana padre y cerrarse sola.
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const ok = sp.get("linked"), ko = sp.get("linkerr");
+    if (!window.opener || (!ok && !ko)) return;
+    try { window.opener.postMessage({ tipo: "oauth-vuelta", linked: ok, linkerr: ko }, window.location.origin); } catch {}
+    window.close();
+  }, []);
   return (
     <>
       <PageHead eyebrow="Mi perfil" title={S.t} />
