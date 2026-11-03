@@ -228,3 +228,7 @@ button { font: inherit; color: inherit; }
 .legal ul { padding-left: 1.2em; list-style: square; display: grid; gap: 6px; }
 .legal a { color: #fff; text-decoration: underline; text-underline-offset: 3px; }
 .legal a:hover { color: var(--rojo); }
+
+/* Estado de cuenta vinculada: verde visible */
+.tag-conectado { color: #3ddc84; border-color: #3ddc84; background: rgba(61, 220, 132, 0.15); font-weight: 700; }
+.tag-conectado::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; margin-right: 6px; vertical-align: middle; }

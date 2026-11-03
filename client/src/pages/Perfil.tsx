@@ -18,7 +18,7 @@ const PROVEEDORES = [
 ] as const;
 
 const ESTADO_UI: Record<Estado, { l: string; c: string }> = {
-  conectada: { l: "Conectada", c: "tag tag-ok" },
+  conectada: { l: "Conectado", c: "tag tag-ok tag-conectado" },
   desconectada: { l: "Desconectada", c: "tag" },
   pendiente: { l: "Pendiente", c: "tag tag-aviso" },
   error: { l: "Error", c: "tag tag-rojo" },
