@@ -139,6 +139,31 @@ export function NoticiaDetalle() {
 }
 
 /* ---------------- Twitch / creadores ---------------- */
+type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string };
+/** Canales VANTS y de jugadores en Twitch y Kick (vants-integraciones, se revisa cada 2 min). */
+function DirectosVants() {
+  const q = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
+  const ds = q.data?.directos || [];
+  if (q.isLoading || q.error || ds.length === 0) return null;
+  return (
+    <div className="mb-10" data-testid="directos-vants">
+      <div className="eyebrow mb-3">Canales VANTS · Twitch y Kick</div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {ds.map((d) => (
+          <a key={d.plataforma + d.canal} href={d.url} target="_blank" rel="noopener noreferrer" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors" data-testid={"directo-" + d.plataforma + "-" + d.canal}>
+            {d.en_vivo && d.miniatura ? <img src={d.miniatura} alt="" className="w-full mb-3" loading="lazy" /> : null}
+            <div className="flex items-center justify-between gap-2">
+              <span className="d-3 truncate">{d.nombre}</span>
+              <span className="tag" style={{ color: d.plataforma === "twitch" ? "#a970ff" : "#53fc18" }}>{d.plataforma === "twitch" ? "Twitch" : "Kick"}</span>
+            </div>
+            {d.en_vivo ? <div className="small mt-2"><span className="tag tag-rojo"><span className="dot-live" /> En vivo{d.espectadores != null ? " · " + d.espectadores : ""}</span>{d.titulo ? <p className="muted mt-2 line-clamp-2">{d.titulo}</p> : null}</div> : <span className="tag mt-2">Desconectado</span>}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function EnVivo() {
   const [juego, setJuego] = useState("");
   const q = useApi<{ streams: Stream[]; total_canales: number }>("/api/twitch/directos?limite=24" + (juego ? "&juego=" + encodeURIComponent(juego) : ""), { refetchMs: 60_000 });
@@ -146,6 +171,7 @@ export function EnVivo() {
     <>
       <PageHead eyebrow="Twitch en vivo" title={<>En <span style={{ color: "var(--rojo)" }}>directo</span></>} lead="Solo canales registrados en VANTS emitiendo VALORANT o Counter-Strike. Las categorías de Twitch no son torneos de VANTS." />
       <div className="wrap">
+        <DirectosVants />
         <div className="flex gap-1 mb-6" role="group" aria-label="Categoría de Twitch">{[["", "Todas"], ["VALORANT", "VALORANT"], ["Counter-Strike", "Counter-Strike"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)} data-testid={"filter-twitch-" + (v || "todas")}>{l}</button>)}</div>
         {q.isLoading ? <Skel h={160} n={1} /> : q.error ? <ErrorBox error={q.error} what="los directos" /> : (q.data?.streams || []).length === 0 ? (
           <Empty code={"twitch · " + (q.data?.total_canales ?? 0) + " canales registrados"} title="Ningún canal está en directo ahora" text="La lista se actualiza cada minuto con datos de Twitch. Vincula tu canal desde tu perfil para aparecer aquí cuando emitas." action={<Link href="/creadores" className="link-arrow">Ver creadores →</Link>} />

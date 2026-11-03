@@ -3,6 +3,57 @@ import { Link, useLocation } from "wouter";
 import { NAV, PERFIL_LINKS } from "@/lib/nav";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { Wordmark } from "./ui-vants";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApi } from "@/lib/useApi";
+import { api } from "@/lib/api";
+
+type Notif = { id: number; tipo: string; titulo: string; cuerpo: string | null; url: string | null; creada: string; leida: boolean };
+
+/** Campana: notificaciones reales de vants-integraciones (partidas FACEIT, directos). */
+function Campana() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const qc = useQueryClient();
+  const q = useApi<{ sin_leer: number; notificaciones: Notif[] }>("/int/notificaciones", { auth: true, refetchMs: 60_000 });
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  const n = q.data?.sin_leer || 0;
+  const abrir = async () => {
+    const nuevo = !open;
+    setOpen(nuevo);
+    if (nuevo && n > 0) {
+      try { await api("/int/notificaciones/leer", { method: "POST", auth: true, body: {} }); } catch { /* se reintenta al abrir otra vez */ }
+      qc.invalidateQueries({ queryKey: ["/int/notificaciones", true] });
+    }
+  };
+  const fecha = (s: string) => { const d = new Date(s.replace(" ", "T") + "Z"); return isNaN(d.getTime()) ? "" : d.toLocaleString("es", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); };
+  return (
+    <div className="nav-item" ref={ref}>
+      <button className="btn btn-sm btn-ghost relative" onClick={abrir} aria-expanded={open} aria-label={"Notificaciones" + (n ? " (" + n + " sin leer)" : "")} data-testid="button-notificaciones">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 01-3.4 0" /></svg>
+        {n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--rojo)", color: "#fff", borderRadius: 999, fontSize: 10, minWidth: 16, height: 16, lineHeight: "16px", textAlign: "center", padding: "0 4px" }} data-testid="badge-notificaciones">{n > 9 ? "9+" : n}</span>}
+      </button>
+      {open && (
+        <div className="nav-menu" role="menu" style={{ right: 0, left: "auto", width: 320, maxHeight: 420, overflowY: "auto" }}>
+          {q.isLoading ? <div className="small muted p-3">Cargando…</div> : q.error ? <div className="small muted p-3">No se pudieron cargar las notificaciones.</div> :
+            (q.data?.notificaciones || []).length === 0 ? <div className="small muted p-3">Sin notificaciones. Aquí verás tus partidas de FACEIT y quién entra en directo.</div> :
+            q.data!.notificaciones.map((x) => (
+              <a key={x.id} href={x.url || "#"} target={x.url ? "_blank" : undefined} rel="noopener noreferrer" role="menuitem" style={{ opacity: x.leida ? 0.7 : 1 }} data-testid={"notif-" + x.id}>
+                <span style={{ fontWeight: x.leida ? 400 : 700 }}>{x.titulo}</span>
+                <small>{[x.cuerpo, fecha(x.creada)].filter(Boolean).join(" · ")}</small>
+              </a>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Dropdown({ label, base, links, path }: { label: string; base: string; links: { label: string; to: string; hint?: string; privado?: boolean }[]; path: string }) {
   const [open, setOpen] = useState(false);
@@ -51,6 +102,7 @@ function AccountButton() {
   if (status === "autenticado") {
     return (
       <div className="flex items-center gap-2">
+        <Campana />
         <Link href="/perfil" className="btn btn-sm" data-testid="link-perfil">Mi perfil</Link>
         <button className="btn btn-sm btn-ghost" onClick={() => logout()} data-testid="button-logout" aria-label={"Cerrar sesión" + (user?.nickname ? " de " + user.nickname : "")}>Salir</button>
       </div>

@@ -13,6 +13,13 @@ export const ASSET_ORIGIN: string =
 /** En producción (mismo Worker que la API) las funciones se llaman directo a vants-functions (CORS abierto). */
 const FN_ORIGIN: string = (import.meta.env.VITE_FN_ORIGIN as string | undefined) || "";
 
+/** Worker vants-integraciones (FACEIT, directos Twitch/Kick, notificaciones). Rutas "/int/...". */
+const INT_ORIGIN: string = (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev";
+function destino(path: string): string {
+  if (path.startsWith("/int/")) return INT_ORIGIN + path.slice(4);
+  return (FN_ORIGIN && path.startsWith("/fn/") ? FN_ORIGIN : API_BASE) + path;
+}
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -37,7 +44,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   }
   let r: Response;
   try {
-    r = await fetch((FN_ORIGIN && path.startsWith("/fn/") ? FN_ORIGIN : API_BASE) + path, {
+    r = await fetch(destino(path), {
       method: opts.method || "GET",
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

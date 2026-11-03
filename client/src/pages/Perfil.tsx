@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -56,6 +57,7 @@ function Resumen() {
           )}
         </div>
       </div>
+      <PanelFaceit />
       <div className="grid gap-6 md:grid-cols-3">
         <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>
         <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Insignias y logros</div><p className="small muted">Validados por el motor de logros.</p></Link>
@@ -96,6 +98,7 @@ function Ajustes() {
           {st.k === "error" && <span className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</span>}
         </div>
       </form>
+      <div className="mt-6"><CanalesForm /></div>
     </div>
   );
 }
@@ -226,8 +229,8 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   ajustes: { t: "Configuración", el: Ajustes },
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
   membresia: { t: "Membresía", el: Membresia },
-  estadisticas: { t: "Estadísticas", el: () => <div className="wrap"><Empty code="estadísticas · 0" title="Sin estadísticas todavía" text="Se calculan a partir de partidas registradas en torneos de VANTS y de tu cuenta de FACEIT vinculada." /></div> },
-  equipos: { t: "Mis equipos", el: () => <div className="wrap"><Empty code="equipos · 0" title="No perteneces a ningún equipo" text="Inscribe un equipo en un torneo o pide al capitán que te añada a su plantilla." action={<Link href="/torneos/competir" className="link-arrow">Competir →</Link>} /></div> },
+  estadisticas: { t: "Estadísticas", el: EstadisticasFaceit },
+  equipos: { t: "Mis equipos", el: EquipoFaceit },
   torneos: { t: "Mis torneos", el: () => <div className="wrap"><Empty code="torneos · 0" title="No tienes inscripciones" text="Tus inscripciones y su estado (pendiente, confirmada o rechazada) aparecerán aquí." action={<Link href="/torneos/competir" className="link-arrow">Buscar torneos →</Link>} /></div> },
 };
 

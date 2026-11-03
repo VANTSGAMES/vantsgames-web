@@ -1,0 +1,25 @@
+name = "vants-integraciones"
+main = "src/index.js"
+compatibility_date = "2026-09-22"
+workers_dev = true
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["*/2 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vants-db"
+database_id = "11e5d82c-307b-44ba-9682-501d8df593d3"
+
+[vars]
+AUTH0_DOMAIN = "vants.eu.auth0.com"
+AUTH0_AUDIENCE = "https://api.vants.app"
+SITE_ORIGINS = "https://vants.vants.workers.dev"
+SITE_URL = "https://vants.vants.workers.dev"
+TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
+KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
+CANALES_TWITCH = "feisreal"
+CANALES_KICK = "feispla"

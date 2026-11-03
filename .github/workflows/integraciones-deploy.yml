@@ -1,0 +1,26 @@
+name: Integraciones · deploy del Worker (vants-integraciones)
+on:
+  push:
+    branches: [main]
+    paths: ["integraciones/**", ".github/workflows/integraciones-deploy.yml"]
+  workflow_dispatch:
+concurrency: { group: integraciones-deploy, cancel-in-progress: false }
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: integraciones } }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Sintaxis
+        run: node --check src/index.js
+      - name: Migraciones D1 (idempotentes)
+        run: for f in migraciones/*.sql; do npx -y wrangler@4 d1 execute vants-db --remote --file "$f" --yes; done
+      - name: Deploy
+        run: npx -y wrangler@4 deploy
+      - name: Salud
+        run: curl -fsS https://vants-integraciones.vants.workers.dev/salud
