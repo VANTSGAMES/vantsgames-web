@@ -104,7 +104,15 @@ type Vinculo = { plataforma: string; usuario: string; avatar: string | null; ver
 const ERR_LINK: Record<string, string> = {
   state_invalido: "La autorización caducó o no es válida. Inténtalo de nuevo.",
   sin_code: "El proveedor no devolvió la autorización.",
+  cancelado: "Cancelaste la autorización en el proveedor. Puedes intentarlo de nuevo.",
 };
+// Errores con prefijo (p. ej. intercambio_twitch:invalid_client, perfil_faceit)
+function mensajeLink(ko: string): string {
+  if (ERR_LINK[ko]) return ERR_LINK[ko];
+  if (ko.startsWith("intercambio_")) return "El proveedor rechazó la autorización (" + ko + "). Revisa que la URL de retorno registrada en su portal sea la del linker.";
+  if (ko.startsWith("perfil_")) return "Se autorizó, pero no se pudo leer tu perfil del proveedor (" + ko + ").";
+  return "La vinculación no se completó (" + ko + ").";
+}
 
 function Cuentas() {
   const qc = useQueryClient();
@@ -119,7 +127,7 @@ function Cuentas() {
     const ok = sp.get("linked"), ko = sp.get("linkerr");
     if (!ok && !ko) return;
     if (ok) setAviso({ ok: true, m: "Cuenta de " + (PROVEEDORES.find((p) => p.id === ok)?.nombre || ok) + " vinculada y verificada." });
-    else if (ko) setAviso({ ok: false, m: ERR_LINK[ko] || "La vinculación no se completó (" + ko + ")." });
+    else if (ko) setAviso({ ok: false, m: mensajeLink(ko) });
     window.history.replaceState(null, "", window.location.pathname);
     qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
   }, [qc]);
@@ -130,7 +138,7 @@ function Cuentas() {
       const d = e.data as any;
       if (d?.tipo !== "oauth-vuelta") return;
       if (d.linked) setAviso({ ok: true, m: "Cuenta de " + (PROVEEDORES.find((p) => p.id === d.linked)?.nombre || d.linked) + " vinculada y verificada." });
-      else if (d.linkerr) setAviso({ ok: false, m: ERR_LINK[d.linkerr] || "La vinculación no se completó (" + d.linkerr + ")." });
+      else if (d.linkerr) setAviso({ ok: false, m: mensajeLink(String(d.linkerr)) });
       qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
     };
     window.addEventListener("message", onMsg);
@@ -138,29 +146,24 @@ function Cuentas() {
   }, [qc]);
   const conectar = async (plataforma: string) => {
     setBusy(plataforma);
-    // La ventana se abre en el propio clic (gesto del usuario): si no, el navegador la bloquea.
-    const v = window.open("about:blank", "vants-oauth", "width=520,height=740");
+    setErr((x) => { const n = { ...x }; delete n[plataforma]; return n; });
     try {
       const r = await api<{ url: string }>("/fn/linker/api/link/start", { method: "POST", auth: true, body: { platform: plataforma, return_to: window.location.origin + "/perfil/cuentas" } });
       if (!r.url) {
-        try { v?.close(); } catch {}
         setErr((x) => ({ ...x, [plataforma]: "sin_url" }));
+        setBusy(null);
         return;
       }
-      if (v && !v.closed) {
-        // FACEIT usa redirect_popup=true: su página espera una ventana que pueda cerrarse sola.
-        v.location.href = r.url;
-        const t = setInterval(() => {
-          if (v.closed) { clearInterval(t); qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] }); }
-        }, 800);
-      } else {
-        // Reserva si el navegador bloqueó la ventana: misma pestaña, sin modo popup.
-        window.location.href = r.url.replace("redirect_popup=true&", "").replace("?redirect_popup=true", "?");
-      }
+      // Redirección en la MISMA pestaña. FACEIT y Twitch sirven su login con
+      // Cross-Origin-Opener-Policy: same-origin, que corta el vínculo con una
+      // ventana emergente (window.opener = null, popup.closed = true): la web
+      // nunca recibía el aviso y la cuenta quedaba "Desconectada". Al volver,
+      // el linker redirige a /perfil/cuentas?linked=<plataforma> (o ?linkerr=).
+      window.location.assign(r.url);
     } catch (e: any) {
       setErr((x) => ({ ...x, [plataforma]: e.code }));
-      try { v?.close(); } catch {}
-    } finally { setBusy(null); }
+      setBusy(null);
+    }
   };
   const desconectar = async (plataforma: string) => {
     setBusy(plataforma);
@@ -232,14 +235,6 @@ export default function Perfil() {
   const params = useParams<{ sub?: string }>();
   const sub = SUB[params.sub || ""] ? params.sub || "" : "";
   const S = SUB[sub];
-  // Vuelta del OAuth dentro del popup: avisar a la ventana padre y cerrarse sola.
-  useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const ok = sp.get("linked"), ko = sp.get("linkerr");
-    if (!window.opener || (!ok && !ko)) return;
-    try { window.opener.postMessage({ tipo: "oauth-vuelta", linked: ok, linkerr: ko }, window.location.origin); } catch {}
-    window.close();
-  }, []);
   return (
     <>
       <PageHead eyebrow="Mi perfil" title={S.t} />
