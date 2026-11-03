@@ -62,6 +62,11 @@ export async function esOwner(db, sub) {
   if (r) return true;
   // Otras formas de entrar del dueño (Twitch/Discord/FACEIT): si el id del
   // proveedor de esta sesión está vinculado a la cuenta owner, también es owner.
+  // Misma cuenta de FACEIT verificada por OAuth que la cuenta owner.
+  const f = await db.prepare(
+    "SELECT 1 FROM vants_links a JOIN vants_links b ON b.platform = 'faceit' AND b.platform_user_id = a.platform_user_id JOIN players p ON p.auth0_sub = b.auth0_sub AND p.role = 'owner' WHERE a.auth0_sub = ? AND a.platform = 'faceit' AND a.platform_user_id IS NOT NULL LIMIT 1"
+  ).bind(sub).first().catch(() => null);
+  if (f) return true;
   const m = String(sub || '').match(/^(?:oauth2\|)?(twitch|discord|faceit)\|(.+)$/);
   if (!m) return false;
   const o = await db.prepare(
@@ -141,7 +146,7 @@ async function rankingPublico(env, perfilFaceit) {
 
 async function misEquipos(db, sub) {
   const rs = await db.prepare(
-    `SELECT t.slug, t.nombre, t.tag, t.game_slug, t.region, e.capitan_sub, e.codigo, m.rol
+    `SELECT t.slug, t.nombre, t.tag, t.game_slug, t.region, t.logo_url, e.capitan_sub, e.codigo, m.rol
      FROM integ_equipo_miembros m JOIN pt_teams t ON t.slug = m.team_slug JOIN integ_equipos e ON e.slug = t.slug
      WHERE m.auth0_sub = ? ORDER BY m.unido`
   ).bind(sub).all();
@@ -150,7 +155,7 @@ async function misEquipos(db, sub) {
     const ms = await db.prepare('SELECT auth0_sub, nick, rol, unido FROM integ_equipo_miembros WHERE team_slug = ? ORDER BY unido').bind(r.slug).all();
     const capitan = r.capitan_sub === sub;
     out.push({
-      slug: r.slug, nombre: r.nombre, tag: r.tag, juego: r.game_slug, region: r.region, capitan,
+      slug: r.slug, nombre: r.nombre, tag: r.tag, juego: r.game_slug, region: r.region, logo_url: r.logo_url || null, capitan,
       codigo: capitan ? r.codigo : null,
       miembros: (ms.results || []).map((x) => ({ id: capitan ? x.auth0_sub : undefined, nick: x.nick, rol: x.rol, unido: x.unido, yo: x.auth0_sub === sub })),
     });

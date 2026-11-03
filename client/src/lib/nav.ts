@@ -52,7 +52,7 @@ export const PERFIL_LINKS: NavLink[] = [
   { label: "Estadísticas", to: "/perfil/estadisticas" },
   { label: "Mis equipos", to: "/perfil/equipos" },
   { label: "Mis torneos", to: "/perfil/torneos" },
-  { label: "Mis clips", to: "/clips/biblioteca" },
+  { label: "Mis clips", to: "/perfil/clips" },
   { label: "Insignias y logros", to: "/logros" },
   { label: "Membresía", to: "/perfil/membresia" },
   { label: "Cuentas vinculadas", to: "/perfil/cuentas" },

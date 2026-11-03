@@ -18,7 +18,7 @@ export type EquipoRef = { slug: string; nombre: string; tag: string | null; jueg
 export type FilaFaceit = { pos: number; nick: string; avatar: string | null; pais: string | null; nivel: number | null; elo: number | null; partidas: number | null; winrate: number | null; kd: number | null; url: string; equipo: EquipoRef | null; actualizado: string };
 export type FilaXp = { pos: number; nick: string; xp: number; fundador: boolean; equipo: EquipoRef | null };
 type Miembro = { id?: string; nick: string; rol: string; unido: string; yo?: boolean };
-type MiEquipo = { slug: string; nombre: string; tag: string | null; juego: string; region: string | null; capitan: boolean; codigo: string | null; miembros: Miembro[] };
+type MiEquipo = { slug: string; nombre: string; tag: string | null; juego: string; region: string | null; logo_url?: string | null; capitan: boolean; codigo: string | null; miembros: Miembro[] };
 type Inscripcion = { id: string; slug: string; name: string; tag: string; status: string; created_at: string; torneo: string | null; starts_at: string | null; estado: string | null; game_slug: string | null };
 type Logro = { code: string; nombre: string; descripcion: string; categoria: string; conseguido: boolean; progreso: { actual: number; meta: number } | null };
 export type Evento = { id: string; titulo: string; tipo: string; descripcion: string | null; juego: string | null; lugar: string | null; url: string | null; empieza: string; termina: string | null };
@@ -39,6 +39,8 @@ const ERRORES: Record<string, string> = {
   fechas_invalidas: "La fecha de fin no puede ser anterior a la de inicio.",
   url_invalida: "El enlace debe empezar por https://",
   sin_sesion: "Tu sesión expiró. Vuelve a iniciar sesión.",
+  imagen_grande: "La imagen es demasiado grande. Usa una de menos de 500 KB.",
+  imagen_invalida: "Elige una imagen PNG, JPG o WEBP.",
   red_no_disponible: "No hay conexión con el servidor.",
 };
 const msg = (e: any) => ERRORES[e?.code] || "No se pudo completar (" + (e?.code || "error") + ").";
@@ -183,6 +185,57 @@ function UnirseEquipo({ onOk }: { onOk: (slug: string) => void }) {
   );
 }
 
+/** Reduce la imagen a 256×256 (recorte centrado) y la devuelve como data URL WEBP/PNG. */
+async function imagenEquipo(file: File): Promise<string> {
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" });
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" })); i.src = url; });
+    const L = 256, c = document.createElement("canvas");
+    c.width = L; c.height = L;
+    const lado = Math.min(img.naturalWidth, img.naturalHeight);
+    c.getContext("2d")!.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, L, L);
+    const webp = c.toDataURL("image/webp", 0.88);
+    return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/png");
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function FotoEquipo({ e, onCambio }: { e: MiEquipo; onCambio: (m: { k: "ok" | "error"; m: string }) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [logo, setLogo] = useState<string | null>(e.logo_url || null);
+  const subir = async (f: File | undefined) => {
+    if (!f) return;
+    setBusy(true);
+    try {
+      const imagen = await imagenEquipo(f);
+      const r = await api<{ logo_url: string }>("/int/equipos/logo", { method: "POST", auth: true, body: { slug: e.slug, imagen } });
+      setLogo(r.logo_url); onCambio({ k: "ok", m: "Foto del equipo actualizada." });
+    } catch (err) { onCambio({ k: "error", m: msg(err) }); }
+    finally { setBusy(false); }
+  };
+  const quitar = async () => {
+    if (!window.confirm("¿Quitar la foto del equipo?")) return;
+    setBusy(true);
+    try { await api("/int/equipos/logo", { method: "POST", auth: true, body: { slug: e.slug, quitar: true } }); setLogo(null); onCambio({ k: "ok", m: "Foto quitada." }); }
+    catch (err) { onCambio({ k: "error", m: msg(err) }); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="grid gap-1.5 justify-items-center" data-testid={"foto-equipo-" + e.slug}>
+      {logo ? <img src={logo} alt={"Foto de " + e.nombre} width={72} height={72} className="chamfer object-cover" style={{ width: 72, height: 72 }} /> : <Initials name={e.tag || e.nombre} size={72} />}
+      {e.capitan && (
+        <div className="flex gap-1">
+          <label className="btn btn-sm btn-ghost cursor-pointer" style={{ padding: "4px 8px", fontSize: 11 }}>
+            {busy ? "Subiendo…" : logo ? "Cambiar foto" : "Subir foto"}
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={busy} onChange={(ev) => { subir(ev.target.files?.[0]); ev.target.value = ""; }} data-testid={"input-foto-equipo-" + e.slug} />
+          </label>
+          {logo && !busy && <button className="btn btn-sm btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }} onClick={quitar}>Quitar</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TarjetaMiEquipo({ e, refrescar }: { e: MiEquipo; refrescar: () => void }) {
   const [codigo, setCodigo] = useState(e.codigo);
   const [st, setSt] = useState<{ k: "idle" | "ok" | "error"; m?: string }>({ k: "idle" });
@@ -195,7 +248,7 @@ function TarjetaMiEquipo({ e, refrescar }: { e: MiEquipo; refrescar: () => void 
   return (
     <div className="panel" data-testid={"mi-equipo-" + e.slug}>
       <div className="panel-pad flex flex-wrap items-center gap-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-        <Initials name={e.tag || e.nombre} size={56} />
+        <FotoEquipo e={e} onCambio={(m) => { setSt(m); refrescar(); }} />
         <div className="min-w-0 grow">
           <Link href={"/equipos/" + e.slug} className="d-2 hover:text-[var(--rojo)]">{e.nombre}</Link>
           <div className="flex flex-wrap gap-1.5 mt-2">{e.tag && <span className="tag">{e.tag}</span>}<GameTag g={e.juego} />{e.region && <span className="tag">{e.region}</span>}{e.capitan && <span className="tag tag-rojo">Capitán</span>}</div>

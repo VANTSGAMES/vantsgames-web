@@ -16,6 +16,7 @@
 
 import { rutasComunidad, refrescarRanking, guardarRanking } from './comunidad.js';
 import { rutasJuegos, equipoFaceit } from './juegos.js';
+import { rutasExtras } from './extras.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -368,6 +369,10 @@ async function rutas(req, env, url) {
     if (!f) return json({ ok: false, error: 'no_encontrado' }, 404);
     return json({ ok: true, ...f, actual: await partidaActual(env, id) });
   }
+
+  // Clips, foto de equipo y membresía
+  const rx = await rutasExtras(req, env, url, p, m, { json, cacheado, usuario });
+  if (rx) return rx;
 
   // 1000 logros FACEIT/VALORANT, Riot ID, Mi progreso y equipo de FACEIT
   const rj = await rutasJuegos(req, env, url, p, m, { json, cacheado, usuario, fx, perfilFaceit });

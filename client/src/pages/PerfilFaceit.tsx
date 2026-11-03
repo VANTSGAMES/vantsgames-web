@@ -52,7 +52,8 @@ function EstadoPill({ yo }: { yo: Yo }) {
 const fmt = (v: number | null | undefined, suf = "") => (v == null ? "—" : String(v) + suf);
 const fecha = (s: string | null) => (s ? new Date(s).toLocaleDateString("es", { day: "2-digit", month: "short" }) : "");
 
-export function PanelFaceit() {
+/** Ficha de FACEIT. En «Mi perfil» se muestra sin la tabla; en «Estadísticas» con últimos resultados y partidas. */
+export function PanelFaceit({ partidas: conPartidas = false }: { partidas?: boolean } = {}) {
   const q = useYo();
   if (q.isLoading) return <div className="panel panel-pad"><div className="sk" style={{ height: 90 }} /></div>;
   if (q.error) return <div className="panel panel-pad small muted">No se pudo leer tu perfil de FACEIT ({q.error.code}).</div>;
@@ -86,10 +87,10 @@ export function PanelFaceit() {
           ))}
         </div>
       )}
-      {e && e.recientes.length > 0 && (
+      {conPartidas && e && e.recientes.length > 0 && (
         <div className="flex gap-1 items-center"><span className="small muted mr-2">Últimos resultados</span>{e.recientes.map((w, i) => <span key={i} className={"tag " + (w ? "" : "tag-rojo")} style={w ? { color: "var(--ok)" } : undefined}>{w ? "V" : "D"}</span>)}</div>
       )}
-      <TablaPartidas partidas={partidas} />
+      {conPartidas && <TablaPartidas partidas={partidas} />}
     </div>
   );
 }
@@ -163,7 +164,7 @@ function EquipoFaceitVista({ eq }: { eq: Equipo }) {
 }
 
 export function EstadisticasFaceit() {
-  return <div className="wrap"><PanelFaceit /></div>;
+  return <div className="wrap"><PanelFaceit partidas /></div>;
 }
 
 export function CanalesForm() {

@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
 import { MisEquiposPanel, MisInscripciones } from "./Vants";
+import { MiBiblioteca } from "./MisClips";
+import { PLANES } from "./Membresias";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -221,10 +223,41 @@ function Cuentas() {
   );
 }
 
+type EstadoMembresia = { activo: boolean; plan: string | null; planes: string[]; nombre?: string | null; origen?: string; caduca?: string | null; periodo?: string | null; todos?: boolean };
+
 function Membresia() {
+  const q = useApi<EstadoMembresia>("/int/membresia", { auth: true });
+  if (q.isLoading) return <div className="wrap"><div className="sk" style={{ height: 160 }} /></div>;
+  const d = q.data;
+  if (q.error || !d || !d.activo) {
+    return (
+      <div className="wrap">
+        <Empty code={"membresía · " + (q.error ? q.error.code : "sin plan")} title="No hay un plan activo en tu cuenta" text="Cuando Stripe confirme un pago, el servidor activará el plan y su insignia aparecerá en tus logros." action={<Link href="/membresias" className="link-arrow">Ver planes →</Link>} />
+      </div>
+    );
+  }
+  const incluidos = PLANES.filter((p) => d.planes.includes(p.id));
+  const top = PLANES.find((p) => p.id === d.plan);
   return (
-    <div className="wrap">
-      <Empty code="membresía · sin plan activo verificado" title="No hay un plan activo en tu cuenta" text="Cuando Stripe confirme un pago, el servidor activará el plan y su insignia aparecerá en tus logros." action={<Link href="/membresias" className="link-arrow">Ver planes →</Link>} />
+    <div className="wrap grid gap-6" data-testid="membresia-activa">
+      <div className="panel panel-pad chamfer grid gap-3" style={{ boxShadow: "inset 0 2px 0 var(--rojo)" }}>
+        <div className="eyebrow">Plan activo</div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="d-1">{d.nombre || top?.nombre || d.plan}</h2>
+          <span className="tag tag-ok">Activo</span>
+          {d.todos && <span className="tag tag-rojo">Plan máximo</span>}
+        </div>
+        <p className="small muted">{d.origen === "owner" ? "Eres el dueño de VANTS: tienes todos los planes y beneficios incluidos, sin caducidad." : d.caduca ? "Se renueva o caduca el " + new Date(d.caduca).toLocaleDateString("es", { day: "2-digit", month: "long", year: "numeric" }) + "." : "Sin fecha de caducidad."}</p>
+      </div>
+      <div className="grid-auto grid md:grid-cols-2 xl:grid-cols-4">
+        {incluidos.map((p) => (
+          <article key={p.id} className="p-6 grid gap-3 content-start" data-testid={"membresia-plan-" + p.id}>
+            <div className="flex items-center justify-between gap-2"><span className="eyebrow">{p.kicker}</span><span className="tag tag-ok">Incluido</span></div>
+            <h3 className="d-3">{p.nombre}</h3>
+            <ul className="grid gap-1.5 small">{p.beneficios.map((b) => <li key={b} className="flex gap-2"><span style={{ color: "var(--rojo)" }} aria-hidden>▸</span>{b}</li>)}</ul>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
@@ -237,6 +270,7 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-6"><EstadisticasFaceit /><div className="wrap"><PanelValorantPerfil /></div></div> },
   equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit pie={(actual) => <VincularEquipoFaceit actual={actual} />} /></div></div> },
   torneos: { t: "Mis torneos", el: MisInscripciones },
+  clips: { t: "Mis clips", el: () => <div className="wrap"><MiBiblioteca /></div> },
 };
 
 export default function Perfil() {
