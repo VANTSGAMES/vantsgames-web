@@ -15,6 +15,7 @@
 //   CANALES_TWITCH, CANALES_KICK (canales oficiales, separados por coma)
 
 import { rutasComunidad, refrescarRanking, guardarRanking } from './comunidad.js';
+import { rutasJuegos, equipoFaceit } from './juegos.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -368,6 +369,10 @@ async function rutas(req, env, url) {
     return json({ ok: true, ...f, actual: await partidaActual(env, id) });
   }
 
+  // 1000 logros FACEIT/VALORANT, Riot ID, Mi progreso y equipo de FACEIT
+  const rj = await rutasJuegos(req, env, url, p, m, { json, cacheado, usuario, fx, perfilFaceit });
+  if (rj) return rj;
+
   // Ranking, equipos, eventos, logros, inscripciones y publicación (owner)
   const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, perfilFaceit, notificar, discord });
   if (rc) return rc;
@@ -386,6 +391,12 @@ async function rutas(req, env, url) {
       try {
         faceit = await perfilFaceit(env, lk.faceit.platform_user_id);
         if (faceit) await guardarRanking(env, sub, faceit).catch(() => null);
+        // Equipo de FACEIT vinculado por enlace (tiene prioridad sobre el detectado)
+        const fe = await env.DB.prepare('SELECT team_id FROM integ_faceit_equipo WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+        if (faceit && fe && fe.team_id) {
+          const eq = await equipoFaceit(env, fe.team_id, { cacheado, fx }, faceit.partidas).catch(() => null);
+          if (eq) faceit = { ...faceit, equipo: eq };
+        }
         actual = await partidaActual(env, lk.faceit.platform_user_id);
       } catch (e) { errorFaceit = String(e.message || e); }
     }

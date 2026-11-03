@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { api, assetUrl, type Badge } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
-import { LogrosJuego } from "./Vants";
+import { LogrosJuegos, InsigniasVants1000, ProgresoJuegos } from "./Juegos";
 
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate } from "@/components/ui-vants";
@@ -134,7 +134,8 @@ export function BadgeGrid({ standalone = false }: { standalone?: boolean }) {
 export function Insignias() {
   return (
     <>
-      <PageHead eyebrow="Insignias" title="Insignias VANTS" lead="Cada insignia la concede el motor de logros del servidor cuando se cumple su requisito. No se pueden activar desde la web." />
+      <PageHead eyebrow="Insignias" title="Insignias VANTS" lead="1000 insignias VANTS, una por cada logro de FACEIT y VALORANT, más las insignias oficiales del motor de logros. Todas se validan en el servidor." />
+      <Section id="insignias-vants" eyebrow="Colección" title="1000 insignias VANTS"><InsigniasVants1000 /></Section>
       <BadgeGrid standalone />
     </>
   );
@@ -156,8 +157,8 @@ function MisLogros() {
     <div className="wrap grid gap-10">
       <div className="grid gap-4">
         <h2 className="d-2">Logros de juego</h2>
-        <p className="small muted -mt-2">Se calculan con tus datos reales: FACEIT, equipo, inscripciones y cuentas vinculadas.</p>
-        <LogrosJuego />
+        <p className="small muted -mt-2">1000 logros: 500 de FACEIT CS2 (se activan al vincular FACEIT) y 500 de VALORANT (se activan con tu Riot ID). Se calculan con tus datos reales.</p>
+        <LogrosJuegos />
       </div>
       <div className="grid gap-4">
         <h2 className="d-2">Insignias conseguidas</h2>
@@ -183,23 +184,12 @@ function MisLogros() {
 export function Progreso() {
   return (
     <>
-      <PageHead eyebrow="Progreso" title="Mi progreso" lead="Nivel y experiencia calculados por el servidor." />
+      <PageHead eyebrow="Progreso" title="Mi progreso" lead="Tu progreso de jugador en VANTS, FACEIT y VALORANT. FACEIT se activa al vincular la cuenta y VALORANT al conectar tu Riot ID." />
       <AuthGate what="tu progreso"><MiProgreso /></AuthGate>
     </>
   );
 }
 
 function MiProgreso() {
-  const q = useApi<any>("/api/account/progreso", { auth: true });
-  return (
-    <div className="wrap">
-      {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="tu progreso" /> : (
-        <div className="panel panel-pad grid gap-4 sm:grid-cols-3">
-          {Object.entries(q.data || {}).filter(([k, v]) => k !== "ok" && (typeof v === "number" || typeof v === "string")).map(([k, v]) => (
-            <div key={k}><div className="eyebrow mb-1">{k.replace(/_/g, " ")}</div><div className="d-2 num">{String(v)}</div></div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return <div className="wrap"><ProgresoJuegos /></div>;
 }

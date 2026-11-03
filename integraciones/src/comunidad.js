@@ -59,7 +59,15 @@ export async function nickDe(db, sub) {
 
 export async function esOwner(db, sub) {
   const r = await db.prepare("SELECT 1 FROM players WHERE auth0_sub = ? AND role = 'owner'").bind(sub).first();
-  return !!r;
+  if (r) return true;
+  // Otras formas de entrar del dueño (Twitch/Discord/FACEIT): si el id del
+  // proveedor de esta sesión está vinculado a la cuenta owner, también es owner.
+  const m = String(sub || '').match(/^(?:oauth2\|)?(twitch|discord|faceit)\|(.+)$/);
+  if (!m) return false;
+  const o = await db.prepare(
+    "SELECT 1 FROM vants_links l JOIN players p ON p.auth0_sub = l.auth0_sub AND p.role = 'owner' WHERE l.platform = ? AND l.platform_user_id = ? LIMIT 1"
+  ).bind(m[1], m[2]).first();
+  return !!o;
 }
 
 /* ============================================================ ranking */
@@ -123,7 +131,7 @@ async function rankingPublico(env, perfilFaceit) {
   }
   const xs = await env.DB.prepare(
     `SELECT id, auth0_sub, COALESCE(display_name, username) nombre, xp, role FROM players
-     WHERE COALESCE(display_name, username) IS NOT NULL ORDER BY xp DESC LIMIT 100`
+     WHERE COALESCE(display_name, username) IS NOT NULL AND NOT (xp = 0 AND role = 'owner' AND auth0_sub LIKE 'oauth2|%') ORDER BY xp DESC LIMIT 100`
   ).all();
   const xp = (xs.results || []).map((r, i) => ({ pos: i + 1, nick: r.nombre, xp: r.xp || 0, fundador: r.role === 'owner', equipo: (r.auth0_sub && eq.get(r.auth0_sub)) || null }));
   return { faceit, xp };

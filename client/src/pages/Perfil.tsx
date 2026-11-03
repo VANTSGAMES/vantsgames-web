@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
-import { MisEquiposPanel, MisInscripciones, LogrosJuego } from "./Vants";
+import { MisEquiposPanel, MisInscripciones } from "./Vants";
+import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -59,7 +60,8 @@ function Resumen() {
         </div>
       </div>
       <PanelFaceit />
-      <div className="panel panel-pad grid gap-4"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Logros conseguidos</h2><Link href="/logros" className="link-arrow">Ver todos →</Link></div><LogrosJuego compacto /></div>
+      <div className="grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div>
+      <div className="panel panel-pad grid gap-4"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Logros conseguidos</h2><Link href="/logros" className="link-arrow">Ver los 1000 →</Link></div><ResumenLogros /></div>
       <div className="grid gap-6 md:grid-cols-3">
         <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>
         <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Insignias y logros</div><p className="small muted">Validados por el motor de logros.</p></Link>
@@ -214,6 +216,7 @@ function Cuentas() {
           );
         })}
       </div>
+      <div className="mt-4"><RiotIdForm /></div>
     </div>
   );
 }
@@ -231,8 +234,8 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   ajustes: { t: "Configuración", el: Ajustes },
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
   membresia: { t: "Membresía", el: Membresia },
-  estadisticas: { t: "Estadísticas", el: EstadisticasFaceit },
-  equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit /></div></div> },
+  estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-6"><EstadisticasFaceit /><div className="wrap"><PanelValorantPerfil /></div></div> },
+  equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit pie={(actual) => <VincularEquipoFaceit actual={actual} />} /></div></div> },
   torneos: { t: "Mis torneos", el: MisInscripciones },
 };
 

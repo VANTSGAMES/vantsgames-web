@@ -8,7 +8,8 @@ import { api } from "@/lib/api";
 export type Jugador = { id: string; nickname: string; avatar: string | null; pais: string | null; nivel: number | null; elo: number | null; region: string | null; url: string };
 export type Estad = { partidas: number | null; victorias: number | null; winrate: number | null; kd: number | null; hs: number | null; adr: number | null; racha: number | null; mejor_racha: number | null; recientes: boolean[] };
 export type Partida = { id: string | null; mapa: string | null; victoria: boolean; marcador: string | null; kills: number | null; muertes: number | null; asistencias: number | null; kd: number | null; adr: number | null; hs: number | null; fecha: string | null; url: string | null };
-export type Equipo = { tipo: "faceit" | "ultima_partida"; nombre: string; avatar: string | null; url: string | null; jugadores: { id: string; nickname: string; avatar: string | null; nivel: number | null; url: string }[] };
+export type Equipo = { tipo: "faceit" | "ultima_partida"; id?: string; nombre: string; tag?: string | null; avatar: string | null; url: string | null; jugadores: { id: string; nickname: string; avatar: string | null; nivel: number | null; elo?: number | null; lider?: boolean; url: string }[];
+  estadisticas?: { partidas: number | null; victorias: number | null; winrate: number | null; racha: number | null; mejor_racha: number | null; recientes: boolean[]; mapas: { mapa: string; partidas: number | null; winrate: number | null }[] } | null; partidas?: Partida[] };
 export type Directo = { plataforma: "twitch" | "kick"; canal: string; nombre: string; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string };
 export type Yo = {
   faceit: { jugador: Jugador; estadisticas: Estad | null; partidas: Partida[]; equipo: Equipo | null } | null;
@@ -118,29 +119,45 @@ export function TablaPartidas({ partidas }: { partidas: Partida[] }) {
   );
 }
 
-export function EquipoFaceit() {
+export function EquipoFaceit({ pie }: { pie?: (actual: string | null) => JSX.Element }) {
   const q = useYo();
   if (q.isLoading) return <div className="wrap"><div className="sk" style={{ height: 120 }} /></div>;
   const eq = q.data?.faceit?.equipo;
-  if (!eq) return <div className="wrap"><div className="panel panel-pad small muted">{q.data?.faceit_vinculado ? "Todavía no hay equipo de FACEIT para mostrar." : <>Vincula FACEIT en <Link href="/perfil/cuentas" className="link-arrow">Cuentas vinculadas</Link> para ver tu equipo.</>}</div></div>;
+  const extra = q.data?.faceit_vinculado && pie ? <div className="wrap mt-4">{pie(eq && eq.tipo === "faceit" && eq.id ? eq.id : null)}</div> : null;
+  if (!eq) return <><div className="wrap"><div className="panel panel-pad small muted">{q.data?.faceit_vinculado ? "Tu cuenta de FACEIT no pertenece a ningún equipo. Vincula el equipo que creaste en FACEIT con su enlace." : <>Vincula FACEIT en <Link href="/perfil/cuentas" className="link-arrow">Cuentas vinculadas</Link> para ver tu equipo.</>}</div></div>{extra}</>;
+  return <><EquipoFaceitVista eq={eq} />{extra}</>;
+}
+
+function EquipoFaceitVista({ eq }: { eq: Equipo }) {
+  const st = eq.estadisticas;
   return (
     <div className="wrap grid gap-4" data-testid="faceit-equipo">
       <div className="panel panel-pad flex items-center gap-4">
         {eq.avatar ? <img src={eq.avatar} alt="" width={56} height={56} className="chamfer" /> : null}
         <div>
           <div className="eyebrow mb-1">{eq.tipo === "faceit" ? "Equipo de FACEIT" : "Tu equipo en la última partida"}</div>
-          {eq.url ? <a href={eq.url} target="_blank" rel="noopener noreferrer" className="d-3">{eq.nombre}</a> : <span className="d-3">{eq.nombre}</span>}
+          {eq.url ? <a href={eq.url} target="_blank" rel="noopener noreferrer" className="d-3">{eq.nombre}</a> : <span className="d-3">{eq.nombre}</span>}{eq.tag ? <span className="small muted"> · {eq.tag}</span> : null}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {eq.jugadores.map((p) => (
           <a key={p.id} href={p.url} target="_blank" rel="noopener noreferrer" className="panel panel-pad flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"jugador-" + p.nickname}>
             {p.avatar ? <img src={p.avatar} alt="" width={40} height={40} className="rounded-full" loading="lazy" /> : <span style={{ width: 40, height: 40 }} className="rounded-full bg-[var(--grafito-2)]" />}
-            <span className="min-w-0 grow truncate">{p.nickname}</span>
+            <span className="min-w-0 grow"><span className="block truncate">{p.nickname}</span><span className="small muted num">{p.elo != null ? p.elo + " ELO" : ""}{p.lider ? " · Líder" : ""}</span></span>
             <NivelFaceit n={p.nivel} size={26} />
           </a>
         ))}
       </div>
+      {st && (
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-5" data-testid="faceit-equipo-stats">
+          {[["Partidas", fmt(st.partidas)], ["Victorias", fmt(st.victorias)], ["Win %", fmt(st.winrate, " %")], ["Racha", fmt(st.racha)], ["Mejor racha", fmt(st.mejor_racha)]].map(([l, v]) => (
+            <div key={l} className="panel panel-pad"><div className="eyebrow mb-1">{l}</div><div className="d-3">{v}</div></div>
+          ))}
+        </div>
+      )}
+      {st && st.recientes.length > 0 && <div className="flex gap-1 items-center"><span className="small muted mr-2">Últimos resultados del equipo</span>{st.recientes.map((w, i) => <span key={i} className={"tag " + (w ? "" : "tag-rojo")} style={w ? { color: "var(--ok)" } : undefined}>{w ? "V" : "D"}</span>)}</div>}
+      {st && st.mapas.length > 0 && <div className="flex flex-wrap gap-2">{st.mapas.map((m) => <span key={m.mapa} className="tag">{m.mapa.replace(/^de_/, "")} · {m.partidas} · {fmt(m.winrate, " %")}</span>)}</div>}
+      {eq.tipo === "faceit" && <div className="grid gap-2"><h3 className="d-3">Partidas con el equipo</h3><TablaPartidas partidas={eq.partidas || []} /></div>}
     </div>
   );
 }
