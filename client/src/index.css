@@ -219,6 +219,8 @@ button { font: inherit; color: inherit; }
   font: inherit; transition: border-color var(--t-fast);
 }
 .input:focus { outline: none; border-color: var(--rojo); }
+textarea.input { height: auto; min-height: 120px; padding: 0.7rem 0.85rem; line-height: 1.5; resize: vertical; }
+select.input { appearance: auto; }
 
 /* ---------- Textos legales ---------- */
 .legal { max-width: 78ch; display: grid; gap: 14px; color: var(--gris-1); line-height: 1.7; }

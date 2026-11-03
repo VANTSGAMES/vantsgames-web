@@ -6,6 +6,8 @@ import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
 import { fecha } from "@/lib/format";
 import { PLANES } from "./Membresias";
+import { useRanking, useEventos, FilaEvento } from "./Vants";
+import { NivelFaceit } from "./PerfilFaceit";
 
 function Hero() {
   const live = useApi<{ streams: Stream[] }>("/api/twitch/directos?limite=1", { refetchMs: 60_000 });
@@ -49,7 +51,8 @@ export default function Home() {
   const live = useApi<{ data: Paged<Match> }>("/api/matches?estado=live&porPagina=5", { refetchMs: 30_000 });
   const upcomingM = useApi<{ data: Paged<Match> }>("/api/matches?estado=upcoming&porPagina=5");
   const teams = useApi<{ data: Team[] }>("/api/teams");
-  const gpr = useApi<any>("/api/gpr");
+  const ranking = useRanking();
+  const eventos = useEventos();
   const clips = useApi<{ videos: YtVideo[] }>("/api/youtube/ultimos");
   const streams = useApi<{ streams: Stream[]; total_canales: number }>("/api/twitch/directos?limite=3", { refetchMs: 60_000 });
   const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
@@ -57,7 +60,7 @@ export default function Home() {
 
   const torneos = [...(destacados.data?.data.items || []), ...(proximos.data?.data.items || [])].slice(0, 5);
   const matches = [...(live.data?.data.items || []), ...(upcomingM.data?.data.items || [])].slice(0, 6);
-  const top = (gpr.data?.regions?.[0]?.equipos || []).slice(0, 5);
+  const top = (ranking.data?.faceit || []).slice(0, 5);
 
   return (
     <>
@@ -85,24 +88,23 @@ export default function Home() {
             />
           </div>
         </Section>
-        <Section id="ranking" eyebrow="Ranking" title="Power ranking VCT" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
+        <Section id="ranking" eyebrow="Ranking global" title="Top jugadores VANTS" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
           <div className="panel">
-            {gpr.isLoading ? <Skel n={5} h={44} /> : gpr.error ? <ErrorBox error={gpr.error} what="el ranking" /> : top.length === 0 ? (
-              <Empty code="ranking · 0" title="Ranking sin calcular" />
+            {ranking.isLoading ? <Skel n={5} h={44} /> : ranking.error ? <ErrorBox error={ranking.error} what="el ranking" /> : top.length === 0 ? (
+              <Empty code="ranking · 0" title="Aún no hay jugadores clasificados" text="Vincula FACEIT en tu perfil para entrar en el ranking VANTS." action={<Link href="/perfil/cuentas" className="link-arrow">Vincular FACEIT →</Link>} />
             ) : (
               <>
                 <ol>
-                  {top.map((e: any, i: number) => (
-                    <li key={e.t + i} className="row grid-cols-[32px_1fr_auto]">
-                      <span className="num muted">{String(i + 1).padStart(2, "0")}</span>
-                      <span className="font-semibold truncate">{e.n}</span>
-                      <span className="num">{e.p}</span>
+                  {top.map((e) => (
+                    <li key={e.nick + e.pos} className="row grid-cols-[32px_1fr_auto_auto] items-center gap-3">
+                      <span className="num" style={{ color: e.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(e.pos).padStart(2, "0")}</span>
+                      <a href={e.url} target="_blank" rel="noopener noreferrer" className="font-semibold truncate hover:text-[var(--rojo)]">{e.nick}{e.equipo?.tag ? <span className="small muted"> · {e.equipo.tag}</span> : null}</a>
+                      <NivelFaceit n={e.nivel} size={24} />
+                      <span className="num">{e.elo ?? "—"}</span>
                     </li>
                   ))}
                 </ol>
-                <p className="small muted px-4 py-3 border-t" style={{ borderColor: "var(--linea-suave)" }}>
-                  {gpr.data.regions[0].n} · fuente {gpr.data.source === "riot" ? "Riot Games" : gpr.data.source} · {fecha(gpr.data.calculated, { day: "2-digit", month: "short", year: "numeric" })}
-                </p>
+                <p className="small muted px-4 py-3 border-t" style={{ borderColor: "var(--linea-suave)" }}>Jugadores VANTS · ELO de FACEIT CS2</p>
               </>
             )}
           </div>
@@ -111,7 +113,7 @@ export default function Home() {
 
       <Section id="equipos" eyebrow="Circuito" title="Equipos" more={{ to: "/equipos", label: "Todos los equipos" }}>
         {teams.isLoading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los equipos" /> : (teams.data?.data || []).length === 0 ? (
-          <Empty code="equipos · 0" title="Aún no hay equipos registrados" text="Los equipos aparecen al inscribirse en el circuito." />
+          <Empty code="equipos · 0" title="Aún no hay equipos registrados" text="Sé el primero: crea tu equipo e invita a tus compañeros con un código." action={<Link href="/equipos" className="link-arrow">Crear equipo →</Link>} />
         ) : (
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
             {teams.data!.data.slice(0, 8).map((t) => <TeamTile key={t.slug} t={t} />)}
@@ -129,7 +131,7 @@ export default function Home() {
             </div>
           </div>
           <div className="p-6 md:p-8" style={{ background: "var(--grafito-1)" }}>
-            <Empty code="ranked · temporada" title="La temporada de Ranked todavía no ha empezado" text="Cuando el backend publique la tabla de la temporada verás aquí las primeras posiciones." action={<Link href="/ranked" className="link-arrow">Cómo funciona <span aria-hidden>→</span></Link>} />
+            <Empty code="ranked · temporada" title="La temporada de Ranked todavía no ha empezado" text="Mientras tanto, la clasificación de jugadores VANTS se calcula con el ELO de FACEIT." action={<Link href="/ranking" className="link-arrow">Ver ranking VANTS <span aria-hidden>→</span></Link>} />
           </div>
         </div>
       </Section>
@@ -162,6 +164,13 @@ export default function Home() {
                 <span className="font-semibold">{a.titulo}</span>
               </Link>
             ))}
+          </div>
+        </Section>
+        <Section id="eventos" eyebrow="Comunidad" title="Próximos eventos" more={{ to: "/eventos", label: "Todos" }} className="!px-0 lg:col-span-2">
+          <div className="panel">
+            {eventos.isLoading ? <Skel n={2} h={56} /> : eventos.error ? <ErrorBox error={eventos.error} what="los eventos" /> : (eventos.data?.eventos || []).length === 0 ? (
+              <Empty code="eventos · 0" title="No hay eventos programados" />
+            ) : eventos.data!.eventos.slice(0, 3).map((e) => <FilaEvento key={e.id} e={e} />)}
           </div>
         </Section>
       </div>

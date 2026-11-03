@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
+import { MisEquiposPanel, MisInscripciones, LogrosJuego } from "./Vants";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -58,6 +59,7 @@ function Resumen() {
         </div>
       </div>
       <PanelFaceit />
+      <div className="panel panel-pad grid gap-4"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Logros conseguidos</h2><Link href="/logros" className="link-arrow">Ver todos →</Link></div><LogrosJuego compacto /></div>
       <div className="grid gap-6 md:grid-cols-3">
         <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>
         <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Insignias y logros</div><p className="small muted">Validados por el motor de logros.</p></Link>
@@ -230,8 +232,8 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
   membresia: { t: "Membresía", el: Membresia },
   estadisticas: { t: "Estadísticas", el: EstadisticasFaceit },
-  equipos: { t: "Mis equipos", el: EquipoFaceit },
-  torneos: { t: "Mis torneos", el: () => <div className="wrap"><Empty code="torneos · 0" title="No tienes inscripciones" text="Tus inscripciones y su estado (pendiente, confirmada o rechazada) aparecerán aquí." action={<Link href="/torneos/competir" className="link-arrow">Buscar torneos →</Link>} /></div> },
+  equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit /></div></div> },
+  torneos: { t: "Mis torneos", el: MisInscripciones },
 };
 
 export default function Perfil() {

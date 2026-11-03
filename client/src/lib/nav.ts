@@ -6,7 +6,7 @@ export const NAV: NavGroup[] = [
     { label: "Sala de jugadores", to: "/sala", hint: "Jugadores registrados en VANTS" },
     { label: "Equipos del circuito", to: "/equipos", hint: "Plantillas y fichas" },
     { label: "Equipo VANTS", to: "/equipo-vants", hint: "El roster oficial" },
-    { label: "Ranking global", to: "/ranking", hint: "Clasificación calculada en servidor" },
+    { label: "Ranking global", to: "/ranking", hint: "Jugadores VANTS por ELO de FACEIT" },
     { label: "VANTS Ranked", to: "/ranked", hint: "Competición por rango" },
   ]},
   { label: "Torneos", base: "/torneos", links: [

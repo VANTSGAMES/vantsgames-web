@@ -14,6 +14,8 @@
 // Variables: AUTH0_DOMAIN, AUTH0_AUDIENCE, SITE_ORIGINS, SITE_URL,
 //   CANALES_TWITCH, CANALES_KICK (canales oficiales, separados por coma)
 
+import { rutasComunidad, refrescarRanking, guardarRanking } from './comunidad.js';
+
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
 
@@ -366,6 +368,10 @@ async function rutas(req, env, url) {
     return json({ ok: true, ...f, actual: await partidaActual(env, id) });
   }
 
+  // Ranking, equipos, eventos, logros, inscripciones y publicación (owner)
+  const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, perfilFaceit, notificar, discord });
+  if (rc) return rc;
+
   // ---- privadas (Auth0)
   const sub = await usuario(req, env);
 
@@ -379,6 +385,7 @@ async function rutas(req, env, url) {
     if (lk.faceit && lk.faceit.platform_user_id) {
       try {
         faceit = await perfilFaceit(env, lk.faceit.platform_user_id);
+        if (faceit) await guardarRanking(env, sub, faceit).catch(() => null);
         actual = await partidaActual(env, lk.faceit.platform_user_id);
       } catch (e) { errorFaceit = String(e.message || e); }
     }
@@ -434,6 +441,7 @@ export default {
     ctx.waitUntil((async () => {
       try { await procesarFaceit(env); } catch (e) { console.error('cron_faceit', String(e)); }
       try { await revisarDirectos(env); } catch (e) { console.error('cron_directos', String(e)); }
+      try { await refrescarRanking(env, perfilFaceit, 15); } catch (e) { console.error('cron_ranking', String(e)); }
     })());
   },
 };

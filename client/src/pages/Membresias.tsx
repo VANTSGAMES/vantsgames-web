@@ -2,6 +2,8 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { api, assetUrl, type Badge } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
+import { LogrosJuego } from "./Vants";
+
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate } from "@/components/ui-vants";
 
@@ -141,30 +143,39 @@ export function Insignias() {
 export function Logros() {
   return (
     <>
-      <PageHead eyebrow="Logros" title="Mis logros" lead="Logros desbloqueados por tu cuenta, validados en el servidor." />
+      <PageHead eyebrow="Logros" title="Mis logros" lead="Tus logros de juego e insignias, validados en el servidor." />
       <AuthGate what="tus logros"><MisLogros /></AuthGate>
     </>
   );
 }
 
 function MisLogros() {
-  const q = useApi<any>("/api/me/achievements", { auth: true });
-  const items: any[] = q.data?.achievements || q.data?.badges || q.data?.data || [];
+  const q = useApi<any>("/api/me/badges", { auth: true });
+  const items: any[] = (q.data?.badges || []).filter((a: any) => a && a.badge && a.status === "active");
   return (
-    <div className="wrap">
-      {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="tus logros" /> : items.length === 0 ? (
-        <Empty code="logros · 0" title="Todavía no has desbloqueado logros" text="Juega torneos, completa tu perfil y vincula tus cuentas: el servidor registra cada logro al cumplirse." action={<Link href="/insignias" className="link-arrow">Ver requisitos <span aria-hidden>→</span></Link>} />
-      ) : (
-        <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((a: any) => (
-            <div key={a.code || a.id} className="p-5">
-              {a.image?.webp && <img src={assetUrl(a.image.webp)!} alt="" width={56} height={56} />}
-              <div className="d-3 mt-2">{a.name || a.code}</div>
-              {a.awarded_at && <div className="small muted num">{new Date(a.awarded_at).toLocaleDateString("es-ES")}</div>}
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="wrap grid gap-10">
+      <div className="grid gap-4">
+        <h2 className="d-2">Logros de juego</h2>
+        <p className="small muted -mt-2">Se calculan con tus datos reales: FACEIT, equipo, inscripciones y cuentas vinculadas.</p>
+        <LogrosJuego />
+      </div>
+      <div className="grid gap-4">
+        <h2 className="d-2">Insignias conseguidas</h2>
+        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="tus insignias" /> : items.length === 0 ? (
+          <Empty code="insignias · 0" title="Todavía no tienes insignias" text="Las insignias las concede el motor de logros al registrarte, activar una membresía o ganar torneos oficiales." action={<Link href="/insignias" className="link-arrow">Ver requisitos <span aria-hidden>→</span></Link>} />
+        ) : (
+          <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
+            {items.map((a: any) => (
+              <div key={a.badge.code} className="p-5 grid gap-2 content-start" data-testid={"insignia-" + a.badge.code}>
+                {a.badge.image?.webp && <img src={assetUrl(a.badge.image.webp)!} alt="" width={64} height={64} />}
+                <div className="d-3">{a.badge.name}</div>
+                <p className="small muted">{a.badge.description}</p>
+                {a.awarded_at && <div className="small muted num">Conseguida el {new Date(a.awarded_at).toLocaleDateString("es-ES")}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

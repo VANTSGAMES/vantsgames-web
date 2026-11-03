@@ -12,7 +12,7 @@ export const SEO: [RegExp, string, string][] = [
   [/^\/sala/, "Sala de jugadores — VANTS GAMES", "Jugadores del circuito VANTS."],
   [/^\/equipos/, "Equipos — VANTS GAMES", "Equipos del circuito VANTS con plantilla e historial."],
   [/^\/equipo-vants/, "Equipo VANTS — VANTS GAMES", "El roster oficial de VANTS."],
-  [/^\/ranking/, "Ranking global — VANTS GAMES", "Clasificación de equipos calculada en servidor."],
+  [/^\/ranking/, "Ranking global — VANTS GAMES", "Clasificación de jugadores VANTS por ELO de FACEIT y XP."],
   [/^\/ranked/, "VANTS Ranked — VANTS GAMES", "Competición por rango de VANTS."],
   [/^\/clips/, "Clips — VANTS GAMES", "Las mejores jugadas de la comunidad VANTS."],
   [/^\/noticias/, "Noticias — VANTS GAMES", "Anuncios oficiales del circuito VANTS."],

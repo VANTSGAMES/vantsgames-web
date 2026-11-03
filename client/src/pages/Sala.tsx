@@ -6,6 +6,7 @@ import { api, assetUrl, type Team, type PtPlayer, type AccountPlayer, type Paged
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
 import { TeamTile, PlayerTile, MatchRow } from "@/components/domain";
 import { fecha, gameLabel } from "@/lib/format";
+import { EquiposCTA, MiembrosVants, FaceitDeJugador } from "./Vants";
 
 function useRosters(teams: Team[] | undefined) {
   const qs = useQueries({
@@ -64,7 +65,7 @@ export function Equipos() {
   const vis = (q.data?.data || []).filter((t) => !juego || t.game === juego);
   return (
     <>
-      <PageHead eyebrow="Circuito" title="Equipos del circuito" lead="Equipos registrados en VANTS con su plantilla y sus partidas." />
+      <PageHead eyebrow="Circuito" title="Equipos del circuito" lead="Equipos registrados en VANTS con su plantilla y sus partidas. Crea el tuyo e invita a tus compañeros con un código." />
       <div className="wrap grid gap-4">
         <div className="flex gap-1" role="group" aria-label="Juego">
           {[["", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)} data-testid={"filter-equipos-" + (v || "todos")}>{l}</button>)}
@@ -73,6 +74,7 @@ export function Equipos() {
           <Empty code={"equipos · " + (juego || "todos")} title="No hay equipos en esta categoría" />
         ) : <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-3">{vis.map((t) => <TeamTile key={t.slug} t={t} />)}</div>}
       </div>
+      <EquiposCTA />
     </>
   );
 }
@@ -115,6 +117,7 @@ function TeamView({ slug, oficial = false }: { slug: string; oficial?: boolean }
           </div>
         )}
       </Section>
+      <MiembrosVants slug={t.slug} />
       <Section title="Partidas" eyebrow="Historial">
         <div className="panel">{(t.partidas || []).length === 0 ? <Empty code="partidas · 0" title="Sin partidas registradas" /> : t.partidas!.map((m, i) => <MatchRow key={i} m={m} />)}</div>
       </Section>
@@ -152,40 +155,8 @@ export function JugadorDetalle() {
       <div className="wrap py-10 grid gap-6 md:grid-cols-3">
         <div className="panel panel-pad"><div className="eyebrow mb-2">Equipo</div>{p.equipo ? <Link href={"/equipos/" + p.equipo.slug} className="d-2 block hover:text-[var(--rojo)]">{p.equipo.nombre}</Link> : <span className="muted">Agente libre</span>}</div>
         <div className="panel panel-pad"><div className="eyebrow mb-2">Juego</div><div className="d-2">{gameLabel(p.game) || "—"}</div></div>
-        <div className="panel panel-pad"><div className="eyebrow mb-2">Estadísticas</div><p className="muted small">Las estadísticas aparecerán cuando el jugador dispute partidas registradas o vincule su cuenta de FACEIT.</p></div>
+        <div className="panel panel-pad"><div className="eyebrow mb-2">FACEIT</div><FaceitDeJugador slug={p.slug} /></div>
         {p.bio && <div className="panel panel-pad md:col-span-3"><div className="eyebrow mb-2">Bio</div><p>{p.bio}</p></div>}
-      </div>
-    </>
-  );
-}
-
-export function Ranking() {
-  const q = useApi<any>("/api/gpr");
-  const [reg, setReg] = useState(0);
-  const regions: any[] = q.data?.regions || [];
-  return (
-    <>
-      <PageHead eyebrow="Ranking global" title="Ranking global" lead="Clasificación de equipos calculada en el servidor. El power ranking de VCT procede de Riot Games; el ranking propio de VANTS se publicará con la primera temporada." />
-      <div className="wrap">
-        {q.isLoading ? <Skel n={6} h={44} /> : q.error ? <ErrorBox error={q.error} what="el ranking" /> : regions.length === 0 ? <Empty code="ranking · 0" title="Ranking sin calcular" /> : (
-          <>
-            <div className="tabs mb-4" role="tablist">{regions.map((r, i) => <button key={r.id} role="tab" className="tab" aria-selected={reg === i} onClick={() => setReg(i)} data-testid={"tab-region-" + r.id}>{r.n}</button>)}</div>
-            <div className="panel">
-              <div className="row grid-cols-[48px_1fr_80px_90px] small muted" style={{ background: "var(--grafito-2)" }}><span>#</span><span>Equipo</span><span>Tag</span><span className="text-right">Puntos</span></div>
-              <ol>
-                {(regions[reg]?.equipos || []).map((e: any, i: number) => (
-                  <li key={e.t + i} className="row grid-cols-[48px_1fr_80px_90px]">
-                    <span className="num" style={{ color: i < 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(i + 1).padStart(2, "0")}</span>
-                    <span className="font-semibold truncate">{e.n}</span>
-                    <span className="tag w-fit">{e.t}</span>
-                    <span className="num text-right">{e.p}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <p className="small muted mt-3">Fuente: {q.data.source === "riot" ? "Riot Games (VCT Global Power Ranking)" : q.data.source} · calculado el {fecha(q.data.calculated, { day: "2-digit", month: "long", year: "numeric" })} · {q.data.total} equipos.</p>
-          </>
-        )}
       </div>
     </>
   );

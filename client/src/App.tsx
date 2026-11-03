@@ -8,12 +8,13 @@ import { useSeo } from "./lib/seo";
 import Home from "./pages/Home";
 import NotFound from "./pages/not-found";
 import { TorneosLista, TorneoDetalle, Agenda, MiCalendario, BracketPrincipal, Ligas } from "./pages/Torneos";
-import { SalaJugadores, Equipos, EquipoDetalle, EquipoVants, JugadorDetalle, Ranking, Ranked } from "./pages/Sala";
-import { Clips, ClipsPrivado, Noticias, NoticiaDetalle, EnVivo, Creadores, Eventos, Comunidad } from "./pages/Comunidad";
+import { SalaJugadores, Equipos, EquipoDetalle, EquipoVants, JugadorDetalle, Ranked } from "./pages/Sala";
+import { Clips, ClipsPrivado, Noticias, NoticiaDetalle, EnVivo, Creadores, Comunidad } from "./pages/Comunidad";
 import Membresias, { Insignias, Logros, Progreso } from "./pages/Membresias";
 import Tienda from "./pages/Tienda";
 import Perfil, { Acceso } from "./pages/Perfil";
 import Legal from "./pages/Legal";
+import { RankingVants, EventosLista, Publicar } from "./pages/Vants";
 
 /** URLs de la web anterior → equivalente en la nueva (enlaces externos, buscadores, Auth0/Stripe). */
 const ANTIGUAS: [string, string][] = [
@@ -41,7 +42,7 @@ function Rutas() {
         <Route path="/equipos/:slug" component={EquipoDetalle} />
         <Route path="/equipo-vants" component={EquipoVants} />
         <Route path="/jugadores/:slug" component={JugadorDetalle} />
-        <Route path="/ranking" component={Ranking} />
+        <Route path="/ranking" component={RankingVants} />
         <Route path="/ranked" component={Ranked} />
         <Route path="/torneos">{() => <TorneosLista />}</Route>
         <Route path="/torneos/competir">{() => <TorneosLista competir />}</Route>
@@ -59,7 +60,8 @@ function Rutas() {
         <Route path="/comunidad" component={Comunidad} />
         <Route path="/noticias" component={Noticias} />
         <Route path="/noticias/:slug" component={NoticiaDetalle} />
-        <Route path="/eventos" component={Eventos} />
+        <Route path="/eventos" component={EventosLista} />
+        <Route path="/publicar" component={Publicar} />
         <Route path="/en-vivo" component={EnVivo} />
         <Route path="/creadores" component={Creadores} />
         <Route path="/membresias" component={Membresias} />

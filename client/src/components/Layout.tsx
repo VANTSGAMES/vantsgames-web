@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useRol } from "@/pages/Vants";
 import { Link, useLocation } from "wouter";
 import { NAV, PERFIL_LINKS } from "@/lib/nav";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
@@ -97,12 +98,19 @@ function Dropdown({ label, base, links, path }: { label: string; base: string; l
   );
 }
 
+function EnlacePublicar() {
+  const rol = useRol();
+  if (!rol.data?.owner) return null;
+  return <Link href="/publicar" className="btn btn-sm btn-rojo hidden sm:inline-flex" data-testid="link-publicar">Publicar</Link>;
+}
+
 function AccountButton() {
   const { status, user, login, logout } = useAuth();
   if (status === "autenticado") {
     return (
       <div className="flex items-center gap-2">
         <Campana />
+        <EnlacePublicar />
         <Link href="/perfil" className="btn btn-sm" data-testid="link-perfil">Mi perfil</Link>
         <button className="btn btn-sm btn-ghost" onClick={() => logout()} data-testid="button-logout" aria-label={"Cerrar sesión" + (user?.nickname ? " de " + user.nickname : "")}>Salir</button>
       </div>

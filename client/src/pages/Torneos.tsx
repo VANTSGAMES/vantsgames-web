@@ -6,6 +6,8 @@ import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
 import { TournamentRow, MatchRow } from "@/components/domain";
 import { dinero, fecha, hora } from "@/lib/format";
+import { useMisEquipos, MisInscripciones } from "./Vants";
+import { useQueryClient } from "@tanstack/react-query";
 
 const JUEGOS = [{ v: "", l: "Todos" }, { v: "valorant", l: "VALORANT" }, { v: "cs2", l: "CS2" }];
 
@@ -122,6 +124,15 @@ function Inscripcion({ t }: { t: Tournament }) {
   const { status, login } = useAuth();
   const [form, setForm] = useState({ equipo: "", tag: "", capitan: "", region: t.region || "" });
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; msg?: string }>({ k: "idle" });
+  const qc = useQueryClient();
+  const mis = useMisEquipos();
+  const delJuego = (mis.data?.equipos || []).filter((e) => e.juego === t.game?.slug);
+  const usarEquipo = (slug: string) => {
+    const e = delJuego.find((x) => x.slug === slug);
+    if (!e) return;
+    const cap = e.miembros.find((m) => m.rol === "capitan");
+    setForm({ equipo: e.nombre, tag: e.tag || "", capitan: cap ? cap.nick : form.capitan, region: e.region || form.region });
+  };
   if (t.estado !== "upcoming") return <p className="muted small">Las inscripciones de este torneo están cerradas.</p>;
   if (status !== "autenticado") {
     return (
@@ -131,13 +142,14 @@ function Inscripcion({ t }: { t: Tournament }) {
       </div>
     );
   }
-  if (st.k === "ok") return <div className="empty" style={{ borderColor: "rgba(61,220,132,.4)" }} role="status"><span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span><p className="d-3">Solicitud registrada</p><p className="small muted">La organización revisará la inscripción. Su estado aparecerá en Mis torneos.</p></div>;
+  if (st.k === "ok") return <div className="empty" style={{ borderColor: "rgba(61,220,132,.4)" }} role="status"><span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span><p className="d-3">Solicitud registrada</p><p className="small muted">La organización revisará la inscripción. Su estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link> y recibirás un aviso en la campana.</p></div>;
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSt({ k: "enviando" });
     try {
       await api("/api/torneos/inscribir", { method: "POST", auth: true, body: { torneo: t.slug, juego: t.game?.slug, ...form } });
       setSt({ k: "ok" });
+      qc.invalidateQueries({ queryKey: ["/int/mis-inscripciones"] });
     } catch (err: any) {
       const m: Record<string, string> = { equipo_ya_inscrito: "Ese equipo ya está inscrito en este torneo.", datos_invalidos: "Revisa los datos del equipo.", sin_sesion: "Tu sesión expiró.", "Origen no permitido": "Este dominio aún no está autorizado por la API para inscribir equipos." };
       setSt({ k: "error", msg: m[err.code] || "No se pudo registrar la inscripción (" + err.code + ")." });
@@ -146,6 +158,9 @@ function Inscripcion({ t }: { t: Tournament }) {
   const set = (k: keyof typeof form) => (e: any) => setForm({ ...form, [k]: e.target.value });
   return (
     <form onSubmit={submit} className="grid gap-3" data-testid="form-inscripcion">
+      {delJuego.length > 0 ? (
+        <div className="field"><label htmlFor="mi-eq">Inscribir uno de mis equipos</label><select id="mi-eq" className="input" defaultValue="" onChange={(e) => usarEquipo(e.target.value)} data-testid="select-mi-equipo"><option value="" disabled>Elegir equipo…</option>{delJuego.map((e) => <option key={e.slug} value={e.slug}>{e.nombre}{e.tag ? " [" + e.tag + "]" : ""}</option>)}</select></div>
+      ) : mis.data ? <p className="small muted">¿Aún no tienes equipo de {t.game?.nombre || "este juego"}? <Link href="/equipos" className="link-arrow">Crea uno</Link> y vuelve aquí.</p> : null}
       <div className="field"><label htmlFor="eq">Nombre del equipo</label><input id="eq" className="input" required maxLength={32} value={form.equipo} onChange={set("equipo")} /></div>
       <div className="grid grid-cols-2 gap-3">
         <div className="field"><label htmlFor="tg">Tag</label><input id="tg" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" value={form.tag} onChange={set("tag")} /></div>
@@ -256,9 +271,9 @@ export function Agenda({ modo }: { modo: "agenda" | "resultados" }) {
 export function MiCalendario() {
   return (
     <>
-      <PageHead eyebrow="Tu calendario" title="Mi calendario" lead="Los partidos de los torneos en los que participa tu equipo." />
+      <PageHead eyebrow="Tu calendario" title="Mi calendario" lead="Los torneos en los que está inscrito tu equipo, con su fecha y el estado de la inscripción." />
       <AuthGate what="tu calendario">
-        <div className="wrap"><Empty code="calendario · 0" title="No tienes partidos programados" text="Cuando tu equipo esté confirmado en un torneo, sus partidos aparecerán aquí con fecha y hora en tu zona horaria." action={<Link href="/torneos/competir" className="link-arrow">Buscar torneos →</Link>} /></div>
+        <MisInscripciones />
       </AuthGate>
     </>
   );
