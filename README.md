@@ -1,17 +1,35 @@
-# VANTS GAMES — Web pública
+# VANTS GAMES — Web Privada
 
-Web pública de VANTS GAMES para jugadores y visitantes: torneos de VALORANT y Counter-Strike 2, sala de jugadores, clips, comunidad, membresías y perfil.
+<sub>PROJECT STATUS: ARCHIVED · COMPLETED</sub>
 
-> Este repositorio es independiente de **VantsHubLauche** (Dashboard interno). La administración se hace en VantsHubLauche y se comunica con esta web mediante la API autorizada del Worker de Vantsgames. Aquí no hay panel administrativo.
+Web pública de **VANTS GAMES** para jugadores y visitantes: torneos de VALORANT y Counter-Strike 2, sala de jugadores, clips, comunidad, membresías y perfiles.
+
+Este proyecto ha alcanzado su estado de desarrollo previsto. El repositorio queda archivado hasta nuevo aviso, conservando su código, documentación e historial.
+
+> Este repositorio es independiente de **VantsHubLauche**, el Dashboard interno de operaciones. La administración se realiza desde VantsHubLauche y se comunica con esta web mediante la API autorizada del Worker de Vantsgames. Esta web no incorpora un panel administrativo.
+
+---
+
+## Estado del proyecto
+
+| Área | Estado |
+|---|---|
+| Desarrollo principal | Finalizado |
+| Frontend público | Conservado |
+| Arquitectura | Documentada |
+| Nuevas funcionalidades | Suspendidas |
+| Mejoras | Suspendidas |
+| Mantenimiento evolutivo | Suspendido |
+| Repositorio | Archivado |
 
 ## Arquitectura
 
-- **Frontend propio**: React + Vite + wouter + TanStack Query + Tailwind. No reutiliza páginas ni componentes de la web anterior.
-- **Datos**: todo se lee de la API de Vantsgames (Cloudflare Worker + D1). Esta web no tiene base de datos propia. Sin Neon.
-- **Proxy**: `server/routes.ts` reenvía `/api/*` al Worker de Vantsgames (`VANTS_API_ORIGIN`, por defecto el Worker de preview) y `/fn/*` a `vants-functions`.
-- **Autenticación**: Auth0 (`vants.eu.auth0.com`). Se activa con `VITE_AUTH_ENABLED=1` solo en dominios registrados en Auth0. Sesiones y permisos se validan en el servidor.
-- **Pagos**: Stripe Checkout real vía `vants-functions`. La web nunca activa un plan por su cuenta.
-- **Tienda**: sin carrito ni pagos hasta que exista un catálogo conectado a comercio real.
+- **Frontend propio:** React + Vite + wouter + TanStack Query + Tailwind. No reutiliza páginas ni componentes de la web anterior.
+- **Datos:** toda la información se obtiene de la API de Vantsgames (Cloudflare Worker + D1). Esta web no tiene base de datos propia. Sin Neon.
+- **Proxy:** `server/routes.ts` reenvía `/api/*` al Worker de Vantsgames (`VANTS_API_ORIGIN`, por defecto el Worker de preview) y `/fn/*` a `vants-functions`.
+- **Autenticación:** Auth0 (`vants.eu.auth0.com`). Se activa con `VITE_AUTH_ENABLED=1` únicamente en dominios registrados en Auth0. Las sesiones y permisos se validan en el servidor.
+- **Pagos:** Stripe Checkout mediante `vants-functions`. La web nunca activa un plan por su cuenta.
+- **Tienda:** sin carrito ni pagos hasta disponer de un catálogo conectado a un comercio real.
 
 ## Desarrollo
 
@@ -21,7 +39,7 @@ npm run dev          # http://localhost:5000
 npm run build        # dist/public (estático) + dist/index.cjs (proxy)
 ```
 
-Variables:
+### Variables de entorno
 
 | Variable | Uso |
 |---|---|
@@ -32,16 +50,85 @@ Variables:
 
 ## Producción
 
-La web se publica en **https://vants.vants.workers.dev** dentro del Worker `vants` (repo Vantsgames, `vants-server/public`), junto a la API.
+La web se publica en:
 
-**Publicación automática**: el workflow `.github/workflows/web-deploy.yml` se ejecuta en cada push a `main` (y con `workflow_dispatch`): construye el cliente con `VITE_AUTH_ENABLED=1` y `VITE_AUTH0_CLIENT_ID=totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo`, copia el build a `vants-server/public` del repo Vantsgames y ese push dispara el deploy de Cloudflare. Usar este repo como única fuente del frontend; no editar `vants-server/public` a mano.
+**https://vants.vants.workers.dev**
 
-Los archivos extra que el Worker sirve (`assets/badges/`, `static/`, `.well-known/`, verificaciones de Google/Manicule, `robots.txt`, `llms.txt`, `_headers`, `sw.js`, `admin-logros.html`) viven ahora en `client/public/` para que el build sea autocontenido. El Client ID de Auth0 del login es el de la app **VANTS** del tenant `vants.eu.auth0.com`.
+Se encuentra dentro del Worker `vants` (repositorio Vantsgames, `vants-server/public`), junto a la API.
 
-`worker/` contiene el Worker de preview independiente (opcional).
+### Publicación automática
 
-## Reglas
+El workflow `.github/workflows/web-deploy.yml` se ejecuta en cada push a `main` y mediante `workflow_dispatch`.
 
-- Trabajo solo en Preview hasta autorización expresa para producción.
-- Sin datos ficticios: si no hay contenido, estado vacío.
-- No mezclar con el Dashboard ni con VANTS-Clipper.
+Proceso:
+
+1. Construye el cliente con `VITE_AUTH_ENABLED=1` y el Client ID de Auth0 configurado.
+2. Copia el build a `vants-server/public` del repositorio Vantsgames.
+3. El push resultante activa el despliegue de Cloudflare.
+
+Este repositorio es la fuente principal del frontend. No editar `vants-server/public` manualmente.
+
+### Archivos públicos
+
+Los siguientes recursos viven en `client/public/` para que el build sea autocontenido:
+
+- `assets/badges/`
+- `static/`
+- `.well-known/`
+- Verificaciones de Google y Manicule.
+- `robots.txt`
+- `llms.txt`
+- `_headers`
+- `sw.js`
+- `admin-logros.html`
+
+El Client ID de Auth0 del login corresponde a la aplicación **VANTS** del tenant `vants.eu.auth0.com`.
+
+### Preview
+
+`worker/` contiene un Worker de preview independiente y opcional.
+
+---
+
+## Reglas del proyecto
+
+- El trabajo se realiza exclusivamente en Preview hasta recibir autorización expresa para producción.
+- No utilizar datos ficticios: cuando no exista contenido, mostrar estados vacíos.
+- No mezclar este proyecto con VantsHubLauche ni con VANTS-Clipper.
+- No modificar la arquitectura ni las integraciones sin autorización.
+- Mantener separadas las responsabilidades de cada repositorio.
+
+## Política de archivado
+
+Este repositorio se conserva como versión de referencia del frontend público de VANTS GAMES.
+
+A partir de su archivado:
+
+- No se desarrollarán nuevas funcionalidades.
+- No se implementarán mejoras visuales ni técnicas.
+- No se aceptarán nuevas tareas de desarrollo.
+- No se realizarán actualizaciones rutinarias.
+- No se garantiza mantenimiento ni soporte evolutivo.
+- El historial, código y documentación permanecerán conservados.
+
+Las automatizaciones de GitHub Actions pueden quedar suspendidas mientras el repositorio permanezca archivado. Los servicios externos y la infraestructura de producción tienen un ciclo de vida independiente.
+
+## Reactivación
+
+El repositorio podrá desarchivarse si VANTS decide retomar su desarrollo.
+
+Cualquier nueva etapa de trabajo requerirá autorización expresa y planificación independiente.
+
+---
+
+<p align="center">
+
+**VANTS GAMES**
+
+Competitive Gaming & Esports Ecosystem
+
+`PROJECT COMPLETED` · `ARCHIVED UNTIL FURTHER NOTICE`
+
+© VANTS GAMES
+
+</p>
