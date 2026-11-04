@@ -94,7 +94,7 @@ export function FilaInsignias({ codes, size = 56, vacio }: { codes: string[]; si
   );
 }
 
-export function DetalleInsignia({ b, conseguida, estado, onCerrar }: { b: Insignia; conseguida: boolean; estado?: EstadoInsignia; onCerrar: () => void }) {
+export function DetalleInsignia({ b, conseguida, estado, onCerrar, sinEstado }: { b: Insignia; conseguida: boolean; estado?: EstadoInsignia; onCerrar: () => void; sinEstado?: boolean }) {
   useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onCerrar(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onCerrar]);
   return (
     <div role="dialog" aria-modal="true" aria-label={"Insignia " + b.nombre} className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(5,5,7,.82)", backdropFilter: "blur(6px)" }} onClick={onCerrar}>
@@ -103,7 +103,7 @@ export function DetalleInsignia({ b, conseguida, estado, onCerrar }: { b: Insign
         <VisorInsignia d={b} size={240} />
         <div>
           <div className="d-2" style={{ color: b.color }}>{b.nombre}</div>
-          <div className="flex justify-center gap-1.5 mt-2"><span className="tag">{rareza(b.rareza)}</span>{conseguida ? <span className="tag" style={{ color: "var(--ok)", borderColor: "var(--ok)" }}>Conseguida</span> : <span className="tag">Bloqueada</span>}{b.manual && <span className="tag">Por invitación</span>}</div>
+          <div className="flex justify-center gap-1.5 mt-2"><span className="tag">{rareza(b.rareza)}</span>{sinEstado ? null : conseguida ? <span className="tag" style={{ color: "var(--ok)", borderColor: "var(--ok)" }}>Conseguida</span> : <span className="tag">Bloqueada</span>}{b.manual && <span className="tag">Por invitación</span>}</div>
         </div>
         <p className="small">{b.descripcion}</p>
         <p className="small muted">Requisito: {b.requisito}</p>

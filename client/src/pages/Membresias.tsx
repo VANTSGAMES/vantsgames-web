@@ -160,7 +160,7 @@ export function BadgeGrid({ standalone = false }: { standalone?: boolean }) {
           ))}
         </div>
       )}
-      {abierta && <DetalleInsignia b={abierta} conseguida={logueado ? !!estado.get(abierta.code)?.ok : true} estado={estado.get(abierta.code)} onCerrar={() => setAbierta(null)} />}
+      {abierta && <DetalleInsignia b={abierta} conseguida={logueado ? !!estado.get(abierta.code)?.ok : true} estado={estado.get(abierta.code)} sinEstado={!logueado} onCerrar={() => setAbierta(null)} />}
     </Section>
   );
 }
