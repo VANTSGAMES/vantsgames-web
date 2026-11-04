@@ -174,10 +174,10 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
     } catch (err) { setSt({ k: "error", m: mensaje(err) }); }
   };
   return (
-    <form onSubmit={enviar} className="panel panel-pad grid gap-4" data-testid="form-publicar-clip">
+    <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-publicar-clip">
       <div><h2 className="d-3">Publicar por enlace</h2><p className="small muted mt-1">Pega el enlace de tu clip de Twitch, Kick, YouTube, Medal, Streamable u Outplayed. Se reproduce aquí mismo.</p></div>
-      <div className="grid gap-4 md:grid-cols-[2fr_1.4fr_auto]">
-        <div className="field">
+      <div className="grid gap-4 sm:grid-cols-2 min-w-0 [&>*]:min-w-0">
+        <div className="field sm:col-span-2">
           <label htmlFor="clip-url">Enlace del clip</label>
           <input id="clip-url" className="input" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://clips.twitch.tv/… o https://kick.com/canal/clips/…" maxLength={400} data-testid="input-clip-url" />
           <span className="text-xs muted">Twitch: clips.twitch.tv/… o twitch.tv/canal/clip/… · Kick: kick.com/canal/clips/clip_…</span>
@@ -256,19 +256,20 @@ export function SubirClip() {
     } catch (err) { setSt({ k: "error", m: mensaje(err) }); }
   };
   return (
-    <form onSubmit={enviar} className="panel panel-pad grid gap-4" data-testid="form-subir-clip">
+    <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-subir-clip">
       <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta {MAX_MB} MB (MP4, WEBM, MOV o MKV). Se publica en tu biblioteca y en Clips de la comunidad VANTS.</p></div>
-      <div className="grid gap-4 md:grid-cols-[2fr_1.4fr_auto]">
-        <div className="field">
+      <div className="grid gap-4 sm:grid-cols-2 min-w-0">
+        <div className="field sm:col-span-2 min-w-0">
           <label htmlFor="clip-archivo">Vídeo</label>
           <input id="clip-archivo" className="input" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv,.m4v" onChange={(e) => elegir(e.target.files?.[0])} data-testid="input-clip-archivo" />
           {file && <span className="text-xs muted">{file.name} · {(file.size / 1048576).toFixed(1)} MB</span>}
         </div>
-        <div className="field"><label htmlFor="clip-titulo-up">Título</label><input id="clip-titulo-up" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={80} placeholder="Clutch 1v3" /></div>
-        <div className="field"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)} required data-testid="select-clip-juego-up"><option value="" disabled>Selecciona el juego</option><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
+        <div className="field min-w-0"><label htmlFor="clip-titulo-up">Título</label><input id="clip-titulo-up" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={80} placeholder="Clutch 1v3" /></div>
+        <div className="field min-w-0"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)} required data-testid="select-clip-juego-up"><option value="" disabled>Selecciona el juego</option><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <button className="btn btn-rojo" disabled={st.k === "enviando" || !file || !juego} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>
+        {file && !juego && st.k !== "enviando" && !st.m && <span className="small muted">Elige el juego para poder subir.</span>}
         {st.m && <span className="small" role={st.k === "error" ? "alert" : "status"} style={{ color: st.k === "error" ? "#ff5468" : st.k === "ok" ? "var(--ok)" : undefined }}>{st.m}</span>}
       </div>
     </form>
@@ -301,7 +302,7 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   const kick = f((q.data?.kick && q.data.kick.length ? q.data.kick : kk.data) || []).filter((c) => !enlaces.has(c.url));
   return (
     <div className="grid gap-8" data-testid="mi-biblioteca">
-      {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start"><SubirClip /><PublicarClip /></div>}
+      {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0"><SubirClip /><PublicarClip /></div>}
       <div className="flex gap-1 flex-wrap" role="group" aria-label="Filtrar por juego">
         {([["todos", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]] as const).map(([v, l]) => <button key={v} className={"btn btn-sm " + (filtro === v ? "btn-rojo" : "btn-ghost")} aria-pressed={filtro === v} onClick={() => setFiltro(v)}>{l}</button>)}
       </div>
