@@ -24,6 +24,7 @@ type Logro = { code: string; nombre: string; descripcion: string; categoria: str
 export type Evento = { id: string; titulo: string; tipo: string; descripcion: string | null; juego: string | null; lugar: string | null; url: string | null; empieza: string; termina: string | null };
 
 const ERRORES: Record<string, string> = {
+  sin_perfil: "Tu cuenta todavía no tiene perfil público. Elige un nombre público en Configuración.",
   nombre_invalido: "El nombre debe tener al menos 2 caracteres.",
   tag_invalido: "El tag debe tener de 2 a 4 letras o números.",
   juego_invalido: "Elige VALORANT o CS2.",
@@ -200,7 +201,7 @@ function UnirseEquipo({ onOk }: { onOk: (slug: string) => void }) {
 /** Reduce la imagen a 256×256 (recorte centrado) y la devuelve como data URL WEBP/PNG.
  *  Se lee con FileReader (data:) porque la CSP de la web no permite imágenes blob:. */
 const leerDataUrl = (file: File) => new Promise<string>((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => ko(r.error); r.readAsDataURL(file); });
-async function imagenEquipo(file: File): Promise<string> {
+export async function imagenEquipo(file: File): Promise<string> {
   const valido = /^image\/(png|jpeg|jpg|pjpeg|webp|gif|avif|bmp)$/.test(file.type) || (!file.type && /\.(png|jpe?g|jfif|webp|gif|avif|bmp)$/i.test(file.name));
   if (!valido) throw Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" });
   const datos = await leerDataUrl(file);
@@ -337,14 +338,14 @@ export function EquiposCTA() {
 
 /** Miembros VANTS de un equipo (con nivel/ELO de FACEIT) en la ficha pública. */
 export function MiembrosVants({ slug }: { slug: string }) {
-  const q = useApi<{ vants: boolean; miembros: { nick: string; rol: string; nivel: number | null; elo: number | null; slug: string | null }[] }>("/int/equipos/" + slug);
+  const q = useApi<{ vants: boolean; miembros: { nick: string; rol: string; nivel: number | null; elo: number | null; slug: string | null; pid?: string | null; avatar?: string | null }[] }>("/int/equipos/" + slug);
   if (!q.data?.vants || q.data.miembros.length === 0) return null;
   return (
     <Section title="Jugadores VANTS" eyebrow="Nivel FACEIT">
       <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
         {q.data.miembros.map((m) => (
-          <Link key={m.nick} href={m.slug ? "/jugadores/" + m.slug : "#"} className="p-5 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors">
-            <Initials name={m.nick} size={44} />
+          <Link key={m.nick} href={m.pid ? "/u/" + m.pid : m.slug ? "/jugadores/" + m.slug : "#"} className="p-5 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors">
+            {m.avatar ? <img src={m.avatar} alt="" width={44} height={44} className="chamfer object-cover shrink-0" style={{ width: 44, height: 44 }} referrerPolicy="no-referrer" /> : <Initials name={m.nick} size={44} />}
             <div className="min-w-0 grow"><div className="d-3 truncate">{m.nick}</div><div className="small muted">{m.rol === "capitan" ? "Capitán" : "Jugador"}{m.elo ? " · " + m.elo + " ELO" : ""}</div></div>
             {m.nivel ? <NivelFaceit n={m.nivel} size={30} /> : null}
           </Link>

@@ -27,6 +27,7 @@ export async function identidades(db) {
   const nodo = (x) => { if (!padre.has(x)) padre.set(x, x); return x; };
   const unir = (a, b) => { const ra = raiz(nodo(a)), rb = raiz(nodo(b)); if (ra !== rb) padre.set(rb, ra); };
 
+  const fotos = new Map((await todas(db, 'SELECT pid, url, actualizado, datos IS NOT NULL AS tiene FROM integ_foto')).map((f) => [f.pid, f]));
   const [links, players, perfiles, ranking, miembros, riot] = await Promise.all([
     todas(db, 'SELECT auth0_sub, platform, handle, platform_user_id, avatar_url FROM vants_links'),
     todas(db, 'SELECT id, auth0_sub, discord_user_id, auth_user_id, display_name, username, xp, role, avatar_url, creado_at, stats FROM players'),
@@ -79,9 +80,13 @@ export async function identidades(db) {
     const conXp = [...gr.players].sort((a, b) => (b.xp || 0) - (a.xp || 0));
     const nick = (perf && perf.nickname) || (conSub[0] && (conSub[0].display_name || conSub[0].username)) || (rk && rk.nick) || (conXp[0] && (conXp[0].display_name || conXp[0].username)) || null;
     if (!nick) continue;
-    const avatar = (rk && rk.avatar) || gr.links.find((l) => l.avatar_url)?.avatar_url || conXp.find((p) => p.avatar_url && !/embed\/avatars/.test(p.avatar_url))?.avatar_url || null;
+    const foto = fotos.get(pid);
+    const fotoUrl = foto ? (foto.tiene ? 'https://vants-integraciones.vants.workers.dev/foto/' + pid + '?v=' + encodeURIComponent(String(foto.actualizado || '').replace(/\D/g, '')) : foto.url) : null;
+    const avatar = fotoUrl || (rk && rk.avatar) || gr.links.find((l) => l.avatar_url)?.avatar_url || conXp.find((p) => p.avatar_url && !/embed\/avatars/.test(p.avatar_url))?.avatar_url || null;
     const ident = {
-      pid, principal, nick, avatar, subs: gr.subs, players: gr.players, ranking: rk, links: gr.links,
+      pid, principal, nick, avatar, fotoPropia: !!fotoUrl,
+      alias: [...new Set([nick, rk && rk.nick, ...gr.links.map((l) => l.handle), ...gr.players.flatMap((p) => [p.display_name, p.username])].filter(Boolean).map((x) => String(x).toLowerCase()))],
+      subs: gr.subs, players: gr.players, ranking: rk, links: gr.links,
       xp: conXp[0] ? conXp[0].xp || 0 : 0,
       fundador: gr.players.some((p) => p.role === 'owner'),
       desde: gr.players.map((p) => p.creado_at).filter(Boolean).sort()[0] || null,
@@ -146,7 +151,7 @@ export async function jugadoresPublicos(env) {
   const sellos = new Map();
   for (const i of lista.slice(0, 200)) { const e = await evaluar(env, i, { conValorant: false }).catch(() => null); sellos.set(i.pid, e ? e.sello : null); }
   return lista
-    .map((i) => ({ pid: i.pid, nick: i.nick, avatar: i.avatar, fundador: i.fundador, xp: i.xp, sello: sellos.get(i.pid) || null, nivel: i.ranking ? i.ranking.nivel : null, elo: i.ranking ? i.ranking.elo : null }))
+    .map((i) => ({ pid: i.pid, nick: i.nick, avatar: i.avatar, alias: i.alias, fundador: i.fundador, xp: i.xp, sello: sellos.get(i.pid) || null, nivel: i.ranking ? i.ranking.nivel : null, elo: i.ranking ? i.ranking.elo : null }))
     .sort((a, b) => Number(b.fundador) - Number(a.fundador) || (b.elo || 0) - (a.elo || 0) || (b.xp || 0) - (a.xp || 0));
 }
 

@@ -496,12 +496,13 @@ export async function rutasComunidad(req, env, url, p, m, H) {
     const e = await env.DB.prepare('SELECT slug, juego, creado FROM integ_equipos WHERE slug = ?').bind(slug).first();
     if (!e) return H.json({ ok: true, vants: false, miembros: [] });
     const ms = await env.DB.prepare(
-      `SELECT m.nick, m.rol, m.unido, r.nivel, r.elo, p.slug pslug FROM integ_equipo_miembros m
+      `SELECT m.auth0_sub, m.nick, m.rol, m.unido, r.nivel, r.elo, p.slug pslug FROM integ_equipo_miembros m
        LEFT JOIN integ_ranking r ON r.auth0_sub = m.auth0_sub
        LEFT JOIN pt_players p ON p.source = 'vants' AND p.external_id = m.auth0_sub || '|' || ?
        WHERE m.team_slug = ? ORDER BY m.rol = 'capitan' DESC, m.unido`
     ).bind(e.juego, slug).all();
-    return H.json({ ok: true, vants: true, creado: e.creado, miembros: (ms.results || []).map((x) => ({ nick: x.nick, rol: x.rol, unido: x.unido, nivel: x.nivel, elo: x.elo, slug: x.pslug })) });
+    const { porSub } = await identidades(env.DB);
+    return H.json({ ok: true, vants: true, creado: e.creado, miembros: (ms.results || []).map((x) => { const i = porSub.get(x.auth0_sub); return { nick: x.nick, rol: x.rol, unido: x.unido, nivel: x.nivel, elo: x.elo, slug: x.pslug, pid: i ? i.pid : null, avatar: i ? i.avatar : null }; }) });
   }
   const mJ = p.match(/^\/jugador\/([a-z0-9-]{1,60})$/);
   if (mJ && m === 'GET') {

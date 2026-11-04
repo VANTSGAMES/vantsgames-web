@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
-import { MisEquiposPanel, MisInscripciones } from "./Vants";
+import { MisEquiposPanel, MisInscripciones, imagenEquipo, mensajeError } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
 import { FilaInsignias, Sello } from "@/components/Insignia3D";
@@ -45,6 +45,56 @@ function PerfilNav() {
   );
 }
 
+/** Foto del perfil principal: la que se ve en la ficha pública, el ranking, la sala y los equipos. */
+function FotoPerfil({ nombre, picture, size = 96 }: { nombre: string; picture: string | null; size?: number }) {
+  const qc = useQueryClient();
+  const q = useApi<{ pid: string | null; avatar: string | null; propia: boolean }>("/int/perfil/foto", { auth: true });
+  const [busy, setBusy] = useState(false);
+  const [st, setSt] = useState<{ k: "ok" | "error"; m: string } | null>(null);
+  const foto = q.data?.propia ? q.data.avatar : picture || q.data?.avatar || null;
+  // La primera vez, la foto de tu cuenta (Google/Twitch) pasa a ser la foto del perfil principal.
+  useEffect(() => {
+    if (!q.data || q.data.propia || !q.data.pid || !picture || !/^https:/.test(picture) || /cdn\.auth0\.com|gravatar\.com/.test(picture)) return;
+    const k = "vants_foto_sync_" + q.data.pid;
+    if (localStorage.getItem(k)) return;
+    localStorage.setItem(k, "1");
+    api("/int/perfil/foto", { method: "POST", auth: true, body: { url: picture } }).then(() => { qc.invalidateQueries({ queryKey: ["/int/perfil/foto", true] }); qc.invalidateQueries({ queryKey: ["/int/jugadores", false] }); }).catch(() => localStorage.removeItem(k));
+  }, [q.data, picture]);
+  const guardar = async (body: Record<string, unknown>, ok: string) => {
+    setBusy(true); setSt(null);
+    try {
+      await api("/int/perfil/foto", { method: "POST", auth: true, body });
+      await qc.invalidateQueries({ queryKey: ["/int/perfil/foto", true] });
+      qc.invalidateQueries({ queryKey: ["/int/jugadores", false] });
+      if (q.data?.pid) qc.invalidateQueries({ queryKey: ["/int/u/" + q.data.pid, false] });
+      setSt({ k: "ok", m: ok });
+    } catch (e) { setSt({ k: "error", m: mensajeError(e) }); } finally { setBusy(false); }
+  };
+  const subir = async (f: File | undefined) => {
+    if (!f) return;
+    try { const imagen = await imagenEquipo(f); await guardar({ imagen }, "Foto de perfil actualizada."); }
+    catch (e) { setSt({ k: "error", m: mensajeError(e) }); }
+  };
+  return (
+    <div className="grid gap-2 justify-items-start" data-testid="foto-perfil">
+      <label className="relative block cursor-pointer group shrink-0" style={{ width: size, height: size }} title="Cambiar foto de perfil">
+        {foto ? <img src={foto} alt={"Foto de " + nombre} width={size} height={size} className="chamfer object-cover block" style={{ width: size, height: size }} referrerPolicy="no-referrer" /> : <Initials name={nombre} size={size} />}
+        <span className={"absolute inset-0 chamfer flex items-center justify-center text-center text-[10px] font-bold uppercase tracking-wider transition-opacity " + (busy ? "opacity-100" : "opacity-0 group-hover:opacity-100")} style={{ background: "rgba(0,0,0,.7)", color: "#fff" }}>{busy ? "Guardando…" : "Cambiar foto"}</span>
+        <span aria-hidden className="absolute flex items-center justify-center rounded-full" style={{ right: -6, bottom: -6, width: 26, height: 26, background: "var(--rojo)", color: "#fff", border: "2px solid var(--grafito-1)" }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+        </span>
+        <input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={(ev) => { subir(ev.target.files?.[0]); ev.target.value = ""; }} data-testid="input-foto-perfil" aria-label="Subir foto de perfil" />
+      </label>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs mt-1">
+        <label className="underline cursor-pointer">Subir foto<input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={(ev) => { subir(ev.target.files?.[0]); ev.target.value = ""; }} /></label>
+        {picture && /^https:/.test(picture) && <button type="button" className="underline muted" disabled={busy} onClick={() => guardar({ url: picture }, "Ahora usas la foto de tu cuenta.")} data-testid="foto-de-cuenta">Usar la de mi cuenta</button>}
+        {q.data?.propia && <button type="button" className="underline muted" disabled={busy} onClick={() => guardar({ quitar: true }, "Foto quitada.")}>Quitar</button>}
+      </div>
+      {st && <span className="text-xs" role={st.k === "error" ? "alert" : "status"} style={{ color: st.k === "ok" ? "var(--ok)" : "#ff5468", maxWidth: 220 }}>{st.m}</span>}
+    </div>
+  );
+}
+
 function Resumen() {
   const { user } = useAuth();
   const q = useApi<{ nickname: string | null; redes: Record<string, any> }>("/api/account/perfil", { auth: true });
@@ -54,7 +104,7 @@ function Resumen() {
   return (
     <div className="wrap grid gap-6">
       <div className="panel panel-pad flex flex-wrap items-center gap-6">
-        {user?.picture ? <img src={user.picture} alt="" width={88} height={88} className="chamfer" /> : <Initials name={nombre || "?"} size={88} />}
+        <FotoPerfil nombre={nombre || "?"} picture={user?.picture || null} />
         <div className="min-w-0">
           <div className="eyebrow mb-1">Nombre público</div>
           {q.isLoading ? <div className="sk" style={{ height: 36, width: 220 }} /> : q.error ? (

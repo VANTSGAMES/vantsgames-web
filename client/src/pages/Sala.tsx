@@ -69,8 +69,15 @@ export function Equipos() {
   );
 }
 
+/** Foto y ficha VANTS de un jugador de plantilla, buscando su nombre entre los alias de las cuentas. */
+function useCuentasPorAlias() {
+  const q = useApi<{ jugadores: { pid: string; nick: string; avatar: string | null; alias?: string[] }[] }>("/int/jugadores");
+  return (nombre: string) => { const n = nombre.toLowerCase(); return (q.data?.jugadores || []).find((j) => j.nick.toLowerCase() === n || (j.alias || []).includes(n)) || null; };
+}
+
 function TeamView({ slug, oficial = false }: { slug: string; oficial?: boolean }) {
   const q = useApi<{ data: Team }>("/api/teams/" + slug);
+  const cuenta = useCuentasPorAlias();
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
   const noExiste = q.error && (q.error.status === 404 || /no encontrado/i.test(q.error.code));
   if (q.error && oficial && noExiste)
@@ -98,12 +105,12 @@ function TeamView({ slug, oficial = false }: { slug: string; oficial?: boolean }
       <Section title="Plantilla" eyebrow={(t.plantilla || []).length + " jugadores"}>
         {(t.plantilla || []).length === 0 ? <Empty code="plantilla · 0" title="Plantilla sin publicar" /> : (
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
-            {t.plantilla!.map((p) => (
-              <Link key={p.slug} href={"/jugadores/" + p.slug} className="p-5 grid gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"roster-" + p.slug}>
-                <Initials name={p.nombre} size={56} />
+            {t.plantilla!.map((p) => { const c = cuenta(p.nombre); return (
+              <Link key={p.slug} href={c ? "/u/" + c.pid : "/jugadores/" + p.slug} className="p-5 grid gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"roster-" + p.slug}>
+                {c?.avatar ? <img src={c.avatar} alt="" width={56} height={56} className="chamfer object-cover" style={{ width: 56, height: 56 }} referrerPolicy="no-referrer" /> : <Initials name={p.nombre} size={56} />}
                 <div><div className="d-2">{p.nombre}</div><div className="small muted mt-1">{p.rol || "Jugador"}{p.pais ? " · " + p.pais : ""}</div></div>
               </Link>
-            ))}
+            ); })}
           </div>
         )}
       </Section>

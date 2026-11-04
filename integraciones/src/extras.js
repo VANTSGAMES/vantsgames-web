@@ -10,7 +10,7 @@
 //   máximo (todos los planes) sin caducidad.
 
 import { esOwner } from './comunidad.js';
-import { identidadDe, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js';
+import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js';
 import { rutasInsignias, invalidarInsignias } from './insignias.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
@@ -25,6 +25,7 @@ async function asegurar(db) {
       embed TEXT, miniatura TEXT, titulo TEXT, juego TEXT, publico INTEGER NOT NULL DEFAULT 1,
       creado TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (auth0_sub, url))`),
     db.prepare('CREATE INDEX IF NOT EXISTS idx_integ_clips_sub ON integ_clips (auth0_sub, creado)'),
+    db.prepare("CREATE TABLE IF NOT EXISTS integ_foto (pid TEXT PRIMARY KEY, mime TEXT, datos TEXT, url TEXT, actualizado TEXT NOT NULL DEFAULT (datetime('now')))"),
   ]);
 }
 let listo = false;
@@ -278,6 +279,12 @@ export async function rutasExtras(req, env, url, p, m, H) {
     if (!r) return new Response('no encontrado', { status: 404 });
     return new Response(b64aBytes(r.datos), { headers: { 'content-type': r.mime, 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' } });
   }
+  if ((mm = p.match(/^\/foto\/([0-9a-f]{16})$/)) && m === 'GET') {
+    await preparar(env);
+    const r = await env.DB.prepare('SELECT mime, datos FROM integ_foto WHERE pid = ? AND datos IS NOT NULL').bind(mm[1]).first();
+    if (!r) return new Response('no encontrado', { status: 404 });
+    return new Response(b64aBytes(r.datos), { headers: { 'content-type': r.mime, 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff', 'access-control-allow-origin': '*' } });
+  }
   if ((mm = p.match(/^\/clips\/(archivo|mini)\/([0-9a-f]{32})$/)) && (m === 'GET' || m === 'HEAD')) {
     return servirClipKv(req, env, mm[1], mm[2]);
   }
@@ -311,12 +318,37 @@ export async function rutasExtras(req, env, url, p, m, H) {
     return H.json(r, r.ok ? 200 : st);
   }
 
-  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia'];
+  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia', '/perfil/foto'];
   if (!privadas.includes(p)) return null;
   await preparar(env);
   const sub = await H.usuario(req, env);
 
   if (p === '/membresia' && m === 'GET') return H.json({ ok: true, ...(await membresiaDe(env, sub)) });
+
+  // Foto del perfil principal: subida (data URL ≤ 300 KB), enlace https (p. ej. la foto de Google/Twitch) o quitar.
+  if (p === '/perfil/foto') {
+    const ident = await identidadDe(env.DB, sub).catch(() => null);
+    if (m === 'GET') {
+      const f = ident ? await env.DB.prepare('SELECT url, datos IS NOT NULL AS tiene FROM integ_foto WHERE pid = ?').bind(ident.pid).first() : null;
+      return H.json({ ok: true, pid: ident ? ident.pid : null, avatar: ident ? ident.avatar : null, propia: !!f });
+    }
+    if (m !== 'POST') return H.json({ ok: false, error: 'metodo' }, 405);
+    if (!ident) return H.json({ ok: false, error: 'sin_perfil' }, 409);
+    const b = await req.json().catch(() => ({}));
+    if (b.quitar) {
+      await env.DB.prepare('DELETE FROM integ_foto WHERE pid = ?').bind(ident.pid).run();
+    } else if (typeof b.imagen === 'string') {
+      const mt = b.imagen.match(/^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/);
+      if (!mt) return H.json({ ok: false, error: 'imagen_invalida' }, 400);
+      if (mt[2].length > 400_000) return H.json({ ok: false, error: 'imagen_grande' }, 413);
+      await env.DB.prepare("INSERT INTO integ_foto (pid, mime, datos, url, actualizado) VALUES (?, ?, ?, NULL, datetime('now')) ON CONFLICT(pid) DO UPDATE SET mime = excluded.mime, datos = excluded.datos, url = NULL, actualizado = excluded.actualizado").bind(ident.pid, mt[1], mt[2]).run();
+    } else if (typeof b.url === 'string' && /^https:\/\/[^\s"'<>]{4,600}$/.test(b.url)) {
+      await env.DB.prepare("INSERT INTO integ_foto (pid, mime, datos, url, actualizado) VALUES (?, NULL, NULL, ?, datetime('now')) ON CONFLICT(pid) DO UPDATE SET mime = NULL, datos = NULL, url = excluded.url, actualizado = excluded.actualizado").bind(ident.pid, b.url).run();
+    } else return H.json({ ok: false, error: 'falta_imagen' }, 400);
+    invalidarIdentidades();
+    const nuevo = await identidadDe(env.DB, sub).catch(() => null);
+    return H.json({ ok: true, avatar: nuevo ? nuevo.avatar : null });
+  }
 
   if (p === '/equipos/logo' && m === 'POST') {
     const b = await req.json().catch(() => ({}));
