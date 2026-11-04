@@ -1,3 +1,4 @@
+import { identidades } from './perfiles.js';
 // VANTS · Integraciones · comunidad
 // -----------------------------------------------------------------------------
 // Funciones de la web que faltaban, todas sobre D1 vants-db:
@@ -124,21 +125,28 @@ async function rankingPublico(env, perfilFaceit) {
   // Una misma cuenta de FACEIT vinculada desde dos accesos cuenta una vez.
   const vistos = new Set();
   const faceit = [];
+  const ids = await identidades(env.DB).catch(() => null);
   for (const r of rs.results || []) {
     if (vistos.has(r.faceit_id)) continue;
     vistos.add(r.faceit_id);
+    const idn = ids && ids.porSub.get(r.auth0_sub);
     faceit.push({
+      pid: idn ? idn.pid : null, vants: idn ? idn.nick : null, fundador: !!(idn && idn.fundador),
       pos: faceit.length + 1, nick: r.nick, avatar: r.avatar, pais: r.pais, nivel: r.nivel, elo: r.elo,
       partidas: r.partidas, winrate: r.winrate, kd: r.kd, faceit_id: r.faceit_id,
       url: 'https://www.faceit.com/es/players/' + encodeURIComponent(r.nick),
       equipo: eq.get(r.auth0_sub) || null, actualizado: r.actualizado,
     });
   }
-  const xs = await env.DB.prepare(
-    `SELECT id, auth0_sub, COALESCE(display_name, username) nombre, xp, role FROM players
-     WHERE COALESCE(display_name, username) IS NOT NULL AND NOT (xp = 0 AND role = 'owner' AND auth0_sub LIKE 'oauth2|%') ORDER BY xp DESC LIMIT 100`
-  ).all();
-  const xp = (xs.results || []).map((r, i) => ({ pos: i + 1, nick: r.nombre, xp: r.xp || 0, fundador: r.role === 'owner', equipo: (r.auth0_sub && eq.get(r.auth0_sub)) || null }));
+  // XP: una fila por persona (varios accesos de la misma cuenta cuentan una vez).
+  const xp = [];
+  if (ids) {
+    const filas = ids.lista.filter((i) => i.players.length).sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 100);
+    for (const i of filas) {
+      const subEq = i.subs.find((x) => eq.get(x));
+      xp.push({ pos: xp.length + 1, pid: i.pid, nick: i.nick, avatar: i.avatar, xp: i.xp || 0, fundador: i.fundador, equipo: (subEq && eq.get(subEq)) || null });
+    }
+  }
   return { faceit, xp };
 }
 

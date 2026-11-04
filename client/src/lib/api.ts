@@ -65,6 +65,21 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   return data as T;
 }
 
+/** Envío multipart (subida de vídeos) con la sesión del usuario. */
+export async function apiForm<T = any>(path: string, form: FormData, method = "POST"): Promise<T> {
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (tokenProvider) { const t = await tokenProvider(); if (t) headers.authorization = "Bearer " + t; }
+  let r: Response;
+  try { r = await fetch(destino(path), { method, headers, body: form }); } catch { throw new ApiError(0, "red_no_disponible"); }
+  let data: any = null;
+  try { data = await r.json(); } catch { data = null; }
+  if (!r.ok || (data && data.ok === false)) {
+    const e = data && (data.error || data.motivo);
+    throw new ApiError(r.status, (typeof e === "string" ? e : e && e.message) || "error_" + r.status);
+  }
+  return data as T;
+}
+
 export function assetUrl(u?: string | null): string | null {
   if (!u) return null;
   if (/^https?:\/\//i.test(u)) return u;

@@ -1,59 +1,127 @@
 /**
- * Biblioteca de clips del jugador (vants-integraciones):
- *   GET  /int/clips/mios      → clips publicados + clips del canal de Twitch del jugador
- *   POST /int/clips           → publicar por enlace (YouTube, Twitch, Kick, Medal, Streamable, Outplayed)
- *   POST /int/clips/borrar    → quitar un clip propio
- *   GET  /int/clips/comunidad → clips públicos de la comunidad
+ * Biblioteca de clips del jugador.
+ *   GET  /int/clips/mios        → clips por enlace + subidos + canal de Twitch (+ canal de Kick)
+ *   POST /int/clips             → publicar por enlace (YouTube, Twitch, Kick, Medal, Streamable, Outplayed)
+ *   POST /int/clips/borrar      → quitar un clip por enlace
+ *   POST /api/clips/featured    → subir un vídeo desde el ordenador (Worker principal → vants-clips)
+ *   DELETE /api/clips/featured  → quitar un vídeo subido
+ *   GET  /int/clips/comunidad   → clips públicos de la comunidad
+ * Kick no deja que los servidores lean su API, pero sí la web (CORS): los clips
+ * de Kick se leen desde el navegador.
  */
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api } from "@/lib/api";
+import { api, apiForm } from "@/lib/api";
 import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
 import { hace } from "@/lib/format";
+import { useRol } from "./Vants";
 
 export type Clip = {
-  id: string; origen: "vants" | "twitch"; plataforma: string; url: string; titulo: string | null; juego: string | null;
-  miniatura: string | null; embed: string | null; creado: string; autor: string | null; vistas?: number; duracion?: number; propio: boolean; publico?: boolean;
+  id: string; origen: "vants" | "twitch" | "kick" | "subido"; plataforma: string; url: string; titulo: string | null; juego: string | null;
+  miniatura: string | null; embed: string | null; video?: string | null; creado: string; autor: string | null; vistas?: number | null; duracion?: number | null; propio: boolean; publico?: boolean;
 };
 
-const PLAT: Record<string, string> = { youtube: "YouTube", twitch: "Twitch", kick: "Kick", medal: "Medal", streamable: "Streamable", outplayed: "Outplayed" };
+const PLAT: Record<string, string> = { youtube: "YouTube", twitch: "Twitch", kick: "Kick", medal: "Medal", streamable: "Streamable", outplayed: "Outplayed", vants: "VANTS" };
 const ERR: Record<string, string> = {
   enlace_invalido: "Ese enlace no es de un clip compatible. Usa YouTube, Twitch, Kick, Medal, Streamable u Outplayed.",
   clip_repetido: "Ese clip ya está en tu biblioteca.",
   limite_clips: "Has llegado al máximo de 200 clips.",
   sin_sesion: "Tu sesión expiró. Vuelve a iniciar sesión.",
+  clip_demasiado_grande: "El vídeo pesa más de 48 MB. Recórtalo o expórtalo con menos calidad.",
+  falta_video: "Elige un archivo de vídeo.",
+  thumb_invalida: "No se pudo generar la miniatura del vídeo. Prueba con un MP4.",
+  gh_no_config: "El almacenamiento de clips no está configurado en el servidor.",
+  "Demasiadas peticiones": "Has subido muchos clips seguidos. Espera unos minutos.",
+  "Origen no permitido": "Este dominio no puede subir clips todavía.",
+  no_es_tuyo: "Ese clip lo subió otra cuenta.",
 };
 const mensaje = (e: any) => ERR[e?.code] || "No se pudo completar (" + (e?.code || "error") + ").";
 
+/* ---------------- Kick (desde el navegador) ---------------- */
+type KickClip = { id: string; title: string; video_url?: string; clip_url?: string; thumbnail_url?: string; views?: number; view_count?: number; duration?: number; created_at: string; category?: { name?: string; slug?: string }; creator?: { username?: string } };
+const juegoKick = (c?: { name?: string; slug?: string }) => { const n = String(c?.slug || c?.name || "").toLowerCase(); return n.includes("valorant") ? "valorant" : /counter|cs2|cs-2/.test(n) ? "cs2" : "otro"; };
+async function kickApi<T>(path: string): Promise<T> {
+  const r = await fetch("https://kick.com/api/v2" + path, { headers: { accept: "application/json" } });
+  if (!r.ok) throw new Error("kick_" + r.status);
+  return r.json();
+}
+function useClipsKick(canal: string | null | undefined) {
+  return useQuery<Clip[]>({
+    queryKey: ["kick-clips", canal],
+    enabled: !!canal,
+    staleTime: 300_000,
+    retry: 0,
+    queryFn: async () => {
+      const j = await kickApi<{ clips: KickClip[] }>("/channels/" + encodeURIComponent(canal!) + "/clips?sort=date&time=all");
+      return (j.clips || []).slice(0, 24).map((c) => ({
+        id: "kk_" + c.id, origen: "kick", plataforma: "kick", url: "https://kick.com/" + canal + "/clips/" + c.id, titulo: c.title, juego: juegoKick(c.category),
+        miniatura: c.thumbnail_url || null, embed: null, video: c.video_url || c.clip_url || null, vistas: c.views ?? c.view_count ?? null, duracion: c.duration,
+        creado: c.created_at, autor: c.creator?.username || canal!, propio: false,
+      }));
+    },
+  });
+}
+function idClipKick(url: string): string | null {
+  try { const u = new URL(url); if (!/(^|\.)kick\.com$/.test(u.hostname)) return null; const m = u.pathname.match(/\/clips\/(clip_\w+)/); return m ? m[1] : (u.searchParams.get("clip") || "").match(/^clip_\w+$/) ? u.searchParams.get("clip") : null; } catch { return null; }
+}
+
+/* ---------------- Reproductor ---------------- */
+function VideoClip({ src, poster }: { src: string; poster?: string | null }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const v = ref.current;
+    if (!v) return;
+    if (!/\.m3u8(\?|$)/.test(src) || v.canPlayType("application/vnd.apple.mpegurl")) { v.src = src; v.play().catch(() => {}); return; }
+    let hls: any = null;
+    import("hls.js").then(({ default: Hls }) => {
+      if (!Hls.isSupported()) { v.src = src; return; }
+      hls = new Hls({ maxBufferLength: 20 });
+      hls.loadSource(src);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => v.play().catch(() => {}));
+    });
+    return () => { if (hls) hls.destroy(); };
+  }, [src]);
+  return <video ref={ref} poster={poster || undefined} controls playsInline className="absolute inset-0 w-full h-full bg-black" />;
+}
+
 export function TarjetaClip({ c, onBorrar }: { c: Clip; onBorrar?: (c: Clip) => void }) {
   const [ver, setVer] = useState(false);
+  const reproducible = !!(c.embed || c.video);
   return (
-    <figure className="panel grid" data-testid={"clip-" + c.id}>
+    <figure className="panel grid content-start" data-testid={"clip-" + c.id}>
       <div className="relative w-full aspect-video bg-[var(--grafito)] overflow-hidden">
-        {ver && c.embed ? (
+        {ver && c.video ? <VideoClip src={c.video} poster={c.miniatura} /> : ver && c.embed ? (
           <iframe src={c.embed} title={c.titulo || "Clip"} className="absolute inset-0 w-full h-full" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />
         ) : (
-          <button type="button" className="absolute inset-0 w-full h-full grid place-items-center group" onClick={() => (c.embed ? setVer(true) : window.open(c.url, "_blank", "noopener"))} aria-label={"Reproducir " + (c.titulo || "clip")}>
+          <button type="button" className="absolute inset-0 w-full h-full grid place-items-center" onClick={() => (reproducible ? setVer(true) : window.open(c.url, "_blank", "noopener"))} aria-label={"Reproducir " + (c.titulo || "clip")}>
             {c.miniatura ? <img src={c.miniatura} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <span className="absolute inset-0" style={{ background: "linear-gradient(135deg, var(--grafito-2), var(--grafito-3))" }} />}
-            <span className="relative grid place-items-center" style={{ width: 54, height: 54, background: "var(--rojo)", clipPath: "polygon(0 0, 100% 50%, 0 100%)" }} aria-hidden />
+            <span className="relative" style={{ width: 54, height: 54, background: "var(--rojo)", clipPath: "polygon(0 0, 100% 50%, 0 100%)" }} aria-hidden />
+            {c.duracion ? <span className="absolute bottom-2 right-2 num text-xs px-1.5 py-0.5" style={{ background: "rgba(0,0,0,.7)" }}>{Math.round(c.duracion)}s</span> : null}
           </button>
         )}
       </div>
       <figcaption className="p-4 grid gap-1.5">
-        <span className="flex gap-1.5 items-center flex-wrap"><span className="tag">{PLAT[c.plataforma] || c.plataforma}</span><GameTag g={c.juego === "otro" ? null : c.juego} />{c.origen === "twitch" && <span className="tag tag-aviso">De tu canal</span>}{c.publico === false && <span className="tag">Privado</span>}</span>
+        <span className="flex gap-1.5 items-center flex-wrap">
+          <span className="tag">{c.origen === "subido" ? "Subido" : PLAT[c.plataforma] || c.plataforma}</span>
+          <GameTag g={c.juego === "otro" ? null : c.juego} />
+          {(c.origen === "twitch" || c.origen === "kick") && <span className="tag tag-aviso">De tu canal</span>}
+          {c.publico === false && <span className="tag">Privado</span>}
+        </span>
         <strong className="text-sm line-clamp-2">{c.titulo || "Clip"}</strong>
         <span className="muted text-xs">{c.autor ? c.autor + " · " : ""}{hace(c.creado)}{c.vistas != null ? " · " + c.vistas + " vistas" : ""}</span>
         <span className="flex gap-3 items-center mt-1">
-          <a href={c.url} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">Abrir en {PLAT[c.plataforma] || "origen"} ↗</a>
-          {onBorrar && c.origen === "vants" && <button className="text-xs underline muted ml-auto" onClick={() => onBorrar(c)} data-testid={"borrar-clip-" + c.id}>Quitar</button>}
+          {c.origen !== "subido" && <a href={c.url} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">Abrir en {PLAT[c.plataforma] || "origen"} ↗</a>}
+          {onBorrar && (c.origen === "vants" || c.origen === "subido") && <button className="text-xs underline muted ml-auto" onClick={() => onBorrar(c)} data-testid={"borrar-clip-" + c.id}>Quitar</button>}
         </span>
       </figcaption>
     </figure>
   );
 }
 
+/* ---------------- Publicar por enlace ---------------- */
 export function PublicarClip({ onOk }: { onOk?: () => void }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
@@ -65,23 +133,33 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
     e.preventDefault();
     setSt({ k: "enviando" });
     try {
-      await api("/int/clips", { method: "POST", auth: true, body: { url: url.trim(), titulo: titulo.trim(), juego, publico } });
+      const body: Record<string, unknown> = { url: url.trim(), titulo: titulo.trim(), juego, publico };
+      const kid = idClipKick(url.trim());
+      if (kid) {
+        const d = await kickApi<{ clip: KickClip }>("/clips/" + kid).catch(() => null);
+        if (d?.clip) { body.video = d.clip.video_url || d.clip.clip_url; body.miniatura = d.clip.thumbnail_url; body.titulo_kick = d.clip.title; }
+      }
+      await api("/int/clips", { method: "POST", auth: true, body });
       setUrl(""); setTitulo("");
       setSt({ k: "ok", m: "Clip publicado en tu biblioteca." });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
-      qc.invalidateQueries({ queryKey: ["/int/clips/comunidad"] });
+      qc.invalidateQueries({ queryKey: ["/int/clips/comunidad", false] });
       onOk?.();
     } catch (err) { setSt({ k: "error", m: mensaje(err) }); }
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4" data-testid="form-publicar-clip">
-      <div><h2 className="d-3">Publicar un clip</h2><p className="small muted mt-1">Pega el enlace de tu clip de YouTube, Twitch, Kick, Medal, Streamable u Outplayed. Se reproduce aquí mismo.</p></div>
+      <div><h2 className="d-3">Publicar por enlace</h2><p className="small muted mt-1">Pega el enlace de tu clip de Twitch, Kick, YouTube, Medal, Streamable u Outplayed. Se reproduce aquí mismo.</p></div>
       <div className="grid gap-4 md:grid-cols-[2fr_1.4fr_auto]">
-        <div className="field"><label htmlFor="clip-url">Enlace del clip</label><input id="clip-url" className="input" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://clips.twitch.tv/…" maxLength={400} data-testid="input-clip-url" /></div>
+        <div className="field">
+          <label htmlFor="clip-url">Enlace del clip</label>
+          <input id="clip-url" className="input" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://clips.twitch.tv/… o https://kick.com/canal/clips/…" maxLength={400} data-testid="input-clip-url" />
+          <span className="text-xs muted">Twitch: clips.twitch.tv/… o twitch.tv/canal/clip/… · Kick: kick.com/canal/clips/clip_…</span>
+        </div>
         <div className="field"><label htmlFor="clip-titulo">Título (opcional)</label><input id="clip-titulo" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={100} placeholder="Ace en Mirage" /></div>
         <div className="field"><label htmlFor="clip-juego">Juego</label><select id="clip-juego" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
       </div>
-      <label className="flex items-center gap-2 small"><input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} /> Mostrar también en Clips recientes de la comunidad</label>
+      <label className="flex items-center gap-2 small"><input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} /> Mostrar también en Clips de la comunidad VANTS</label>
       <div className="flex items-center gap-3 flex-wrap">
         <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-publicar-clip">{st.k === "enviando" ? "Publicando…" : "Publicar clip"}</button>
         {st.k === "ok" && <span className="small" role="status" style={{ color: "var(--ok)" }}>{st.m}</span>}
@@ -91,38 +169,133 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
   );
 }
 
+/* ---------------- Subir desde el ordenador ---------------- */
+const MAX_MB = 48;
+async function miniaturaDe(file: File): Promise<{ thumb: Blob; dur: number }> {
+  const url = URL.createObjectURL(file);
+  try {
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = url;
+    await new Promise<void>((ok, ko) => { v.onloadedmetadata = () => ok(); v.onerror = () => ko(Object.assign(new Error("thumb"), { code: "thumb_invalida" })); });
+    const dur = isFinite(v.duration) ? v.duration : 0;
+    v.currentTime = Math.min(1, dur / 3 || 0);
+    await new Promise<void>((ok) => { v.onseeked = () => ok(); setTimeout(ok, 4000); });
+    const ancho = Math.min(640, v.videoWidth || 640), alto = Math.round(ancho * ((v.videoHeight || 360) / (v.videoWidth || 640)));
+    const c = document.createElement("canvas"); c.width = ancho; c.height = alto;
+    c.getContext("2d")!.drawImage(v, 0, 0, ancho, alto);
+    const thumb = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", 0.8));
+    if (!thumb) throw Object.assign(new Error("thumb"), { code: "thumb_invalida" });
+    return { thumb, dur: Math.round(dur) };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+export function SubirClip() {
+  const qc = useQueryClient();
+  const rol = useRol();
+  const [file, setFile] = useState<File | null>(null);
+  const [titulo, setTitulo] = useState("");
+  const [juego, setJuego] = useState("VALORANT");
+  const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
+  const elegir = (f: File | undefined) => {
+    setSt({ k: "idle" });
+    if (!f) return setFile(null);
+    if (!/^video\//.test(f.type) && !/\.(mp4|webm|mov|mkv|m4v)$/i.test(f.name)) { setFile(null); return setSt({ k: "error", m: "Elige un vídeo MP4, WEBM, MOV o MKV." }); }
+    if (f.size > MAX_MB * 1024 * 1024) { setFile(null); return setSt({ k: "error", m: ERR.clip_demasiado_grande }); }
+    setFile(f);
+    if (!titulo) setTitulo(f.name.replace(/\.[^.]+$/, "").slice(0, 80));
+  };
+  const enviar = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file) return setSt({ k: "error", m: ERR.falta_video });
+    setSt({ k: "enviando", m: "Preparando el vídeo…" });
+    try {
+      const { thumb, dur } = await miniaturaDe(file);
+      const ext = (file.name.match(/\.(mp4|webm|mov|mkv|m4v)$/i)?.[1] || "mp4").toLowerCase();
+      const fd = new FormData();
+      fd.append("video", file, "clip." + ext);
+      fd.append("thumb", thumb, "thumb.jpg");
+      fd.append("ext", ext);
+      fd.append("titulo", titulo.trim() || "Clip destacado");
+      fd.append("juego", juego);
+      fd.append("nick", rol.data?.nick || "JUGADOR");
+      fd.append("dur", String(dur));
+      setSt({ k: "enviando", m: "Subiendo " + (file.size / 1048576).toFixed(1) + " MB…" });
+      await apiForm("/api/clips/featured", fd);
+      setFile(null); setTitulo("");
+      setSt({ k: "ok", m: "Clip subido. Ya aparece en tu biblioteca y en Clips destacados." });
+      qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
+      qc.invalidateQueries({ queryKey: ["/api/clips/featured", false] });
+    } catch (err) { setSt({ k: "error", m: mensaje(err) }); }
+  };
+  return (
+    <form onSubmit={enviar} className="panel panel-pad grid gap-4" data-testid="form-subir-clip">
+      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta {MAX_MB} MB (MP4, WEBM, MOV o MKV). Se publica en Clips destacados.</p></div>
+      <div className="grid gap-4 md:grid-cols-[2fr_1.4fr_auto]">
+        <div className="field">
+          <label htmlFor="clip-archivo">Vídeo</label>
+          <input id="clip-archivo" className="input" type="file" accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv,.m4v" onChange={(e) => elegir(e.target.files?.[0])} data-testid="input-clip-archivo" />
+          {file && <span className="text-xs muted">{file.name} · {(file.size / 1048576).toFixed(1)} MB</span>}
+        </div>
+        <div className="field"><label htmlFor="clip-titulo-up">Título</label><input id="clip-titulo-up" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={80} placeholder="Clutch 1v3" /></div>
+        <div className="field"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}><option value="VALORANT">VALORANT</option><option value="CS2">CS2</option></select></div>
+      </div>
+      <div className="flex items-center gap-3 flex-wrap">
+        <button className="btn btn-rojo" disabled={st.k === "enviando" || !file} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>
+        {st.m && <span className="small" role={st.k === "error" ? "alert" : "status"} style={{ color: st.k === "error" ? "#ff5468" : st.k === "ok" ? "var(--ok)" : undefined }}>{st.m}</span>}
+      </div>
+    </form>
+  );
+}
+
+/* ---------------- Biblioteca ---------------- */
+type Mios = { clips: Clip[]; subidos: Clip[]; twitch: Clip[]; kick?: Clip[]; canal_twitch: string | null; canal_kick: string | null; error_twitch: string | null };
+
+function Rejilla({ xs, onBorrar }: { xs: Clip[]; onBorrar?: (c: Clip) => void }) {
+  return <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{xs.map((c) => <TarjetaClip key={c.id} c={c} onBorrar={onBorrar} />)}</div>;
+}
+
 export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean }) {
   const qc = useQueryClient();
-  const q = useApi<{ clips: Clip[]; twitch: Clip[]; canal_twitch: string | null; error_twitch: string | null }>("/int/clips/mios", { auth: true });
+  const q = useApi<Mios>("/int/clips/mios", { auth: true });
+  const kk = useClipsKick(q.data?.canal_kick);
   const [filtro, setFiltro] = useState<"todos" | "valorant" | "cs2">("todos");
   const borrar = async (c: Clip) => {
     if (!window.confirm("¿Quitar este clip de tu biblioteca?")) return;
-    try { await api("/int/clips/borrar", { method: "POST", auth: true, body: { id: c.id } }); qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] }); }
-    catch (e) { window.alert(mensaje(e)); }
+    try {
+      if (c.origen === "subido") await api("/api/clips/featured?id=" + encodeURIComponent(c.id), { method: "DELETE", auth: true });
+      else await api("/int/clips/borrar", { method: "POST", auth: true, body: { id: c.id } });
+      qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
+    } catch (e) { window.alert(mensaje(e)); }
   };
-  const f = (xs: Clip[]) => (filtro === "todos" ? xs : xs.filter((c) => c.juego === filtro));
-  const propios = f(q.data?.clips || []), tw = f(q.data?.twitch || []);
+  const f = (xs: Clip[] | undefined) => (filtro === "todos" ? xs || [] : (xs || []).filter((c) => c.juego === filtro));
+  const enlaces = new Set((q.data?.clips || []).map((c) => c.url));
+  const propios = f(q.data?.clips), subidos = f(q.data?.subidos), tw = f(q.data?.twitch);
+  const kick = f((q.data?.kick && q.data.kick.length ? q.data.kick : kk.data) || []).filter((c) => !enlaces.has(c.url));
   return (
     <div className="grid gap-8" data-testid="mi-biblioteca">
-      {conFormulario && <PublicarClip />}
+      {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start"><SubirClip /><PublicarClip /></div>}
       <div className="flex gap-1 flex-wrap" role="group" aria-label="Filtrar por juego">
         {([["todos", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]] as const).map(([v, l]) => <button key={v} className={"btn btn-sm " + (filtro === v ? "btn-rojo" : "btn-ghost")} aria-pressed={filtro === v} onClick={() => setFiltro(v)}>{l}</button>)}
       </div>
       {q.isLoading ? <Skel h={160} n={2} /> : q.error ? <ErrorBox error={q.error} what="tu biblioteca" /> : (
         <>
           <section className="grid gap-4">
-            <h2 className="d-3">Mis clips publicados <span className="muted small">({propios.length})</span></h2>
-            {propios.length === 0 ? <Empty code="clips · 0" title="Aún no has publicado clips" text="Pega el enlace de una jugada en el formulario de arriba y aparecerá aquí." /> : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{propios.map((c) => <TarjetaClip key={c.id} c={c} onBorrar={borrar} />)}</div>
-            )}
+            <h2 className="d-3">Subidos desde tu ordenador <span className="muted small">({subidos.length})</span></h2>
+            {subidos.length === 0 ? <p className="small muted">Aún no has subido vídeos. Usa «Subir desde tu ordenador».</p> : <Rejilla xs={subidos} onBorrar={borrar} />}
+          </section>
+          <section className="grid gap-4">
+            <h2 className="d-3">Publicados por enlace <span className="muted small">({propios.length})</span></h2>
+            {propios.length === 0 ? <Empty code="clips · 0" title="Aún no has publicado clips por enlace" text="Pega el enlace de un clip de Twitch o Kick en «Publicar por enlace» y aparecerá aquí." /> : <Rejilla xs={propios} onBorrar={borrar} />}
           </section>
           <section className="grid gap-4">
             <h2 className="d-3">Clips de tu canal de Twitch{q.data?.canal_twitch ? <span className="muted small"> · {q.data.canal_twitch}</span> : null}</h2>
-            {!q.data?.canal_twitch ? (
-              <p className="small muted">Añade tu canal de Twitch en <Link href="/perfil/ajustes" className="link-arrow">Configuración</Link> y tus clips de Twitch aparecerán aquí solos.</p>
-            ) : tw.length === 0 ? <p className="small muted">{q.data.error_twitch ? "Twitch no respondió. Se reintenta en unos minutos." : "Tu canal no tiene clips en los últimos 180 días."}</p> : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{tw.map((c) => <TarjetaClip key={c.id} c={c} />)}</div>
-            )}
+            {!q.data?.canal_twitch ? <p className="small muted">Añade tu canal de Twitch en <Link href="/perfil/ajustes" className="link-arrow">Configuración</Link> y tus clips aparecerán aquí solos.</p>
+              : tw.length === 0 ? <p className="small muted">{q.data.error_twitch ? "Twitch no respondió. Se reintenta en unos minutos." : "Tu canal no tiene clips en los últimos 180 días."}</p> : <Rejilla xs={tw} />}
+          </section>
+          <section className="grid gap-4" data-testid="clips-kick">
+            <h2 className="d-3">Clips de tu canal de Kick{q.data?.canal_kick ? <span className="muted small"> · {q.data.canal_kick}</span> : null}</h2>
+            {!q.data?.canal_kick ? <p className="small muted">Añade tu canal de Kick en <Link href="/perfil/ajustes" className="link-arrow">Configuración</Link> y tus clips de Kick aparecerán aquí solos.</p>
+              : kk.isLoading ? <Skel h={120} n={1} /> : kick.length === 0 ? <p className="small muted">{kk.error ? "Kick no respondió. Prueba a recargar en unos minutos." : "Tu canal de Kick no tiene clips todavía."}</p> : <Rejilla xs={kick} />}
           </section>
         </>
       )}
@@ -130,15 +303,15 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   );
 }
 
-/** Clips públicos de la comunidad VANTS (para Clips recientes / por videojuego). */
+/** Clips públicos de la comunidad VANTS (Recientes / Por videojuego). */
 export function ClipsComunidad({ juego }: { juego?: string }) {
   const q = useApi<{ clips: Clip[] }>("/int/clips/comunidad" + (juego ? "?juego=" + juego : ""));
   const cs = q.data?.clips || [];
   if (q.isLoading || cs.length === 0) return null;
   return (
     <section className="grid gap-4 mb-10" data-testid="clips-comunidad">
-      <h2 className="d-3">De la comunidad VANTS</h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{cs.map((c) => <TarjetaClip key={c.id} c={c} />)}</div>
+      <h2 className="d-3">Clips de la comunidad VANTS</h2>
+      <Rejilla xs={cs} />
     </section>
   );
 }

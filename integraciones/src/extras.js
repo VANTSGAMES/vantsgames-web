@@ -10,6 +10,7 @@
 //   máximo (todos los planes) sin caducidad.
 
 import { esOwner } from './comunidad.js';
+import { identidadDe, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
 const JUEGOS = ['valorant', 'cs2', 'otro'];
@@ -26,12 +27,19 @@ async function asegurar(db) {
   ]);
 }
 let listo = false;
-async function preparar(env) { if (!listo) { await asegurar(env.DB); listo = true; } }
+async function preparar(env) {
+  if (listo) return;
+  await asegurar(env.DB);
+  await env.DB.prepare('ALTER TABLE integ_clips ADD COLUMN video TEXT').run().catch(() => null); // ya existe
+  listo = true;
+}
 
 const uid = () => crypto.randomUUID().replace(/-/g, '');
 const txt = (v, n) => String(v ?? '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, n);
 
 async function nickDe(db, sub) {
+  const id = await identidadDe(db, sub).catch(() => null);
+  if (id && id.nick) return id.nick;
   const p = await db.prepare('SELECT nickname FROM perfiles_publicos WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
   if (p && p.nickname) return p.nickname;
   const pl = await db.prepare('SELECT display_name, username FROM players WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
@@ -56,8 +64,8 @@ export function analizarClip(raw) {
   if (h === 'clips.twitch.tv' && (m = u.pathname.match(/^\/([\w-]{3,120})/))) return tw(m[1]);
   if (h === 'twitch.tv' && (m = u.pathname.match(/^\/[\w]+\/clip\/([\w-]{3,120})/))) return tw(m[1]);
   if (h === 'twitch.tv' && (m = u.pathname.match(/^\/videos\/(\d+)/))) return { plataforma: 'twitch', id: m[1], embed: 'https://player.twitch.tv/?video=' + m[1] + '&parent=' + parent + '&autoplay=false', miniatura: null };
-  if (h === 'kick.com' && (m = u.pathname.match(/^\/([\w-]+)\/clips\/([\w-]+)/))) return { plataforma: 'kick', id: m[2], embed: null, miniatura: null };
-  if (h === 'kick.com' && u.searchParams.get('clip')) return { plataforma: 'kick', id: u.searchParams.get('clip'), embed: null, miniatura: null };
+  if (h === 'kick.com' && (m = u.pathname.match(/^\/([\w-]+)\/clips\/(clip_[\w]+)/))) return { plataforma: 'kick', id: m[2], canal: m[1], embed: null, miniatura: null };
+  if (h === 'kick.com' && /^clip_[\w]+$/.test(u.searchParams.get('clip') || '')) return { plataforma: 'kick', id: u.searchParams.get('clip'), canal: u.pathname.split('/')[1] || null, embed: null, miniatura: null };
   if (h === 'medal.tv' && (m = u.pathname.match(/\/clips\/([\w-]+)/))) return { plataforma: 'medal', id: m[1], embed: 'https://medal.tv/clip/' + m[1] + '?autoplay=0', miniatura: null };
   if (h === 'streamable.com' && (m = u.pathname.match(/^\/(?:e\/)?([a-z0-9]{4,12})$/i))) return { plataforma: 'streamable', id: m[1], embed: 'https://streamable.com/e/' + m[1], miniatura: null };
   if (h === 'outplayed.tv' || h.endsWith('.outplayed.tv')) return { plataforma: 'outplayed', id: u.pathname, embed: null, miniatura: null };
@@ -110,6 +118,52 @@ async function clipsTwitchCanal(env, H, login) {
   });
 }
 
+const UA_NAV = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
+async function kickJson(path) {
+  const r = await fetch('https://kick.com/api/v2' + path, { headers: { 'User-Agent': UA_NAV, Accept: 'application/json' } });
+  if (!r.ok) throw new Error('kick_' + r.status);
+  return r.json();
+}
+const juegoKick = (c) => { const n = String((c && (c.slug || c.name)) || '').toLowerCase(); return n.includes('valorant') ? 'valorant' : /counter|cs2|cs-2/.test(n) ? 'cs2' : 'otro'; };
+
+async function datosClipKick(id) {
+  const j = await kickJson('/clips/' + encodeURIComponent(id));
+  const c = j && j.clip;
+  return c ? { titulo: c.title, video: c.video_url || c.clip_url || null, miniatura: c.thumbnail_url || null, juego: juegoKick(c.category), canal: c.channel && c.channel.slug } : null;
+}
+
+// Clips del canal de Kick del jugador (los últimos 24).
+async function clipsKickCanal(H, canal) {
+  if (!canal) return [];
+  return H.cacheado('kkclips:' + canal, 600_000, async () => {
+    const j = await kickJson('/channels/' + encodeURIComponent(canal) + '/clips?sort=date&time=all');
+    return ((j && j.clips) || []).slice(0, 24).map((c) => ({
+      id: 'kk_' + c.id, origen: 'kick', plataforma: 'kick', url: 'https://kick.com/' + canal + '/clips/' + c.id, titulo: c.title, juego: juegoKick(c.category),
+      miniatura: c.thumbnail_url || null, embed: null, video: c.video_url || c.clip_url || null,
+      vistas: c.views ?? c.view_count ?? null, duracion: c.duration, creado: c.created_at, autor: (c.creator && c.creator.username) || canal, propio: false,
+    }));
+  });
+}
+
+async function canalKickDe(db, sub) {
+  const c = await db.prepare('SELECT kick FROM integ_canales WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+  if (c && c.kick) return c.kick.toLowerCase();
+  const l = await db.prepare("SELECT handle FROM vants_links WHERE auth0_sub = ? AND platform = 'kick'").bind(sub).first().catch(() => null);
+  return l && l.handle ? String(l.handle).toLowerCase() : null;
+}
+
+// Clips subidos desde el ordenador (vitrina vants-clips del Worker principal).
+async function clipsSubidos(H, subs) {
+  const j = await H.cacheado('featured', 60_000, async () => {
+    const r = await fetch('https://vants.vants.workers.dev/api/clips/featured', { headers: { 'User-Agent': UA_NAV, Accept: 'application/json' } });
+    return r.ok ? r.json() : { clips: [] };
+  }).catch(() => ({ clips: [] }));
+  return ((j && j.clips) || []).filter((c) => c && subs.includes(c.sub)).map((c) => ({
+    id: c.id, origen: 'subido', plataforma: 'vants', url: c.video, titulo: c.titulo, juego: String(c.juego || '').toLowerCase() === 'cs2' ? 'cs2' : String(c.juego || '').toLowerCase() === 'valorant' ? 'valorant' : 'otro',
+    miniatura: c.thumb || null, embed: null, video: c.video, duracion: c.dur, creado: c.fecha, autor: c.nick, propio: true,
+  }));
+}
+
 async function canalTwitchDe(db, sub) {
   const c = await db.prepare('SELECT twitch FROM integ_canales WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
   if (c && c.twitch) return c.twitch.toLowerCase();
@@ -118,13 +172,17 @@ async function canalTwitchDe(db, sub) {
 }
 
 const isoD1 = (v) => (v && !/[TZ]/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
-const filaClip = (r) => ({ id: r.id, origen: 'vants', plataforma: r.plataforma, url: r.url, titulo: r.titulo, juego: r.juego, miniatura: r.miniatura, embed: r.embed, creado: isoD1(r.creado), autor: r.nick, publico: !!r.publico, propio: true });
+const filaClip = (r) => ({ id: r.id, origen: 'vants', plataforma: r.plataforma, url: r.url, titulo: r.titulo, juego: r.juego, miniatura: r.miniatura, embed: r.embed, video: r.video || null, creado: isoD1(r.creado), autor: r.nick, publico: !!r.publico, propio: true });
 
 /* ------------------------------------------------------------ foto de equipo */
 
 async function puedeEditarEquipo(db, slug, sub) {
   const e = await db.prepare('SELECT slug, capitan_sub FROM integ_equipos WHERE slug = ?').bind(slug).first();
-  if (!e) return null;
+  if (!e) {
+    // Equipos sin capitán en la web (p. ej. el roster oficial «vants»): solo el dueño.
+    const t = await db.prepare('SELECT slug FROM pt_teams WHERE slug = ?').bind(slug).first();
+    return t && (await esOwner(db, sub)) ? { slug } : null;
+  }
   if (e.capitan_sub === sub || (await esOwner(db, sub))) return e;
   return null;
 }
@@ -169,9 +227,24 @@ export async function rutasExtras(req, env, url, p, m, H) {
     await preparar(env);
     const juego = url.searchParams.get('juego');
     const rs = await env.DB.prepare(
-      'SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado FROM integ_clips WHERE publico = 1 ' + (juego && JUEGOS.includes(juego) ? 'AND juego = ? ' : '') + 'ORDER BY creado DESC LIMIT 48'
+      'SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado, video FROM integ_clips WHERE publico = 1 ' + (juego && JUEGOS.includes(juego) ? 'AND juego = ? ' : '') + 'ORDER BY creado DESC LIMIT 48'
     ).bind(...(juego && JUEGOS.includes(juego) ? [juego] : [])).all();
     return H.json({ ok: true, clips: (rs.results || []).map((r) => ({ ...filaClip(r), propio: false })) }, 200, { 'Cache-Control': 'public, max-age=60' });
+  }
+
+  if (p === '/jugadores' && m === 'GET') return H.json({ ok: true, jugadores: await jugadoresPublicos(env) }, 200, { 'Cache-Control': 'public, max-age=60' });
+  if ((mm = p.match(/^\/u\/([0-9a-f]{16})$/)) && m === 'GET') {
+    await preparar(env);
+    const d = await perfilPublico(env, mm[1]);
+    return d ? H.json({ ok: true, perfil: d }, 200, { 'Cache-Control': 'public, max-age=60' }) : H.json({ ok: false, error: 'no_encontrado' }, 404);
+  }
+  if (p === '/roster-oficial' && m === 'GET') return H.json({ ok: true, ...(await rosterOficial(env)) });
+  if (p.startsWith('/roster-oficial/') && m === 'POST') {
+    const sub = await H.usuario(req, env);
+    if (!(await esOwner(env.DB, sub))) return H.json({ ok: false, error: 'solo_owner' }, 403);
+    const r = await editarRoster(env, p, await req.json().catch(() => ({})));
+    const st = r.status || 200; delete r.status;
+    return H.json(r, r.ok ? 200 : st);
   }
 
   const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/equipos/logo', '/membresia'];
@@ -210,20 +283,41 @@ export async function rutasExtras(req, env, url, p, m, H) {
   }
 
   if (p === '/clips/mios' && m === 'GET') {
-    const rs = await env.DB.prepare('SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado FROM integ_clips WHERE auth0_sub = ? ORDER BY creado DESC LIMIT 200').bind(sub).all();
-    const canal = await canalTwitchDe(env.DB, sub);
-    let twitch = [], errorTwitch = null;
-    try { twitch = await clipsTwitchCanal(env, H, canal); } catch (e) { errorTwitch = String(e.message || e); }
+    const rs = await env.DB.prepare('SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado, video FROM integ_clips WHERE auth0_sub = ? ORDER BY creado DESC LIMIT 200').bind(sub).all();
+    const ident = await identidadDe(env.DB, sub).catch(() => null);
+    const subs = ident ? ident.subs : [sub];
+    let canal = await canalTwitchDe(env.DB, sub), kick = await canalKickDe(env.DB, sub);
+    for (const s2 of subs) { if (!canal) canal = await canalTwitchDe(env.DB, s2); if (!kick) kick = await canalKickDe(env.DB, s2); }
+    let twitch = [], errorTwitch = null, kk = [], errorKick = null;
+    const [rt, rk, subidos] = await Promise.all([
+      clipsTwitchCanal(env, H, canal).catch((e) => { errorTwitch = String(e.message || e); return []; }),
+      clipsKickCanal(H, kick).catch((e) => { errorKick = String(e.message || e); return []; }),
+      clipsSubidos(H, subs),
+    ]);
+    twitch = rt; kk = rk;
     const propios = new Set((rs.results || []).map((r) => r.url));
-    return H.json({ ok: true, canal_twitch: canal, clips: (rs.results || []).map(filaClip), twitch: twitch.filter((c) => !propios.has(c.url)), error_twitch: errorTwitch });
+    return H.json({
+      ok: true, canal_twitch: canal, canal_kick: kick, clips: (rs.results || []).map(filaClip), subidos,
+      twitch: twitch.filter((c) => !propios.has(c.url)), kick: kk.filter((c) => !propios.has(c.url)),
+      error_twitch: errorTwitch, error_kick: errorKick,
+    });
   }
 
   if (p === '/clips' && m === 'POST') {
     const b = await req.json().catch(() => ({}));
     const info = analizarClip(b.url);
     if (!info) return H.json({ ok: false, error: 'enlace_invalido' }, 400);
-    const juego = JUEGOS.includes(b.juego) ? b.juego : 'otro';
-    let titulo = txt(b.titulo, 100), miniatura = info.miniatura;
+    let juego = JUEGOS.includes(b.juego) ? b.juego : 'otro';
+    let titulo = txt(b.titulo, 100), miniatura = info.miniatura, video = null, juegoDet = null;
+    if (info.plataforma === 'kick') {
+      const d = await datosClipKick(info.id).catch(() => null);
+      if (d) { titulo = titulo || txt(d.titulo, 100); miniatura = d.miniatura || miniatura; video = d.video; juegoDet = d.juego; }
+      // Kick bloquea a los servidores: el navegador lee el clip (CORS abierto para la web) y manda sus datos.
+      const deKick = (v) => { try { const x = new URL(String(v || '')); return x.protocol === 'https:' && /(^|\.)kick\.com$/.test(x.hostname) ? x.toString().slice(0, 400) : null; } catch { return null; } };
+      if (!video) video = deKick(b.video);
+      if (!miniatura) miniatura = deKick(b.miniatura);
+      if (!titulo && b.titulo_kick) titulo = txt(b.titulo_kick, 100);
+    }
     if (info.plataforma === 'twitch' && !/^\d+$/.test(info.id)) {
       const d = await datosClipTwitch(env, H, info.id).catch(() => null);
       if (d) { titulo = titulo || txt(d.title, 100); miniatura = d.thumbnail_url || miniatura; }
@@ -233,8 +327,8 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const id = uid();
     const limpio = String(b.url).trim().slice(0, 400);
     const r = await env.DB.prepare(
-      'INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(auth0_sub, url) DO NOTHING'
-    ).bind(id, sub, await nickDe(env.DB, sub), limpio, info.plataforma, info.embed, miniatura, titulo || 'Clip de ' + info.plataforma, juego, b.publico === false ? 0 : 1).run();
+      'INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(auth0_sub, url) DO NOTHING'
+    ).bind(id, sub, await nickDe(env.DB, sub), limpio, info.plataforma, info.embed, miniatura, titulo || 'Clip de ' + info.plataforma, juego === 'otro' && juegoDet ? juegoDet : juego, b.publico === false ? 0 : 1, video).run();
     if (!r.meta || !r.meta.changes) return H.json({ ok: false, error: 'clip_repetido' }, 409);
     return H.json({ ok: true, id });
   }

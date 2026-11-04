@@ -5,7 +5,7 @@ import type { Article, Paged, Stream, YtVideo, Creator } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
 import { VideoTile, StreamTile } from "@/components/domain";
 import { fecha, gameLabel, hace } from "@/lib/format";
-import { MiBiblioteca, PublicarClip, ClipsComunidad } from "./MisClips";
+import { MiBiblioteca, ClipsComunidad } from "./MisClips";
 
 /* ---------------- Clips ---------------- */
 const CLIP_TABS = [
@@ -61,10 +61,10 @@ export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }
   const actual = vista === "destacados" ? "/clips" : vista === "recientes" ? "/clips/recientes" : "/clips/juego";
   return (
     <>
-      <PageHead eyebrow="Clips" title={<>Las mejores <span style={{ color: "var(--rojo)" }}>jugadas</span></>} lead="Clips de la comunidad VANTS. La edición y publicación automática la gestiona el servicio de clips." actions={<Link href="/clips/publicar" className="btn btn-sm">Publicar clip</Link>} />
+      <PageHead eyebrow="Clips" title={<>Las mejores <span style={{ color: "var(--rojo)" }}>jugadas</span></>} lead="Clips de la comunidad VANTS. Los clips automáticos de tus directos los edita y publica el bot de clips (VANTS-Clipper); también puedes subir los tuyos desde el ordenador o pegar el enlace de Twitch o Kick." actions={<Link href="/clips/publicar" className="btn btn-sm">Publicar clip</Link>} />
       <div className="wrap">
         <ClipTabs actual={actual} />
-        {vista === "destacados" && <Destacados />}
+        {vista === "destacados" && <><Destacados /><div className="mt-10"><ClipsComunidad /></div></>}
         {vista === "recientes" && <><ClipsComunidad /><Recientes /></>}
         {vista === "juego" && (
           <>
@@ -81,10 +81,10 @@ export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }
 export function ClipsPrivado({ vista }: { vista: "publicar" | "biblioteca" }) {
   return (
     <>
-      <PageHead eyebrow="Clips" title={vista === "publicar" ? "Publicar clip" : "Mi biblioteca"} lead={vista === "publicar" ? "Comparte tus jugadas con la comunidad VANTS pegando el enlace del clip." : "Los clips asociados a tu cuenta."} actions={vista === "publicar" ? <Link href="/clips/biblioteca" className="btn btn-sm">Mi biblioteca</Link> : undefined} />
+      <PageHead eyebrow="Clips" title={vista === "publicar" ? "Publicar clip" : "Mi biblioteca"} lead={vista === "publicar" ? "Sube un vídeo desde tu ordenador o pega el enlace de tu clip de Twitch o Kick." : "Los clips asociados a tu cuenta."} actions={vista === "publicar" ? <Link href="/clips/biblioteca" className="btn btn-sm">Mi biblioteca</Link> : undefined} />
       <AuthGate what={vista === "publicar" ? "la publicación de clips" : "tu biblioteca"}>
         <div className="wrap">
-          {vista === "publicar" ? <div className="grid gap-8"><PublicarClip /><MiBiblioteca conFormulario={false} /></div> : <MiBiblioteca />}
+          <MiBiblioteca />
         </div>
       </AuthGate>
     </>

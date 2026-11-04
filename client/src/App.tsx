@@ -7,6 +7,7 @@ import { Shell } from "./components/Layout";
 import { useSeo } from "./lib/seo";
 import Home from "./pages/Home";
 import NotFound from "./pages/not-found";
+import { PerfilPublicoPagina } from "./pages/PerfilPublico";
 import { TorneosLista, TorneoDetalle, Agenda, MiCalendario, BracketPrincipal, Ligas } from "./pages/Torneos";
 import { SalaJugadores, Equipos, EquipoDetalle, EquipoVants, JugadorDetalle, Ranked } from "./pages/Sala";
 import { Clips, ClipsPrivado, Noticias, NoticiaDetalle, EnVivo, Creadores, Comunidad } from "./pages/Comunidad";
@@ -75,6 +76,7 @@ function Rutas() {
         <Route path="/entrar">{() => <Acceso modo="entrar" />}</Route>
         <Route path="/registro">{() => <Acceso modo="registro" />}</Route>
         <Route path="/recuperar">{() => <Acceso modo="recuperar" />}</Route>
+        <Route path="/u/:pid" component={PerfilPublicoPagina} />
         <Route component={NotFound} />
       </Switch>
     </Shell>

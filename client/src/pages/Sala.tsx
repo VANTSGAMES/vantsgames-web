@@ -1,3 +1,4 @@
+import { CuentasRegistradas, RosterOficialPagina } from "./PerfilPublico";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueries } from "@tanstack/react-query";
@@ -20,7 +21,6 @@ function useRosters(teams: Team[] | undefined) {
 
 export function SalaJugadores() {
   const teams = useApi<{ data: Team[] }>("/api/teams");
-  const cuentas = useApi<{ data: Paged<AccountPlayer> }>("/api/players?porPagina=50");
   const { loading, players } = useRosters(teams.data?.data);
   const [q, setQ] = useState("");
   const [juego, setJuego] = useState("");
@@ -42,18 +42,7 @@ export function SalaJugadores() {
         )}
       </div>
       <Section title="Cuentas registradas" eyebrow="Plataforma">
-        {cuentas.isLoading ? <Skel n={2} /> : cuentas.error ? <ErrorBox error={cuentas.error} what="las cuentas" /> : (cuentas.data?.data.items || []).length === 0 ? (
-          <Empty code="cuentas · 0" title="Sin cuentas públicas" />
-        ) : (
-          <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
-            {cuentas.data!.data.items.map((c) => (
-              <div key={c.id} className="p-4 flex items-center gap-3">
-                <Initials name={c.display_name || c.nombre || "?"} />
-                <div className="min-w-0"><div className="d-3 truncate">{c.display_name || c.nombre}</div><div className="small muted">{c.role === "owner" ? "Fundador" : "Jugador"}{c.region ? " · " + c.region : ""}</div></div>
-              </div>
-            ))}
-          </div>
-        )}
+        <CuentasRegistradas />
       </Section>
     </>
   );
@@ -130,7 +119,7 @@ export function EquipoDetalle() {
   return <TeamView slug={slug} />;
 }
 export function EquipoVants() {
-  return <TeamView slug="vants" oficial />;
+  return <RosterOficialPagina />;
 }
 
 export function JugadorDetalle() {

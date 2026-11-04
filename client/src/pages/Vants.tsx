@@ -15,8 +15,8 @@ import { fecha, hora, gameLabel } from "@/lib/format";
 
 /* ------------------------------------------------------------------ tipos */
 export type EquipoRef = { slug: string; nombre: string; tag: string | null; juego: string };
-export type FilaFaceit = { pos: number; nick: string; avatar: string | null; pais: string | null; nivel: number | null; elo: number | null; partidas: number | null; winrate: number | null; kd: number | null; url: string; equipo: EquipoRef | null; actualizado: string };
-export type FilaXp = { pos: number; nick: string; xp: number; fundador: boolean; equipo: EquipoRef | null };
+export type FilaFaceit = { pos: number; pid?: string | null; vants?: string | null; fundador?: boolean; nick: string; avatar: string | null; pais: string | null; nivel: number | null; elo: number | null; partidas: number | null; winrate: number | null; kd: number | null; url: string; equipo: EquipoRef | null; actualizado: string };
+export type FilaXp = { pos: number; pid?: string | null; avatar?: string | null; nick: string; xp: number; fundador: boolean; equipo: EquipoRef | null };
 type Miembro = { id?: string; nick: string; rol: string; unido: string; yo?: boolean };
 type MiEquipo = { slug: string; nombre: string; tag: string | null; juego: string; region: string | null; logo_url?: string | null; capitan: boolean; codigo: string | null; miembros: Miembro[] };
 type Inscripcion = { id: string; slug: string; name: string; tag: string; status: string; created_at: string; torneo: string | null; starts_at: string | null; estado: string | null; game_slug: string | null };
@@ -53,6 +53,7 @@ const aLocal = (iso?: string | null) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+export { msg as mensajeError };
 export function useRol() {
   const { status } = useAuth();
   return useApi<{ owner: boolean; nick: string }>(status === "autenticado" ? "/int/rol" : null, { auth: true });
@@ -72,6 +73,13 @@ function EquipoMini({ e }: { e: EquipoRef | null }) {
   return <Link href={"/equipos/" + e.slug} className="small hover:text-[var(--rojo)] truncate">{e.tag ? <span className="tag mr-1.5">{e.tag}</span> : null}{e.nombre}</Link>;
 }
 
+/** Abre la ficha VANTS del jugador (/u/<pid>); si no tiene cuenta VANTS, su perfil de FACEIT. */
+export function EnlaceJugador({ pid, url, className, testid, children }: { pid?: string | null; url?: string; className?: string; testid?: string; children: ReactNode }) {
+  if (pid) return <Link href={"/u/" + pid} className={className} data-testid={testid} title="Ver perfil">{children}</Link>;
+  if (url) return <a href={url} target="_blank" rel="noopener noreferrer" className={className} data-testid={testid}>{children}</a>;
+  return <span className={className}>{children}</span>;
+}
+
 export function TablaRankingFaceit({ filas, max }: { filas: FilaFaceit[]; max?: number }) {
   const vis = max ? filas.slice(0, max) : filas;
   return (
@@ -83,11 +91,15 @@ export function TablaRankingFaceit({ filas, max }: { filas: FilaFaceit[]; max?: 
         {vis.map((r) => (
           <li key={r.nick + r.pos} className="row grid-cols-[40px_1fr_auto] md:grid-cols-[48px_1fr_180px_56px_80px_70px] items-center">
             <span className="num" style={{ color: r.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(r.pos).padStart(2, "0")}</span>
-            <a href={r.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 min-w-0 hover:text-[var(--rojo)]">
-              {r.avatar ? <img src={r.avatar} alt="" width={32} height={32} className="rounded-full" loading="lazy" /> : <Initials name={r.nick} size={32} />}
-              <span className="font-semibold truncate">{r.nick}</span>
+            <EnlaceJugador pid={r.pid} url={r.url} className="flex items-center gap-3 min-w-0 hover:text-[var(--rojo)]" testid={"ranking-jugador-" + r.pos}>
+              {r.avatar ? <img src={r.avatar} alt="" width={32} height={32} className="rounded-full" loading="lazy" /> : <Initials name={r.vants || r.nick} size={32} />}
+              <span className="min-w-0 grid">
+                <span className="font-semibold truncate">{r.vants || r.nick}</span>
+                {r.vants && r.vants.toLowerCase() !== r.nick.toLowerCase() && <span className="text-xs muted truncate">FACEIT · {r.nick}</span>}
+              </span>
+              {r.fundador && <span className="tag tag-rojo hidden lg:inline-flex">Fundador</span>}
               <span className="md:hidden"><NivelFaceit n={r.nivel} size={22} /></span>
-            </a>
+            </EnlaceJugador>
             <span className="hidden md:block min-w-0"><EquipoMini e={r.equipo} /></span>
             <span className="hidden md:block"><NivelFaceit n={r.nivel} size={26} /></span>
             <span className="num text-right">{r.elo ?? "—"}</span>
@@ -105,7 +117,7 @@ export function RankingVants() {
   const f = q.data?.faceit || [], x = q.data?.xp || [];
   return (
     <>
-      <PageHead eyebrow="Ranking global" title={<>Ranking <span style={{ color: "var(--rojo)" }}>VANTS</span></>} lead="Clasificación de los jugadores registrados en VANTS. El ELO y el nivel salen de FACEIT (CS2) al vincular la cuenta; la XP se gana en la plataforma." />
+      <PageHead eyebrow="Ranking global" title={<>Ranking <span style={{ color: "var(--rojo)" }}>VANTS</span></>} lead="Clasificación de los jugadores registrados en VANTS. Pulsa un jugador para ver su perfil. El ELO y el nivel salen de FACEIT (CS2) al vincular la cuenta; la XP se gana en la plataforma." />
       <div className="wrap grid gap-4">
         <div className="tabs" role="tablist">
           <button role="tab" className="tab" aria-selected={tab === "faceit"} onClick={() => setTab("faceit")} data-testid="tab-ranking-faceit">ELO FACEIT</button>
@@ -125,7 +137,7 @@ export function RankingVants() {
               {x.map((r) => (
                 <li key={r.nick + r.pos} className="row grid-cols-[48px_1fr_180px_90px] items-center">
                   <span className="num" style={{ color: r.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(r.pos).padStart(2, "0")}</span>
-                  <span className="flex items-center gap-2 min-w-0"><span className="font-semibold truncate">{r.nick}</span>{r.fundador && <span className="tag tag-rojo">Fundador</span>}</span>
+                  <EnlaceJugador pid={r.pid} className="flex items-center gap-2 min-w-0 hover:text-[var(--rojo)]" testid={"ranking-xp-" + r.pos}>{r.avatar ? <img src={r.avatar} alt="" width={28} height={28} className="rounded-full" loading="lazy" /> : <Initials name={r.nick} size={28} />}<span className="font-semibold truncate">{r.nick}</span>{r.fundador && <span className="tag tag-rojo">Fundador</span>}</EnlaceJugador>
                   <span className="min-w-0"><EquipoMini e={r.equipo} /></span>
                   <span className="num text-right">{r.xp}</span>
                 </li>
@@ -200,7 +212,7 @@ async function imagenEquipo(file: File): Promise<string> {
   } finally { URL.revokeObjectURL(url); }
 }
 
-function FotoEquipo({ e, onCambio }: { e: MiEquipo; onCambio: (m: { k: "ok" | "error"; m: string }) => void }) {
+export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nombre: string; tag?: string | null; logo_url?: string | null; capitan: boolean }; size?: number; onCambio: (m: { k: "ok" | "error"; m: string }) => void }) {
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<string | null>(e.logo_url || null);
   const subir = async (f: File | undefined) => {
@@ -222,7 +234,7 @@ function FotoEquipo({ e, onCambio }: { e: MiEquipo; onCambio: (m: { k: "ok" | "e
   };
   return (
     <div className="grid gap-1.5 justify-items-center" data-testid={"foto-equipo-" + e.slug}>
-      {logo ? <img src={logo} alt={"Foto de " + e.nombre} width={72} height={72} className="chamfer object-cover" style={{ width: 72, height: 72 }} /> : <Initials name={e.tag || e.nombre} size={72} />}
+      {logo ? <img src={logo} alt={"Foto de " + e.nombre} width={size} height={size} className="chamfer object-cover" style={{ width: size, height: size }} /> : <Initials name={e.tag || e.nombre} size={size} />}
       {e.capitan && (
         <div className="flex gap-1">
           <label className="btn btn-sm btn-ghost cursor-pointer" style={{ padding: "4px 8px", fontSize: 11 }}>
