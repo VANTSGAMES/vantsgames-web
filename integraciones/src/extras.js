@@ -11,6 +11,7 @@
 
 import { esOwner } from './comunidad.js';
 import { identidadDe, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js';
+import { rutasInsignias, invalidarInsignias } from './insignias.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
 const JUEGOS = ['valorant', 'cs2', 'otro'];
@@ -206,9 +207,11 @@ async function membresiaDe(env, sub) {
   if (owner) {
     return { plan: 'socio', planes: PLANES, nombre: 'SOCIO VANTS · Dueño', origen: 'owner', caduca: null, activo: true, todos: true };
   }
+  const ident = await identidadDe(env.DB, sub).catch(() => null);
+  const subs = ident ? ident.subs : [sub];
   const rs = await env.DB.prepare(
-    "SELECT tier, period, expires_at, source FROM entitlements WHERE auth0_sub = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))"
-  ).bind(sub).all().catch(() => ({ results: [] }));
+    "SELECT tier, period, expires_at, source FROM entitlements WHERE auth0_sub IN (" + subs.map(() => '?').join(',') + ") AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))"
+  ).bind(...subs).all().catch(() => ({ results: [] }));
   const act = (rs.results || []).filter((r) => PLANES.includes(String(r.tier || '').toLowerCase()));
   if (!act.length) return { plan: null, planes: [], activo: false };
   const orden = ['socio', 'creator', 'pro', 'pase'];
@@ -293,16 +296,22 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const d = await perfilPublico(env, mm[1]);
     return d ? H.json({ ok: true, perfil: d }, 200, { 'Cache-Control': 'public, max-age=60' }) : H.json({ ok: false, error: 'no_encontrado' }, 404);
   }
+  if (p === '/insignias' || p.startsWith('/insignias/')) {
+    const subI = p === '/insignias' ? null : await H.usuario(req, env).catch(() => null);
+    const ri = await rutasInsignias(req, env, p, m, H, subI);
+    if (ri) return ri;
+  }
   if (p === '/roster-oficial' && m === 'GET') return H.json({ ok: true, ...(await rosterOficial(env)) });
   if (p.startsWith('/roster-oficial/') && m === 'POST') {
     const sub = await H.usuario(req, env);
     if (!(await esOwner(env.DB, sub))) return H.json({ ok: false, error: 'solo_owner' }, 403);
     const r = await editarRoster(env, p, await req.json().catch(() => ({})));
+    invalidarInsignias();
     const st = r.status || 200; delete r.status;
     return H.json(r, r.ok ? 200 : st);
   }
 
-  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/equipos/logo', '/membresia'];
+  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia'];
   if (!privadas.includes(p)) return null;
   await preparar(env);
   const sub = await H.usuario(req, env);
@@ -434,6 +443,21 @@ export async function rutasExtras(req, env, url, p, m, H) {
       "INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, 'subido', NULL, ?, ?, ?, ?, ?)"
     ).bind(id, sub, await nickDe(env.DB, sub), vurl, hayMini ? INT_URL + '/clips/mini/' + id : null, txt(form.get('titulo'), 100) || 'Clip', juego, form.get('publico') === '0' ? 0 : 1, vurl).run();
     return H.json({ ok: true, id, video: vurl });
+  }
+
+  if (p === '/clips/editar' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    const ident = await identidadDe(env.DB, sub).catch(() => null);
+    const subs = ident ? ident.subs : [sub];
+    const fila = await env.DB.prepare('SELECT id, auth0_sub FROM integ_clips WHERE id = ?').bind(String(b.id || '')).first();
+    if (!fila || !(subs.includes(fila.auth0_sub) || (await esOwner(env.DB, sub)))) return H.json({ ok: false, error: 'no_encontrado' }, 404);
+    const sets = [], vals = [];
+    if (b.juego !== undefined) { const j = String(b.juego || '').toLowerCase(); sets.push('juego = ?'); vals.push(j === 'cs2' ? 'cs2' : j === 'valorant' ? 'valorant' : 'otro'); }
+    if (b.titulo !== undefined) { sets.push('titulo = ?'); vals.push(txt(b.titulo, 100) || 'Clip'); }
+    if (b.publico !== undefined) { sets.push('publico = ?'); vals.push(b.publico ? 1 : 0); }
+    if (!sets.length) return H.json({ ok: false, error: 'sin_cambios' }, 400);
+    await env.DB.prepare('UPDATE integ_clips SET ' + sets.join(', ') + ' WHERE id = ?').bind(...vals, fila.id).run();
+    return H.json({ ok: true });
   }
 
   if (p === '/clips/borrar' && m === 'POST') {

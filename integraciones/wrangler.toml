@@ -28,3 +28,9 @@ CANALES_KICK = "feispla"
 [[kv_namespaces]]
 binding = "CLIPS_KV"
 id = "41ab2fde4424430c9702509ed3b4236f"
+
+# Lectura de las insignias que ya concedió el motor de logros del Worker principal.
+[[d1_databases]]
+binding = "ACH_DB"
+database_name = "vants-logros-db"
+database_id = "481584c7-bc47-434b-aa73-3aa066b440f7"

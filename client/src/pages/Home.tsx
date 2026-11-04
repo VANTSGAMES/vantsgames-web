@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Link } from "wouter";
+import { Insignia3D, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useApi } from "@/lib/useApi";
 type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string | null; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string; desde: string | null };
 import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream, type Badge } from "@/lib/api";
@@ -71,7 +72,7 @@ export default function Home() {
   }, [streams.data, directosInt.data]);
   const canalesVigilados = Math.max(streams.data?.total_canales ?? 0, (directosInt.data?.directos || []).length);
   const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
-  const badges = useApi<{ badges: Badge[] }>("/api/badges");
+  const insignias = useCatalogoInsignias();
 
   const torneos = [...(destacados.data?.data.items || []), ...(proximos.data?.data.items || [])].slice(0, 5);
   const matches = [...(live.data?.data.items || []), ...(upcomingM.data?.data.items || [])].slice(0, 6);
@@ -201,12 +202,10 @@ export default function Home() {
             </Link>
           ))}
         </div>
-        {(badges.data?.badges || []).length > 0 && (
+        {(insignias.data?.catalogo || []).length > 0 && (
           <div className="flex flex-wrap items-center gap-4 mt-6">
-            <span className="small muted">Insignias verificadas en servidor:</span>
-            {badges.data!.badges.slice(0, 8).map((b) => (
-              <img key={b.code} src={assetUrl(b.image.webp)!} alt={b.name} title={b.name} width={36} height={36} loading="lazy" />
-            ))}
+            <span className="small muted">Insignias que se colocan solas en tu perfil:</span>
+            {insignias.data!.catalogo.slice(0, 8).map((b) => <Insignia3D key={b.code} d={b} size={44} titulo={b.nombre} />)}
             <Link href="/insignias" className="link-arrow">Ver todas <span aria-hidden>→</span></Link>
           </div>
         )}

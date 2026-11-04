@@ -3,6 +3,8 @@ import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./Pe
 import { MisEquiposPanel, MisInscripciones } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
+import { FilaInsignias, Sello } from "@/components/Insignia3D";
+import { useMisInsignias } from "./Membresias";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -48,6 +50,7 @@ function Resumen() {
   const q = useApi<{ nickname: string | null; redes: Record<string, any> }>("/api/account/perfil", { auth: true });
   // El nombre público es el nickname guardado en el servidor. Nunca se sustituye por el correo.
   const nombre = q.data?.nickname || null;
+  const ins = useMisInsignias();
   return (
     <div className="wrap grid gap-6">
       <div className="panel panel-pad flex flex-wrap items-center gap-6">
@@ -56,11 +59,12 @@ function Resumen() {
           <div className="eyebrow mb-1">Nombre público</div>
           {q.isLoading ? <div className="sk" style={{ height: 36, width: 220 }} /> : q.error ? (
             <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
-          ) : nombre ? <h2 className="d-1">{nombre}</h2> : (
+          ) : nombre ? <h2 className="d-1 flex flex-wrap items-center gap-3">{nombre}<Sello s={ins.data?.sello} /></h2> : (
             <div><p className="d-3">Sin nombre público</p><Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir nombre →</Link></div>
           )}
         </div>
       </div>
+      <div className="panel panel-pad grid gap-4" data-testid="perfil-insignias"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Mis insignias</h2><Link href="/insignias" className="link-arrow">Catálogo →</Link></div>{ins.isLoading ? <div className="sk" style={{ height: 90 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={72} />}<p className="text-xs muted">Se colocan solas cuando cumples el requisito (plan activo, cuentas vinculadas, logros, torneos…).</p></div>
       <div className="panel panel-pad grid gap-4"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Logros conseguidos</h2><Link href="/logros" className="link-arrow">Ver los 1000 →</Link></div><ResumenLogros /></div>
       <div className="grid gap-6 md:grid-cols-3">
         <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>

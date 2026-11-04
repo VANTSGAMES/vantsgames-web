@@ -7,6 +7,7 @@
 // la ficha /u/<pid>, el ranking y la sala de jugadores.
 
 import { datosValorant, iconoTier } from './juegos.js';
+import { evaluar } from './insignias.js';
 
 const TTL = 60_000;
 let cache = { at: 0, val: null };
@@ -123,8 +124,10 @@ export async function perfilPublico(env, pid) {
     if (d && (d.tier_id || d.riot)) valorant = { riot: d.riot || null, tier: d.tier || null, tier_id: d.tier_id || null, rr: d.rr ?? null, icono: iconoTier(d.tier_id), pico: d.pico || null, fuente: d.fuente || null };
   }
   const rk = id.ranking;
+  const ins = await evaluar(env, id).catch(() => null);
   return {
     pid: id.pid, nick: id.nick, avatar: id.avatar, fundador: id.fundador, xp: id.xp, desde: id.desde, redes: id.redes,
+    sello: ins ? ins.sello : null, insignias: ins ? ins.conseguidas : ['MEMBER'],
     faceit: rk ? { nick: rk.nick, nivel: rk.nivel, elo: rk.elo, partidas: rk.partidas, winrate: rk.winrate, kd: rk.kd, pais: rk.pais, avatar: rk.avatar, url: 'https://www.faceit.com/es/players/' + encodeURIComponent(rk.nick) } : null,
     valorant,
     cuentas: [...new Map(id.links.filter((l) => ['twitch', 'kick', 'youtube', 'x', 'tiktok', 'steam', 'discord', 'faceit'].includes(l.platform)).map((l) => [l.platform, { plataforma: l.platform, handle: l.handle }])).values()],
@@ -140,8 +143,10 @@ export async function perfilPublico(env, pid) {
 // Lista pública (Sala → Cuentas registradas): una entrada por persona.
 export async function jugadoresPublicos(env) {
   const { lista } = await identidades(env.DB);
+  const sellos = new Map();
+  for (const i of lista.slice(0, 200)) { const e = await evaluar(env, i, { conValorant: false }).catch(() => null); sellos.set(i.pid, e ? e.sello : null); }
   return lista
-    .map((i) => ({ pid: i.pid, nick: i.nick, avatar: i.avatar, fundador: i.fundador, xp: i.xp, nivel: i.ranking ? i.ranking.nivel : null, elo: i.ranking ? i.ranking.elo : null }))
+    .map((i) => ({ pid: i.pid, nick: i.nick, avatar: i.avatar, fundador: i.fundador, xp: i.xp, sello: sellos.get(i.pid) || null, nivel: i.ranking ? i.ranking.nivel : null, elo: i.ranking ? i.ranking.elo : null }))
     .sort((a, b) => Number(b.fundador) - Number(a.fundador) || (b.elo || 0) - (a.elo || 0) || (b.xp || 0) - (a.xp || 0));
 }
 

@@ -14,10 +14,11 @@ import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
 import { FotoEquipo, useRol, mensajeError } from "./Vants";
 import { fecha } from "@/lib/format";
+import { FilaInsignias, Sello, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
 
-type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null };
+type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null; sello?: string | null };
 type Perfil = {
-  pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; desde: string | null;
+  pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; desde: string | null; sello?: string | null; insignias?: string[];
   faceit: { nick: string; nivel: number | null; elo: number | null; partidas: number | null; winrate: number | null; kd: number | null; pais: string | null; url: string } | null;
   valorant: { riot: string | null; tier: string | null; tier_id: number | null; rr: number | null; icono: string | null; pico: string | null } | null;
   cuentas: { plataforma: string; handle: string }[];
@@ -43,7 +44,7 @@ export function CuentasRegistradas() {
         <Link key={c.pid} href={"/u/" + c.pid} className="p-4 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"cuenta-" + c.pid}>
           <Avatar src={c.avatar} nombre={c.nick} size={40} />
           <div className="min-w-0 grow">
-            <div className="d-3 truncate">{c.nick}</div>
+            <div className="d-3 truncate flex items-center gap-2">{c.nick}<Sello s={c.sello} /></div>
             <div className="small muted">{c.fundador ? "Fundador" : "Jugador"}{c.elo != null ? " · " + c.elo + " ELO" : ""}</div>
           </div>
           {c.nivel ? <NivelFaceit n={c.nivel} size={26} /> : null}
@@ -76,7 +77,7 @@ export function PerfilPublicoPagina() {
           <div className="min-w-0">
             <Link href="/ranking" className="link-arrow mb-3 w-fit" style={{ display: "flex" }}>← Ranking</Link>
             <div className="eyebrow mb-2">{p.fundador ? "Fundador de VANTS" : "Jugador VANTS"}</div>
-            <h1 className="d-1" data-testid="perfil-publico-nick">{p.nick}</h1>
+            <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello s={p.sello} /></h1>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {p.fundador && <span className="tag tag-rojo">Fundador</span>}
               <span className="tag">{p.xp} XP</span>
@@ -116,6 +117,12 @@ export function PerfilPublicoPagina() {
           <div className="small muted">{p.logros.faceit} de FACEIT · {p.logros.valorant} de VALORANT</div>
         </div>
       </div>
+      <Section title="Insignias" eyebrow={(p.insignias || []).length + " conseguidas"} more={{ to: "/insignias", label: "Catálogo" }}>
+        <div className="panel panel-pad grid gap-4" data-testid="perfil-publico-insignias">
+          <FilaInsignias codes={p.insignias || []} size={80} vacio="Este jugador todavía no tiene insignias." />
+          <ConcederInsignias pid={p.pid} tiene={p.insignias || []} />
+        </div>
+      </Section>
       <Section title="Equipos" eyebrow={p.equipos.length + " equipos"}>
         {p.equipos.length === 0 ? <Empty code="equipos · 0" title="Sin equipo todavía" /> : (
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-3">
@@ -132,6 +139,44 @@ export function PerfilPublicoPagina() {
         {p.clips.length === 0 ? <Empty code="clips · 0" title="Sin clips públicos" /> : <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{p.clips.map((c) => <TarjetaClip key={c.id} c={c} />)}</div>}
       </Section>
     </>
+  );
+}
+
+/** Solo el dueño: conceder o retirar insignias por invitación (SOCIO, PARTNER, CREATOR, VERIFIED, CHAMPION). */
+function ConcederInsignias({ pid, tiene }: { pid: string; tiene: string[] }) {
+  const rol = useRol();
+  const cat = useCatalogoInsignias();
+  const qc = useQueryClient();
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  if (!rol.data?.owner) return null;
+  const manuales = (cat.data?.catalogo || []).filter((b) => b.manual);
+  if (!manuales.length) return null;
+  async function cambiar(code: string, quitar: boolean) {
+    setOcupado(code); setErr(null);
+    try {
+      await api("/int/insignias/conceder", { method: "POST", auth: true, body: { pid, code, quitar } });
+      await qc.invalidateQueries({ queryKey: ["/int/u/" + pid, false] });
+      qc.invalidateQueries({ queryKey: ["/int/insignias", false] });
+      qc.invalidateQueries({ queryKey: ["/int/insignias/mias", true] });
+    } catch (e) { setErr(mensajeError(e)); } finally { setOcupado(null); }
+  }
+  return (
+    <div className="border-t pt-4 grid gap-3" style={{ borderColor: "var(--linea-suave)" }} data-testid="conceder-insignias">
+      <div className="eyebrow">Dueño · conceder insignias por invitación</div>
+      <div className="flex flex-wrap gap-2">
+        {manuales.map((b) => {
+          const ya = tiene.includes(b.code);
+          return (
+            <button key={b.code} type="button" disabled={ocupado === b.code} onClick={() => cambiar(b.code, ya)} className={"btn btn-sm " + (ya ? "btn-ghost" : "btn-rojo")} title={ya ? "Retirar" : "Conceder"}>
+              <Insignia3D d={b} size={22} /> {ya ? "Retirar " : "Dar "}{b.nombre}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs muted">Las de plan (PRO, PLUS, CREATOR) también se ponen solas al comprar. Si el jugador ya cumple el requisito automático, retirar la manual no la quita.</p>
+      {err && <p className="small" style={{ color: "var(--rojo)" }}>{err}</p>}
+    </div>
   );
 }
 

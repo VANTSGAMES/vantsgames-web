@@ -87,6 +87,31 @@ function VideoClip({ src, poster }: { src: string; poster?: string | null }) {
   return <video ref={ref} poster={poster || undefined} controls playsInline className="absolute inset-0 w-full h-full bg-black" />;
 }
 
+/** Cambiar el juego de un clip propio (POST /int/clips/editar). */
+function CambiarJuego({ c }: { c: Clip }) {
+  const qc = useQueryClient();
+  const [st, setSt] = useState<"idle" | "guardando" | "ok" | "error">("idle");
+  const cambiar = async (juego: string) => {
+    setSt("guardando");
+    try {
+      await api("/int/clips/editar", { method: "POST", auth: true, body: { id: c.id, juego } });
+      setSt("ok");
+      qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
+      qc.invalidateQueries({ queryKey: ["/int/clips/comunidad", false] });
+    } catch { setSt("error"); }
+  };
+  return (
+    <label className="flex items-center gap-2 text-xs muted">
+      Juego
+      <select className="input" style={{ height: 28, padding: "0 .5rem", fontSize: 12, width: "auto" }} value={c.juego || "otro"} disabled={st === "guardando"} onChange={(e) => cambiar(e.target.value)} data-testid={"juego-clip-" + c.id} aria-label="Cambiar juego del clip">
+        <option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option>
+      </select>
+      {st === "ok" && <span style={{ color: "var(--ok)" }}>Guardado</span>}
+      {st === "error" && <span style={{ color: "#ff5468" }}>No se pudo guardar</span>}
+    </label>
+  );
+}
+
 export function TarjetaClip({ c, onBorrar }: { c: Clip; onBorrar?: (c: Clip) => void }) {
   const [ver, setVer] = useState(false);
   const reproducible = !!(c.embed || c.video);
@@ -112,6 +137,7 @@ export function TarjetaClip({ c, onBorrar }: { c: Clip; onBorrar?: (c: Clip) => 
         </span>
         <strong className="text-sm line-clamp-2">{c.titulo || "Clip"}</strong>
         <span className="muted text-xs">{c.autor ? c.autor + " · " : ""}{hace(c.creado)}{c.vistas != null ? " · " + c.vistas + " vistas" : ""}</span>
+        {onBorrar && (c.origen === "vants" || c.origen === "subido") && <CambiarJuego c={c} />}
         <span className="flex gap-3 items-center mt-1">
           {c.origen !== "subido" && <a href={c.url} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">Abrir en {PLAT[c.plataforma] || "origen"} ↗</a>}
           {onBorrar && (c.origen === "vants" || c.origen === "subido") && <button className="text-xs underline muted ml-auto" onClick={() => onBorrar(c)} data-testid={"borrar-clip-" + c.id}>Quitar</button>}
@@ -194,7 +220,7 @@ export function SubirClip() {
   const rol = useRol();
   const [file, setFile] = useState<File | null>(null);
   const [titulo, setTitulo] = useState("");
-  const [juego, setJuego] = useState("VALORANT");
+  const [juego, setJuego] = useState("");
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
   const elegir = (f: File | undefined) => {
     setSt({ k: "idle" });
@@ -207,6 +233,7 @@ export function SubirClip() {
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) return setSt({ k: "error", m: ERR.falta_video });
+    if (!juego) return setSt({ k: "error", m: "Elige el juego del clip (VALORANT, CS2 u Otro)." });
     setSt({ k: "enviando", m: "Preparando el vídeo…" });
     try {
       const { thumb, dur } = await miniaturaDe(file);
@@ -221,7 +248,7 @@ export function SubirClip() {
       fd.append("dur", String(dur));
       setSt({ k: "enviando", m: "Subiendo " + (file.size / 1048576).toFixed(1) + " MB…" });
       await apiForm("/int/clips/subir", fd);
-      setFile(null); setTitulo("");
+      setFile(null); setTitulo(""); setJuego("");
       setSt({ k: "ok", m: "Clip subido. Ya aparece en tu biblioteca y en Clips de la comunidad VANTS." });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
       qc.invalidateQueries({ queryKey: ["/api/clips/featured", false] });
@@ -238,10 +265,10 @@ export function SubirClip() {
           {file && <span className="text-xs muted">{file.name} · {(file.size / 1048576).toFixed(1)} MB</span>}
         </div>
         <div className="field"><label htmlFor="clip-titulo-up">Título</label><input id="clip-titulo-up" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={80} placeholder="Clutch 1v3" /></div>
-        <div className="field"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}><option value="VALORANT">VALORANT</option><option value="CS2">CS2</option></select></div>
+        <div className="field"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)} required data-testid="select-clip-juego-up"><option value="" disabled>Selecciona el juego</option><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
-        <button className="btn btn-rojo" disabled={st.k === "enviando" || !file} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>
+        <button className="btn btn-rojo" disabled={st.k === "enviando" || !file || !juego} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>
         {st.m && <span className="small" role={st.k === "error" ? "alert" : "status"} style={{ color: st.k === "error" ? "#ff5468" : st.k === "ok" ? "var(--ok)" : undefined }}>{st.m}</span>}
       </div>
     </form>

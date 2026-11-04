@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { api, assetUrl, type Badge } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { LogrosJuegos, InsigniasVants1000, ProgresoJuegos } from "./Juegos";
+import { Insignia3D, DetalleInsignia, FilaInsignias, useCatalogoInsignias, rareza, type Insignia, type EstadoInsignia } from "@/components/Insignia3D";
 
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate } from "@/components/ui-vants";
@@ -104,29 +105,62 @@ export default function Membresias() {
   );
 }
 
-const RAREZA: Record<string, string> = { common: "Común", rare: "Rara", epic: "Épica", legendary: "Legendaria" };
+const CATEGORIAS: [string, string][] = [["membresia", "Membresías"], ["identidad", "Identidad"], ["competitivo", "Competitivo"], ["comunidad", "Comunidad"]];
 
+export function useMisInsignias() {
+  const { status } = useAuth();
+  return useApi<{ sello: string | null; insignias: EstadoInsignia[]; conseguidas: string[]; pid?: string }>("/int/insignias/mias", { auth: true, enabled: status === "autenticado" });
+}
+
+/** Catálogo de insignias VANTS en 3D. Se conceden solas al cumplir el requisito. */
 export function BadgeGrid({ standalone = false }: { standalone?: boolean }) {
-  const q = useApi<{ badges: Badge[] }>("/api/badges");
+  const q = useCatalogoInsignias();
+  const mias = useMisInsignias();
+  const [abierta, setAbierta] = useState<Insignia | null>(null);
+  const estado = new Map((mias.data?.insignias || []).map((e) => [e.code, e]));
+  const logueado = !!mias.data;
+  const todas = q.data?.catalogo || [];
+  const lista = standalone ? todas : todas.filter((b) => b.categoria === "membresia");
   return (
-    <Section id="insignias" eyebrow="Insignias" title={standalone ? "Catálogo completo" : "Insignias verificadas"} more={standalone ? undefined : { to: "/insignias", label: "Catálogo" }}>
-      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="las insignias" /> : (q.data?.badges || []).length === 0 ? (
+    <Section id="insignias" eyebrow="Insignias" title={standalone ? "Catálogo completo" : "Insignias de los planes"} more={standalone ? undefined : { to: "/insignias", label: "Ver las " + (todas.length || 18) }}>
+      {standalone && <p className="small muted -mt-3 mb-6 max-w-3xl">Las insignias se colocan solas en tu perfil en cuanto cumples el requisito: al comprar un plan, vincular cuentas, conseguir logros, ganar torneos o subir al Top 10. Si una suscripción caduca, su insignia se retira. Pulsa una para verla en 3D.</p>}
+      {logueado && standalone && <p className="small mb-6"><span style={{ color: "var(--ok)" }}>{mias.data!.conseguidas.length}</span> <span className="muted">de {todas.length} conseguidas</span></p>}
+      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="las insignias" /> : lista.length === 0 ? (
         <Empty code="insignias · 0" title="Catálogo vacío" />
       ) : (
-        <div className="grid-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
-          {(standalone ? q.data!.badges : q.data!.badges.slice(0, 10)).map((b) => (
-            <div key={b.code} className="p-5 grid gap-3 content-start" data-testid={"badge-" + b.code}>
-              <img src={assetUrl(b.image.webp)!} alt="" width={72} height={72} loading="lazy" style={{ width: 72, height: 72 }} />
-              <div>
-                <div className="d-3" style={{ color: b.color }}>{b.name}</div>
-                <div className="tag mt-1.5">{RAREZA[b.rarity] || b.rarity}</div>
+        <div className="grid gap-10">
+          {CATEGORIAS.filter(([c]) => lista.some((b) => b.categoria === c)).map(([c, t]) => (
+            <div key={c} className="grid gap-4">
+              {standalone && <h3 className="eyebrow">{t}</h3>}
+              <div className="grid-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {lista.filter((b) => b.categoria === c).map((b) => {
+                  const e = estado.get(b.code);
+                  const ok = logueado ? !!e?.ok : true;
+                  return (
+                    <button key={b.code} type="button" onClick={() => setAbierta(b)} className="p-5 grid gap-3 content-start text-left hover:bg-[var(--grafito-2)] transition-colors group" data-testid={"badge-" + b.code}>
+                      <div className="flex justify-center py-1 group-hover:scale-105 transition-transform"><Insignia3D d={b} size={104} conseguida={ok} titulo={b.nombre} /></div>
+                      <div>
+                        <div className="d-3" style={{ color: b.color }}>{b.nombre}</div>
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          <span className="tag">{rareza(b.rareza)}</span>
+                          {logueado && (e?.ok ? <span className="tag" style={{ color: "var(--ok)", borderColor: "var(--ok)" }}>Conseguida</span> : <span className="tag">Bloqueada</span>)}
+                        </div>
+                      </div>
+                      <p className="small muted">{b.descripcion}</p>
+                      <p className="small" style={{ color: "var(--gris-3)" }}>Requisito: {b.requisito}</p>
+                      {logueado && e?.progreso && !e.ok && (
+                        <div className="grid gap-1"><div className="flex justify-between text-xs muted"><span>Progreso</span><span className="num">{e.progreso.actual}/{e.progreso.meta}</span></div><div style={{ height: 4, background: "var(--grafito-3, #222)" }}><div style={{ height: 4, width: (100 * e.progreso.actual) / e.progreso.meta + "%", background: b.color }} /></div></div>
+                      )}
+                      <p className="text-xs muted">{b.titulares === 1 ? "1 jugador" : (b.titulares || 0) + " jugadores"}</p>
+                    </button>
+                  );
+                })}
               </div>
-              <p className="small muted">{b.description}</p>
-              <p className="small" style={{ color: "var(--gris-3)" }}>Requisito: {b.requirement}</p>
             </div>
           ))}
         </div>
       )}
+      {abierta && <DetalleInsignia b={abierta} conseguida={logueado ? !!estado.get(abierta.code)?.ok : true} estado={estado.get(abierta.code)} onCerrar={() => setAbierta(null)} />}
     </Section>
   );
 }
@@ -134,9 +168,9 @@ export function BadgeGrid({ standalone = false }: { standalone?: boolean }) {
 export function Insignias() {
   return (
     <>
-      <PageHead eyebrow="Insignias" title="Insignias VANTS" lead="1000 insignias VANTS, una por cada logro de FACEIT y VALORANT, más las insignias oficiales del motor de logros. Todas se validan en el servidor." />
-      <Section id="insignias-vants" eyebrow="Colección" title="1000 insignias VANTS"><InsigniasVants1000 /></Section>
+      <PageHead eyebrow="Insignias" title="Insignias VANTS" lead="Insignias oficiales en 3D que se colocan solas en tu perfil al cumplir el requisito, más 1000 insignias VANTS, una por cada logro de FACEIT y VALORANT." />
       <BadgeGrid standalone />
+      <Section id="insignias-vants" eyebrow="Colección" title="1000 insignias VANTS"><InsigniasVants1000 /></Section>
     </>
   );
 }
@@ -151,8 +185,7 @@ export function Logros() {
 }
 
 function MisLogros() {
-  const q = useApi<any>("/api/me/badges", { auth: true });
-  const items: any[] = (q.data?.badges || []).filter((a: any) => a && a.badge && a.status === "active");
+  const q = useMisInsignias();
   return (
     <div className="wrap grid gap-10">
       <div className="grid gap-4">
@@ -161,20 +194,9 @@ function MisLogros() {
         <LogrosJuegos />
       </div>
       <div className="grid gap-4">
-        <h2 className="d-2">Insignias conseguidas</h2>
-        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="tus insignias" /> : items.length === 0 ? (
-          <Empty code="insignias · 0" title="Todavía no tienes insignias" text="Las insignias las concede el motor de logros al registrarte, activar una membresía o ganar torneos oficiales." action={<Link href="/insignias" className="link-arrow">Ver requisitos <span aria-hidden>→</span></Link>} />
-        ) : (
-          <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
-            {items.map((a: any) => (
-              <div key={a.badge.code} className="p-5 grid gap-2 content-start" data-testid={"insignia-" + a.badge.code}>
-                {a.badge.image?.webp && <img src={assetUrl(a.badge.image.webp)!} alt="" width={64} height={64} />}
-                <div className="d-3">{a.badge.name}</div>
-                <p className="small muted">{a.badge.description}</p>
-                {a.awarded_at && <div className="small muted num">Conseguida el {new Date(a.awarded_at).toLocaleDateString("es-ES")}</div>}
-              </div>
-            ))}
-          </div>
+        <div className="flex items-end justify-between gap-3"><h2 className="d-2">Insignias conseguidas</h2><Link href="/insignias" className="link-arrow">Ver catálogo →</Link></div>
+        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="tus insignias" /> : (
+          <div className="panel panel-pad"><FilaInsignias codes={q.data?.conseguidas || []} size={84} vacio="Todavía no tienes insignias. Mira los requisitos en el catálogo." /></div>
         )}
       </div>
     </div>
