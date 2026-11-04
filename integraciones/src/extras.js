@@ -71,9 +71,24 @@ export function analizarClip(raw) {
   if (h === 'medal.tv' && (m = u.pathname.match(/\/clips\/([\w-]+)/))) return { plataforma: 'medal', id: m[1], embed: 'https://medal.tv/clip/' + m[1] + '?autoplay=0', miniatura: null };
   if (h === 'streamable.com' && (m = u.pathname.match(/^\/(?:e\/)?([a-z0-9]{4,12})$/i))) return { plataforma: 'streamable', id: m[1], embed: 'https://streamable.com/e/' + m[1], miniatura: null };
   if (h === 'outplayed.tv' || h.endsWith('.outplayed.tv')) return { plataforma: 'outplayed', id: u.pathname, embed: null, miniatura: null };
+  // FACEIT: los vídeos de faceit.com/<idioma>/players/<nick>/videos/<id> son clips de Allstar.
+  if (h === 'faceit.com' && (m = u.pathname.match(/\/players\/[^/]+\/videos\/([0-9a-f]{24})/i))) return fc(m[1].toLowerCase());
+  if (h === 'allstar.gg' && /^[0-9a-f]{24}$/i.test(u.searchParams.get('clip') || '')) return fc(u.searchParams.get('clip').toLowerCase());
+  if (h === 'allstar.gg' && (m = u.pathname.match(/^\/clip\/([0-9a-f]{24})/i))) return fc(m[1].toLowerCase());
   return null;
+  function fc(id) { return { plataforma: 'faceit', id, embed: 'https://allstar.gg/iframe?clip=' + id + '&known=true&platform=FACEIT&useCase=BP', miniatura: null }; }
   function yt(id) { return { plataforma: 'youtube', id, embed: 'https://www.youtube-nocookie.com/embed/' + id, miniatura: 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg' }; }
   function tw(id) { return { plataforma: 'twitch', id, embed: 'https://clips.twitch.tv/embed?clip=' + id + '&parent=' + parent + '&autoplay=false', miniatura: null }; }
+}
+
+async function datosClipFaceit(id) {
+  const r = await fetch('https://www.faceit.com/api/allstar/v1/clips/' + id, { headers: { accept: 'application/json', 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36' } });
+  if (!r.ok) return null;
+  const j = await r.json().catch(() => null);
+  const c = j && j.payload;
+  if (!c) return null;
+  const ok = (v) => { try { const x = new URL(String(v || '')); return x.protocol === 'https:' && /(^|\.)allstar\.gg$/.test(x.hostname) ? x.toString().slice(0, 400) : null; } catch { return null; } };
+  return { title: c.title || null, thumbnail_url: ok(c.thumbnail_url) };
 }
 
 async function twitchHeaders(env, H) {
@@ -226,7 +241,7 @@ async function membresiaDe(env, sub) {
 // R2 no está activado en la cuenta y el repositorio de clips no tiene token: los
 // vídeos subidos desde el ordenador se guardan en KV (CLIPS_KV) en trozos de
 // 20 MB (límite de valor de KV: 25 MiB) y se sirven con soporte de Range.
-const MAX_CLIP = 48 * 1024 * 1024;
+const MAX_CLIP = Math.round(50.5 * 1024 * 1024);
 const TROZO = 20 * 1024 * 1024;
 
 async function servirClipKv(req, env, tipo, id) {
@@ -415,6 +430,11 @@ export async function rutasExtras(req, env, url, p, m, H) {
       if (!miniatura) miniatura = deKick(b.miniatura);
       if (!titulo && b.titulo_kick) titulo = txt(b.titulo_kick, 100);
     }
+    if (info.plataforma === 'faceit') {
+      const d = await datosClipFaceit(info.id).catch(() => null);
+      if (d) { titulo = titulo || txt(d.title, 100); miniatura = d.thumbnail_url || miniatura; }
+      if (juego === 'otro') juego = 'cs2';
+    }
     if (info.plataforma === 'twitch' && !/^\d+$/.test(info.id)) {
       const d = await datosClipTwitch(env, H, info.id).catch(() => null);
       if (d) { titulo = titulo || txt(d.title, 100); miniatura = d.thumbnail_url || miniatura; }
@@ -425,7 +445,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const limpio = String(b.url).trim().slice(0, 400);
     const r = await env.DB.prepare(
       'INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(auth0_sub, url) DO NOTHING'
-    ).bind(id, sub, await nickDe(env.DB, sub), limpio, info.plataforma, info.embed, miniatura, titulo || 'Clip de ' + info.plataforma, juego === 'otro' && juegoDet ? juegoDet : juego, b.publico === false ? 0 : 1, video).run();
+    ).bind(id, sub, await nickDe(env.DB, sub), limpio, info.plataforma, info.embed, miniatura, titulo || 'Clip de ' + (info.plataforma === 'faceit' ? 'FACEIT' : info.plataforma), juego === 'otro' && juegoDet ? juegoDet : juego, b.publico === false ? 0 : 1, video).run();
     if (!r.meta || !r.meta.changes) return H.json({ ok: false, error: 'clip_repetido' }, 409);
     return H.json({ ok: true, id });
   }
@@ -433,14 +453,14 @@ export async function rutasExtras(req, env, url, p, m, H) {
   if (p === '/clips/subir' && m === 'POST') {
     if (!env.CLIPS_KV) return H.json({ ok: false, error: 'gh_no_config' }, 503);
     const len = parseInt(req.headers.get('content-length') || '0', 10);
-    if (len > MAX_CLIP + 1_500_000) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 48 }, 413);
+    if (len > MAX_CLIP + 1_500_000) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 50.5 }, 413);
     const hoy = await env.DB.prepare("SELECT COUNT(*) n FROM integ_clips WHERE auth0_sub = ? AND plataforma = 'subido' AND creado > datetime('now', '-1 day')").bind(sub).first();
     if (hoy && hoy.n >= 15 && !(await esOwner(env.DB, sub))) return H.json({ ok: false, error: 'demasiadas_subidas' }, 429);
     let form;
     try { form = await req.formData(); } catch { return H.json({ ok: false, error: 'cuerpo_vacio' }, 400); }
     const video = form.get('video'), thumb = form.get('thumb');
     if (!video || typeof video === 'string' || !video.size) return H.json({ ok: false, error: 'falta_video' }, 400);
-    if (video.size > MAX_CLIP) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 48 }, 413);
+    if (video.size > MAX_CLIP) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 50.5 }, 413);
     const ext = ['mp4', 'webm', 'mov', 'mkv', 'm4v'].includes(String(form.get('ext') || '').toLowerCase()) ? String(form.get('ext')).toLowerCase() : 'mp4';
     const mime = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska' }[ext];
     const id = uid();

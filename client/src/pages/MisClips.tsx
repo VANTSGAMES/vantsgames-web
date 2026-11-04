@@ -23,13 +23,13 @@ export type Clip = {
   miniatura: string | null; embed: string | null; video?: string | null; creado: string; autor: string | null; vistas?: number | null; duracion?: number | null; propio: boolean; publico?: boolean; kv?: boolean;
 };
 
-const PLAT: Record<string, string> = { youtube: "YouTube", twitch: "Twitch", kick: "Kick", medal: "Medal", streamable: "Streamable", outplayed: "Outplayed", vants: "VANTS" };
+const PLAT: Record<string, string> = { youtube: "YouTube", twitch: "Twitch", kick: "Kick", medal: "Medal", streamable: "Streamable", outplayed: "Outplayed", faceit: "FACEIT", vants: "VANTS" };
 const ERR: Record<string, string> = {
-  enlace_invalido: "Ese enlace no es de un clip compatible. Usa YouTube, Twitch, Kick, Medal, Streamable u Outplayed.",
+  enlace_invalido: "Ese enlace no es de un clip compatible. Usa FACEIT, YouTube, Twitch, Kick, Medal, Streamable u Outplayed.",
   clip_repetido: "Ese clip ya está en tu biblioteca.",
   limite_clips: "Has llegado al máximo de 200 clips.",
   sin_sesion: "Tu sesión expiró. Vuelve a iniciar sesión.",
-  clip_demasiado_grande: "El vídeo pesa más de 48 MB. Recórtalo o expórtalo con menos calidad.",
+  clip_demasiado_grande: "El vídeo pesa más de 50,5 MB. Recórtalo o expórtalo con menos calidad.",
   falta_video: "Elige un archivo de vídeo.",
   thumb_invalida: "No se pudo generar la miniatura del vídeo. Prueba con un MP4.",
   gh_no_config: "El almacenamiento de clips no está configurado en el servidor.",
@@ -175,12 +175,12 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-publicar-clip">
-      <div><h2 className="d-3">Publicar por enlace</h2><p className="small muted mt-1">Pega el enlace de tu clip de Twitch, Kick, YouTube, Medal, Streamable u Outplayed. Se reproduce aquí mismo.</p></div>
+      <div><h2 className="d-3">Publicar por enlace</h2><p className="small muted mt-1">Pega el enlace de tu clip de FACEIT, Twitch, Kick, YouTube, Medal, Streamable u Outplayed. Se reproduce aquí mismo.</p></div>
       <div className="grid gap-4 sm:grid-cols-2 min-w-0 [&>*]:min-w-0">
         <div className="field sm:col-span-2">
           <label htmlFor="clip-url">Enlace del clip</label>
           <input id="clip-url" className="input" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://clips.twitch.tv/… o https://kick.com/canal/clips/…" maxLength={400} data-testid="input-clip-url" />
-          <span className="text-xs muted">Twitch: clips.twitch.tv/… o twitch.tv/canal/clip/… · Kick: kick.com/canal/clips/clip_…</span>
+          <span className="text-xs muted">FACEIT: faceit.com/…/players/tu-nick/videos/… · Twitch: clips.twitch.tv/… · Kick: kick.com/canal/clips/clip_…</span>
         </div>
         <div className="field"><label htmlFor="clip-titulo">Título (opcional)</label><input id="clip-titulo" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={100} placeholder="Ace en Mirage" /></div>
         <div className="field"><label htmlFor="clip-juego">Juego</label><select id="clip-juego" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
@@ -196,7 +196,7 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
 }
 
 /* ---------------- Subir desde el ordenador ---------------- */
-const MAX_MB = 48;
+const MAX_MB = 50.5;
 async function miniaturaDe(file: File): Promise<{ thumb: Blob; dur: number }> {
   const url = URL.createObjectURL(file);
   try {
@@ -257,7 +257,7 @@ export function SubirClip() {
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-subir-clip">
-      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta {MAX_MB} MB (MP4, WEBM, MOV o MKV). Se publica en tu biblioteca y en Clips de la comunidad VANTS.</p></div>
+      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta 50,5 MB (MP4, WEBM, MOV o MKV). Se publica en tu biblioteca y en Clips de la comunidad VANTS.</p></div>
       <div className="grid gap-4 sm:grid-cols-2 min-w-0">
         <div className="field sm:col-span-2 min-w-0">
           <label htmlFor="clip-archivo">Vídeo</label>
