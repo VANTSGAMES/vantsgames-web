@@ -101,18 +101,19 @@ export function VideoTile({ v }: { v: YtVideo }) {
   );
 }
 
-export function StreamTile({ s }: { s: Stream }) {
+export function StreamTile({ s }: { s: Stream & { url?: string; plataforma?: "twitch" | "kick" } }) {
   return (
-    <a href={"https://www.twitch.tv/" + s.canal} target="_blank" rel="noopener noreferrer" className="group block" data-testid={"card-stream-" + s.canal}>
+    <a href={s.url || "https://www.twitch.tv/" + s.canal} target="_blank" rel="noopener noreferrer" className="group block" data-testid={"card-stream-" + s.canal}>
       <div className="relative overflow-hidden chamfer" style={{ aspectRatio: "16/9", background: "var(--grafito-2)" }}>
         {s.mini && <img src={s.mini} alt="" loading="lazy" className="w-full h-full object-cover" />}
         <span className="absolute left-2 top-2 tag tag-rojo" style={{ background: "rgba(10,10,11,.85)" }}><span className="dot-live" /> En vivo</span>
-        <span className="absolute right-2 bottom-2 tag num" style={{ background: "rgba(10,10,11,.85)" }}>{new Intl.NumberFormat("es-ES").format(s.vistas)} espectadores</span>
+        <span className="absolute right-2 top-2 tag" style={{ background: "rgba(10,10,11,.85)", color: s.plataforma === "kick" ? "#53fc18" : "#a970ff" }}>{s.plataforma === "kick" ? "Kick" : "Twitch"}</span>
+        <span className="absolute right-2 bottom-2 tag num" style={{ background: "rgba(10,10,11,.85)" }}>{new Intl.NumberFormat("es-ES").format(s.vistas || 0)} espectadores</span>
       </div>
       <div className="mt-2.5 flex items-center gap-2">
         {s.perfil && <img src={s.perfil} alt="" width={24} height={24} className="rounded-full" />}
         <span className="font-semibold">{s.canalNombre || s.canal}</span>
-        <span className="small muted">· {s.juego}</span>
+        {s.juego && <span className="small muted">· {s.juego}</span>}
       </div>
       <div className="small muted line-clamp-1 mt-0.5">{s.titulo}</div>
     </a>

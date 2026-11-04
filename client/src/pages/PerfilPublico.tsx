@@ -224,7 +224,7 @@ export function RosterOficialPagina() {
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
         <div className="wrap py-12 flex flex-wrap items-end gap-6">
-          {owner && e ? <FotoEquipo e={{ slug: "vants", nombre: e.nombre, tag: e.tag, logo_url: e.logo_url, capitan: true }} size={96} onCambio={(m) => { setAviso(m); refrescar(); }} /> : e?.logo_url ? <img src={e.logo_url} alt="" width={96} height={96} className="chamfer object-cover" style={{ width: 96, height: 96 }} /> : <Initials name={e?.tag || "VTS"} size={96} />}
+          {owner ? <FotoEquipo e={{ slug: "vants", nombre: e?.nombre || "VANTS", tag: e?.tag || "VTS", logo_url: e?.logo_url, capitan: true }} size={96} onCambio={(m) => { setAviso(m); refrescar(); }} /> : e?.logo_url ? <img src={e.logo_url} alt="" width={96} height={96} className="chamfer object-cover" style={{ width: 96, height: 96 }} /> : <Initials name={e?.tag || "VTS"} size={96} />}
           <div className="min-w-0 grow">
             <div className="eyebrow mb-2">Roster oficial</div>
             <h1 className="d-1">{e?.nombre || "Equipo VANTS"}</h1>
@@ -262,5 +262,48 @@ export function RosterOficialPagina() {
         </Section>
       ))}
     </>
+  );
+}
+
+/* ---------------- Circuito → Equipos: equipos de FACEIT ---------------- */
+type EquipoFc = {
+  id: string; nombre: string; tag: string | null; avatar: string | null; url: string; lider: string | null;
+  jugadores: { id: string; nickname: string; avatar: string | null; nivel: number | null; elo: number | null; pais: string | null; lider: boolean; url: string }[];
+  estadisticas: { partidas: number | null; winrate: number | null; racha: number | null } | null;
+};
+export function EquiposFaceitCircuito() {
+  const q = useApi<{ equipos: EquipoFc[] }>("/int/equipos-faceit");
+  const xs = q.data?.equipos || [];
+  if (q.isLoading) return <Skel n={2} />;
+  if (q.error) return <ErrorBox error={q.error} what="los equipos de FACEIT" />;
+  if (!xs.length) return <Empty code="faceit · 0" title="Ningún jugador VANTS tiene equipo en FACEIT" text="Vincula tu equipo en Mi perfil → Mis equipos." />;
+  return (
+    <div className="grid gap-4 lg:grid-cols-2" data-testid="equipos-faceit">
+      {xs.map((t) => (
+        <article key={t.id} className="panel">
+          <a href={t.url} target="_blank" rel="noopener noreferrer" className="p-5 flex items-center gap-4 border-b hover:bg-[var(--grafito-2)] transition-colors" style={{ borderColor: "var(--linea-suave)" }}>
+            <Avatar src={t.avatar} nombre={t.tag || t.nombre} size={56} />
+            <div className="min-w-0 grow">
+              <div className="d-3 truncate">{t.nombre}</div>
+              <div className="flex flex-wrap gap-1.5 mt-1">{t.tag && <span className="tag">{t.tag}</span>}<span className="tag">FACEIT · CS2</span>{t.estadisticas?.partidas != null && <span className="tag">{t.estadisticas.partidas} partidas</span>}{t.estadisticas?.winrate != null && <span className="tag">{t.estadisticas.winrate} % victorias</span>}</div>
+            </div>
+            <span className="small muted shrink-0">FACEIT →</span>
+          </a>
+          <ul className="divide-y" style={{ borderColor: "var(--linea-suave)" }}>
+            {t.jugadores.map((j) => (
+              <li key={j.id}>
+                <a href={j.url} target="_blank" rel="noopener noreferrer" className="px-5 py-3 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors">
+                  <Avatar src={j.avatar} nombre={j.nickname} size={32} />
+                  <span className="font-semibold truncate">{j.nickname}</span>
+                  {j.lider && <span className="tag tag-rojo">Líder</span>}
+                  {j.pais && <span className="text-xs muted uppercase">{j.pais}</span>}
+                  <span className="ml-auto flex items-center gap-2 small"><span className="num muted">{j.elo ?? "—"} ELO</span><NivelFaceit n={j.nivel} size={24} /></span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
   );
 }

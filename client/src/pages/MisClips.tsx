@@ -20,7 +20,7 @@ import { useRol } from "./Vants";
 
 export type Clip = {
   id: string; origen: "vants" | "twitch" | "kick" | "subido"; plataforma: string; url: string; titulo: string | null; juego: string | null;
-  miniatura: string | null; embed: string | null; video?: string | null; creado: string; autor: string | null; vistas?: number | null; duracion?: number | null; propio: boolean; publico?: boolean;
+  miniatura: string | null; embed: string | null; video?: string | null; creado: string; autor: string | null; vistas?: number | null; duracion?: number | null; propio: boolean; publico?: boolean; kv?: boolean;
 };
 
 const PLAT: Record<string, string> = { youtube: "YouTube", twitch: "Twitch", kick: "Kick", medal: "Medal", streamable: "Streamable", outplayed: "Outplayed", vants: "VANTS" };
@@ -220,16 +220,17 @@ export function SubirClip() {
       fd.append("nick", rol.data?.nick || "JUGADOR");
       fd.append("dur", String(dur));
       setSt({ k: "enviando", m: "Subiendo " + (file.size / 1048576).toFixed(1) + " MB…" });
-      await apiForm("/api/clips/featured", fd);
+      await apiForm("/int/clips/subir", fd);
       setFile(null); setTitulo("");
-      setSt({ k: "ok", m: "Clip subido. Ya aparece en tu biblioteca y en Clips destacados." });
+      setSt({ k: "ok", m: "Clip subido. Ya aparece en tu biblioteca y en Clips de la comunidad VANTS." });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
       qc.invalidateQueries({ queryKey: ["/api/clips/featured", false] });
+      qc.invalidateQueries({ queryKey: ["/int/clips/comunidad", false] });
     } catch (err) { setSt({ k: "error", m: mensaje(err) }); }
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4" data-testid="form-subir-clip">
-      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta {MAX_MB} MB (MP4, WEBM, MOV o MKV). Se publica en Clips destacados.</p></div>
+      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un vídeo de hasta {MAX_MB} MB (MP4, WEBM, MOV o MKV). Se publica en tu biblioteca y en Clips de la comunidad VANTS.</p></div>
       <div className="grid gap-4 md:grid-cols-[2fr_1.4fr_auto]">
         <div className="field">
           <label htmlFor="clip-archivo">Vídeo</label>
@@ -262,7 +263,7 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   const borrar = async (c: Clip) => {
     if (!window.confirm("¿Quitar este clip de tu biblioteca?")) return;
     try {
-      if (c.origen === "subido") await api("/api/clips/featured?id=" + encodeURIComponent(c.id), { method: "DELETE", auth: true });
+      if (c.origen === "subido" && !c.kv) await api("/api/clips/featured?id=" + encodeURIComponent(c.id), { method: "DELETE", auth: true });
       else await api("/int/clips/borrar", { method: "POST", auth: true, body: { id: c.id } });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
     } catch (e) { window.alert(mensaje(e)); }

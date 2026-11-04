@@ -197,19 +197,20 @@ function UnirseEquipo({ onOk }: { onOk: (slug: string) => void }) {
   );
 }
 
-/** Reduce la imagen a 256×256 (recorte centrado) y la devuelve como data URL WEBP/PNG. */
+/** Reduce la imagen a 256×256 (recorte centrado) y la devuelve como data URL WEBP/PNG.
+ *  Se lee con FileReader (data:) porque la CSP de la web no permite imágenes blob:. */
+const leerDataUrl = (file: File) => new Promise<string>((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => ko(r.error); r.readAsDataURL(file); });
 async function imagenEquipo(file: File): Promise<string> {
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" });
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" })); i.src = url; });
-    const L = 256, c = document.createElement("canvas");
-    c.width = L; c.height = L;
-    const lado = Math.min(img.naturalWidth, img.naturalHeight);
-    c.getContext("2d")!.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, L, L);
-    const webp = c.toDataURL("image/webp", 0.88);
-    return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/png");
-  } finally { URL.revokeObjectURL(url); }
+  const valido = /^image\/(png|jpeg|jpg|pjpeg|webp|gif|avif|bmp)$/.test(file.type) || (!file.type && /\.(png|jpe?g|jfif|webp|gif|avif|bmp)$/i.test(file.name));
+  if (!valido) throw Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" });
+  const datos = await leerDataUrl(file);
+  const img = await new Promise<HTMLImageElement>((ok, ko) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ko(Object.assign(new Error("imagen_invalida"), { code: "imagen_invalida" })); i.src = datos; });
+  const L = 256, c = document.createElement("canvas");
+  c.width = L; c.height = L;
+  const lado = Math.min(img.naturalWidth, img.naturalHeight);
+  c.getContext("2d")!.drawImage(img, (img.naturalWidth - lado) / 2, (img.naturalHeight - lado) / 2, lado, lado, 0, 0, L, L);
+  const webp = c.toDataURL("image/webp", 0.88);
+  return webp.startsWith("data:image/webp") ? webp : c.toDataURL("image/png");
 }
 
 export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nombre: string; tag?: string | null; logo_url?: string | null; capitan: boolean }; size?: number; onCambio: (m: { k: "ok" | "error"; m: string }) => void }) {
@@ -232,17 +233,22 @@ export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nomb
     catch (err) { onCambio({ k: "error", m: msg(err) }); }
     finally { setBusy(false); }
   };
+  const imagen = logo
+    ? <img src={logo} alt={"Foto de " + e.nombre} width={size} height={size} className="chamfer object-cover block" style={{ width: size, height: size }} />
+    : <Initials name={e.tag || e.nombre} size={size} />;
+  if (!e.capitan) return <div className="shrink-0" style={{ width: size, height: size }}>{imagen}</div>;
   return (
-    <div className="grid gap-1.5 justify-items-center" data-testid={"foto-equipo-" + e.slug}>
-      {logo ? <img src={logo} alt={"Foto de " + e.nombre} width={size} height={size} className="chamfer object-cover" style={{ width: size, height: size }} /> : <Initials name={e.tag || e.nombre} size={size} />}
-      {e.capitan && (
-        <div className="flex gap-1">
-          <label className="btn btn-sm btn-ghost cursor-pointer" style={{ padding: "4px 8px", fontSize: 11 }}>
-            {busy ? "Subiendo…" : logo ? "Cambiar foto" : "Subir foto"}
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="sr-only" disabled={busy} onChange={(ev) => { subir(ev.target.files?.[0]); ev.target.value = ""; }} data-testid={"input-foto-equipo-" + e.slug} />
-          </label>
-          {logo && !busy && <button className="btn btn-sm btn-ghost" style={{ padding: "4px 8px", fontSize: 11 }} onClick={quitar}>Quitar</button>}
-        </div>
+    <div className="relative shrink-0" style={{ width: size, height: size }} data-testid={"foto-equipo-" + e.slug}>
+      <label className="block cursor-pointer group" style={{ width: size, height: size }} title={logo ? "Cambiar foto del equipo" : "Subir foto del equipo"}>
+        {imagen}
+        <span className={"absolute inset-0 chamfer flex items-center justify-center text-center text-[10px] font-bold uppercase tracking-wider transition-opacity " + (busy ? "opacity-100" : "opacity-0 group-hover:opacity-100")} style={{ background: "rgba(0,0,0,.7)", color: "#fff" }}>{busy ? "Subiendo…" : logo ? "Cambiar foto" : "Subir foto"}</span>
+        <span aria-hidden className="absolute flex items-center justify-center rounded-full" style={{ right: -6, bottom: -6, width: 24, height: 24, background: "var(--rojo)", color: "#fff", border: "2px solid var(--grafito-1)" }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" /></svg>
+        </span>
+        <input type="file" accept="image/*" className="sr-only" disabled={busy} onChange={(ev) => { subir(ev.target.files?.[0]); ev.target.value = ""; }} data-testid={"input-foto-equipo-" + e.slug} aria-label="Subir foto del equipo" />
+      </label>
+      {logo && !busy && (
+        <button type="button" onClick={quitar} title="Quitar foto" aria-label="Quitar foto" className="absolute flex items-center justify-center rounded-full" style={{ right: -6, top: -6, width: 20, height: 20, background: "var(--grafito-3, #222)", color: "#fff", border: "1px solid var(--linea)", fontSize: 12, lineHeight: 1 }}>×</button>
       )}
     </div>
   );

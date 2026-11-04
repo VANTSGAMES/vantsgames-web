@@ -23,3 +23,8 @@ TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
+
+# Clips subidos desde el ordenador (vídeo en trozos de 20 MB + miniatura).
+[[kv_namespaces]]
+binding = "CLIPS_KV"
+id = "41ab2fde4424430c9702509ed3b4236f"

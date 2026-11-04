@@ -1,5 +1,7 @@
+import { useMemo } from "react";
 import { Link } from "wouter";
 import { useApi } from "@/lib/useApi";
+type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string | null; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string; desde: string | null };
 import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream, type Badge } from "@/lib/api";
 import { assetUrl } from "@/lib/api";
 import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
@@ -11,7 +13,8 @@ import { NivelFaceit } from "./PerfilFaceit";
 
 function Hero() {
   const live = useApi<{ streams: Stream[] }>("/api/twitch/directos?limite=1", { refetchMs: 60_000 });
-  const enVivo = live.data?.streams?.length || 0;
+  const vivosInt = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
+  const enVivo = Math.max(live.data?.streams?.length || 0, (vivosInt.data?.directos || []).filter((d) => d.en_vivo).length);
   return (
     <section className="relative overflow-hidden border-b" style={{ borderColor: "var(--linea-suave)" }}>
       <img src={pub("img/arena.jpg")} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.55 }} />
@@ -55,6 +58,18 @@ export default function Home() {
   const eventos = useEventos();
   const clips = useApi<{ videos: YtVideo[] }>("/api/youtube/ultimos");
   const streams = useApi<{ streams: Stream[]; total_canales: number }>("/api/twitch/directos?limite=3", { refetchMs: 60_000 });
+  const directosInt = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
+  // Twitch (filtrado por juego en el Worker principal) + Kick y Twitch detectados por vants-integraciones.
+  const vivos = useMemo(() => {
+    const xs: (Stream & { url?: string; plataforma?: "twitch" | "kick" })[] = (streams.data?.streams || []).map((s) => ({ ...s, plataforma: "twitch" as const }));
+    for (const d of directosInt.data?.directos || []) {
+      if (!d.en_vivo) continue;
+      if (d.plataforma === "twitch" && xs.some((x) => x.canal.toLowerCase() === d.canal.toLowerCase())) continue;
+      xs.push({ canal: d.canal, canalNombre: d.nombre || d.canal, perfil: "", titulo: d.titulo || "", juego: d.juego || "", vistas: d.espectadores || 0, inicio: d.desde || "", idioma: "es", mini: d.miniatura || "", url: d.url, plataforma: d.plataforma });
+    }
+    return xs;
+  }, [streams.data, directosInt.data]);
+  const canalesVigilados = Math.max(streams.data?.total_canales ?? 0, (directosInt.data?.directos || []).length);
   const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
   const badges = useApi<{ badges: Badge[] }>("/api/badges");
 
@@ -147,11 +162,11 @@ export default function Home() {
       </Section>
 
       <div className="wrap grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-        <Section id="twitch" eyebrow="Twitch" title="En directo" more={{ to: "/en-vivo", label: "Twitch en vivo" }} className="!px-0">
-          {streams.isLoading ? <Skel h={140} n={1} /> : streams.error ? <ErrorBox error={streams.error} what="los directos" /> : (streams.data?.streams || []).length === 0 ? (
-            <Empty code={"twitch · " + (streams.data?.total_canales ?? 0) + " canales vigilados"} title="Ningún canal de VANTS está en directo" text="Solo se muestran canales registrados en VANTS que emiten VALORANT o Counter-Strike." />
+        <Section id="twitch" eyebrow="Twitch y Kick" title="En directo" more={{ to: "/en-vivo", label: "Directos en vivo" }} className="!px-0">
+          {streams.isLoading && directosInt.isLoading ? <Skel h={140} n={1} /> : streams.error && directosInt.error ? <ErrorBox error={streams.error} what="los directos" /> : vivos.length === 0 ? (
+            <Empty code={"twitch + kick · " + canalesVigilados + " canales vigilados"} title="Ningún canal de VANTS está en directo" text="Se muestran los canales de Twitch y Kick registrados en VANTS. Se comprueban cada 2 minutos." />
           ) : (
-            <div className="grid gap-6 sm:grid-cols-2">{streams.data!.streams.map((s) => <StreamTile key={s.canal} s={s} />)}</div>
+            <div className="grid gap-6 sm:grid-cols-2">{vivos.slice(0, 4).map((s) => <StreamTile key={(s.plataforma || "twitch") + s.canal} s={s} />)}</div>
           )}
         </Section>
         <Section id="noticias" eyebrow="Noticias" title="Anuncios" more={{ to: "/noticias", label: "Todas" }} className="!px-0">

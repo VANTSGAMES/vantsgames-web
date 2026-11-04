@@ -361,6 +361,31 @@ async function rutas(req, env, url) {
     return json({ ok: true, directos: (rs.results || []).map((r) => ({ ...r, en_vivo: !!r.en_vivo })) }, 200, { 'Cache-Control': 'public, max-age=30' });
   }
 
+  // Equipos de FACEIT de los jugadores VANTS (Circuito → Equipos): los que
+  // vincularon a mano en su perfil + los equipos de FACEIT de cada cuenta vinculada.
+  if (p === '/equipos-faceit' && m === 'GET') {
+    const lista = await cacheado('eqfc', 300_000, async () => {
+      const ids = new Map();
+      const man = await env.DB.prepare('SELECT auth0_sub, team_id FROM integ_faceit_equipo').all().catch(() => ({ results: [] }));
+      for (const r of man.results || []) if (r.team_id && !ids.has(r.team_id)) ids.set(r.team_id, r.auth0_sub);
+      const lk = await env.DB.prepare("SELECT auth0_sub, platform_user_id FROM vants_links WHERE platform='faceit' AND platform_user_id IS NOT NULL").all().catch(() => ({ results: [] }));
+      const vistos = new Set();
+      for (const l of (lk.results || []).slice(0, 40)) {
+        if (vistos.has(l.platform_user_id)) continue;
+        vistos.add(l.platform_user_id);
+        const t = await cacheado('fpt:' + l.platform_user_id, 600_000, () => fx(env, '/players/' + l.platform_user_id + '/teams?limit=5').catch(() => null));
+        for (const it of (t && t.items) || []) if (it.team_id && !ids.has(it.team_id)) ids.set(it.team_id, l.auth0_sub);
+      }
+      const equipos = [];
+      for (const id of [...ids.keys()].slice(0, 24)) {
+        const eq = await equipoFaceit(env, id, { cacheado, fx }, []).catch(() => null);
+        if (eq) { const { partidas, ...resto } = eq; equipos.push(resto); }
+      }
+      return equipos;
+    });
+    return json({ ok: true, equipos: lista }, 200, { 'Cache-Control': 'public, max-age=120' });
+  }
+
   // Perfil FACEIT público por id (para fichas de otros jugadores)
   if (p === '/faceit/jugador' && m === 'GET') {
     const id = url.searchParams.get('id') || '';

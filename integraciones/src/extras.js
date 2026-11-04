@@ -172,7 +172,7 @@ async function canalTwitchDe(db, sub) {
 }
 
 const isoD1 = (v) => (v && !/[TZ]/.test(v) ? v.replace(' ', 'T') + 'Z' : v);
-const filaClip = (r) => ({ id: r.id, origen: 'vants', plataforma: r.plataforma, url: r.url, titulo: r.titulo, juego: r.juego, miniatura: r.miniatura, embed: r.embed, video: r.video || null, creado: isoD1(r.creado), autor: r.nick, publico: !!r.publico, propio: true });
+const filaClip = (r) => ({ id: r.id, origen: r.plataforma === 'subido' ? 'subido' : 'vants', kv: r.plataforma === 'subido', plataforma: r.plataforma, url: r.url, titulo: r.titulo, juego: r.juego, miniatura: r.miniatura, embed: r.embed, video: r.video || null, creado: isoD1(r.creado), autor: r.nick, publico: !!r.publico, propio: true });
 
 /* ------------------------------------------------------------ foto de equipo */
 
@@ -180,8 +180,13 @@ async function puedeEditarEquipo(db, slug, sub) {
   const e = await db.prepare('SELECT slug, capitan_sub FROM integ_equipos WHERE slug = ?').bind(slug).first();
   if (!e) {
     // Equipos sin capitán en la web (p. ej. el roster oficial «vants»): solo el dueño.
-    const t = await db.prepare('SELECT slug FROM pt_teams WHERE slug = ?').bind(slug).first();
-    return t && (await esOwner(db, sub)) ? { slug } : null;
+    if (!(await esOwner(db, sub))) return null;
+    let t = await db.prepare('SELECT slug FROM pt_teams WHERE slug = ?').bind(slug).first();
+    if (!t && slug === 'vants') {
+      await db.prepare("INSERT INTO pt_teams (id, slug, nombre, tag) VALUES (?, 'vants', 'VANTS', 'VTS')").bind(crypto.randomUUID()).run();
+      t = { slug };
+    }
+    return t ? { slug } : null;
   }
   if (e.capitan_sub === sub || (await esOwner(db, sub))) return e;
   return null;
@@ -212,6 +217,53 @@ async function membresiaDe(env, sub) {
   return { plan: top.tier, planes: act.map((r) => r.tier), nombre: null, origen: top.source, caduca: top.expires_at || null, periodo: top.period || null, activo: true, todos: false };
 }
 
+
+/* ------------------------------------------------------------ clips subidos (KV) */
+// R2 no está activado en la cuenta y el repositorio de clips no tiene token: los
+// vídeos subidos desde el ordenador se guardan en KV (CLIPS_KV) en trozos de
+// 20 MB (límite de valor de KV: 25 MiB) y se sirven con soporte de Range.
+const MAX_CLIP = 48 * 1024 * 1024;
+const TROZO = 20 * 1024 * 1024;
+
+async function servirClipKv(req, env, tipo, id) {
+  if (!env.CLIPS_KV) return new Response('no disponible', { status: 503 });
+  const cab = { 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=604800, immutable', 'x-content-type-options': 'nosniff' };
+  if (tipo === 'mini') {
+    const t = await env.CLIPS_KV.get('t:' + id, { type: 'arrayBuffer', cacheTtl: 86400 });
+    return t ? new Response(t, { headers: { ...cab, 'content-type': 'image/jpeg' } }) : new Response('no encontrado', { status: 404 });
+  }
+  const meta = await env.CLIPS_KV.get('m:' + id, { type: 'json', cacheTtl: 3600 });
+  if (!meta) return new Response('no encontrado', { status: 404 });
+  const total = meta.size;
+  let ini = 0, fin = total - 1, parcial = false;
+  const rg = (req.headers.get('range') || '').match(/^bytes=(\d*)-(\d*)$/);
+  if (rg) {
+    parcial = true;
+    if (rg[1] === '' && rg[2] !== '') { ini = Math.max(0, total - Number(rg[2])); }
+    else { ini = Number(rg[1] || 0); if (rg[2] !== '') fin = Math.min(total - 1, Number(rg[2])); }
+    if (ini >= total || ini > fin) return new Response(null, { status: 416, headers: { ...cab, 'content-range': 'bytes */' + total } });
+  }
+  const h = { ...cab, 'content-type': meta.mime, 'accept-ranges': 'bytes', 'content-length': String(fin - ini + 1) };
+  if (parcial) h['content-range'] = 'bytes ' + ini + '-' + fin + '/' + total;
+  if (req.method === 'HEAD') return new Response(null, { status: parcial ? 206 : 200, headers: h });
+  const p0 = Math.floor(ini / TROZO), p1 = Math.floor(fin / TROZO);
+  const { readable, writable } = new TransformStream();
+  (async () => {
+    const w = writable.getWriter();
+    try {
+      for (let i = p0; i <= p1; i++) {
+        const b = await env.CLIPS_KV.get('v:' + id + ':' + i, { type: 'arrayBuffer', cacheTtl: 3600 });
+        if (!b) break;
+        const base = i * TROZO;
+        const a = Math.max(ini, base) - base, z = Math.min(fin, base + b.byteLength - 1) - base + 1;
+        await w.write(new Uint8Array(b, a, z - a));
+      }
+    } catch { /* cliente cerró */ }
+    await w.close().catch(() => null);
+  })();
+  return new Response(readable, { status: parcial ? 206 : 200, headers: h });
+}
+
 /* ------------------------------------------------------------ rutas */
 
 export async function rutasExtras(req, env, url, p, m, H) {
@@ -222,6 +274,9 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const r = await env.DB.prepare('SELECT mime, datos FROM integ_equipo_logo WHERE slug = ?').bind(mm[1]).first();
     if (!r) return new Response('no encontrado', { status: 404 });
     return new Response(b64aBytes(r.datos), { headers: { 'content-type': r.mime, 'cache-control': 'public, max-age=86400', 'x-content-type-options': 'nosniff' } });
+  }
+  if ((mm = p.match(/^\/clips\/(archivo|mini)\/([0-9a-f]{32})$/)) && (m === 'GET' || m === 'HEAD')) {
+    return servirClipKv(req, env, mm[1], mm[2]);
   }
   if (p === '/clips/comunidad' && m === 'GET') {
     await preparar(env);
@@ -247,7 +302,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     return H.json(r, r.ok ? 200 : st);
   }
 
-  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/equipos/logo', '/membresia'];
+  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/equipos/logo', '/membresia'];
   if (!privadas.includes(p)) return null;
   await preparar(env);
   const sub = await H.usuario(req, env);
@@ -283,9 +338,9 @@ export async function rutasExtras(req, env, url, p, m, H) {
   }
 
   if (p === '/clips/mios' && m === 'GET') {
-    const rs = await env.DB.prepare('SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado, video FROM integ_clips WHERE auth0_sub = ? ORDER BY creado DESC LIMIT 200').bind(sub).all();
     const ident = await identidadDe(env.DB, sub).catch(() => null);
     const subs = ident ? ident.subs : [sub];
+    const rs = await env.DB.prepare('SELECT id, nick, url, plataforma, embed, miniatura, titulo, juego, publico, creado, video FROM integ_clips WHERE auth0_sub IN (' + subs.map(() => '?').join(',') + ') ORDER BY creado DESC LIMIT 200').bind(...subs).all();
     let canal = await canalTwitchDe(env.DB, sub), kick = await canalKickDe(env.DB, sub);
     for (const s2 of subs) { if (!canal) canal = await canalTwitchDe(env.DB, s2); if (!kick) kick = await canalKickDe(env.DB, s2); }
     let twitch = [], errorTwitch = null, kk = [], errorKick = null;
@@ -296,8 +351,9 @@ export async function rutasExtras(req, env, url, p, m, H) {
     ]);
     twitch = rt; kk = rk;
     const propios = new Set((rs.results || []).map((r) => r.url));
+    const filas = (rs.results || []).map(filaClip);
     return H.json({
-      ok: true, canal_twitch: canal, canal_kick: kick, clips: (rs.results || []).map(filaClip), subidos,
+      ok: true, canal_twitch: canal, canal_kick: kick, clips: filas.filter((c) => !c.kv), subidos: [...filas.filter((c) => c.kv), ...subidos],
       twitch: twitch.filter((c) => !propios.has(c.url)), kick: kk.filter((c) => !propios.has(c.url)),
       error_twitch: errorTwitch, error_kick: errorKick,
     });
@@ -333,9 +389,66 @@ export async function rutasExtras(req, env, url, p, m, H) {
     return H.json({ ok: true, id });
   }
 
+  if (p === '/clips/subir' && m === 'POST') {
+    if (!env.CLIPS_KV) return H.json({ ok: false, error: 'gh_no_config' }, 503);
+    const len = parseInt(req.headers.get('content-length') || '0', 10);
+    if (len > MAX_CLIP + 1_500_000) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 48 }, 413);
+    const hoy = await env.DB.prepare("SELECT COUNT(*) n FROM integ_clips WHERE auth0_sub = ? AND plataforma = 'subido' AND creado > datetime('now', '-1 day')").bind(sub).first();
+    if (hoy && hoy.n >= 15 && !(await esOwner(env.DB, sub))) return H.json({ ok: false, error: 'demasiadas_subidas' }, 429);
+    let form;
+    try { form = await req.formData(); } catch { return H.json({ ok: false, error: 'cuerpo_vacio' }, 400); }
+    const video = form.get('video'), thumb = form.get('thumb');
+    if (!video || typeof video === 'string' || !video.size) return H.json({ ok: false, error: 'falta_video' }, 400);
+    if (video.size > MAX_CLIP) return H.json({ ok: false, error: 'clip_demasiado_grande', max_mb: 48 }, 413);
+    const ext = ['mp4', 'webm', 'mov', 'mkv', 'm4v'].includes(String(form.get('ext') || '').toLowerCase()) ? String(form.get('ext')).toLowerCase() : 'mp4';
+    const mime = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mkv: 'video/x-matroska' }[ext];
+    const id = uid();
+    // Se lee por streaming y se guarda en trozos de 20 MB (memoria acotada).
+    let partes = 0, total = 0, llenos = 0, trozo = new Uint8Array(Math.min(TROZO, video.size));
+    const lector = video.stream().getReader();
+    for (;;) {
+      const { done, value } = await lector.read();
+      if (done) break;
+      let off = 0;
+      while (off < value.length) {
+        const n = Math.min(value.length - off, trozo.length - llenos);
+        trozo.set(value.subarray(off, off + n), llenos);
+        llenos += n; off += n; total += n;
+        if (llenos === trozo.length) {
+          await env.CLIPS_KV.put('v:' + id + ':' + partes++, trozo);
+          llenos = 0;
+          trozo = new Uint8Array(Math.min(TROZO, Math.max(1, video.size - total)));
+        }
+      }
+    }
+    if (llenos) await env.CLIPS_KV.put('v:' + id + ':' + partes++, trozo.subarray(0, llenos));
+    const buf = { byteLength: total };
+    let hayMini = false;
+    if (thumb && typeof thumb !== 'string' && thumb.size && thumb.size <= 400_000) { await env.CLIPS_KV.put('t:' + id, await thumb.arrayBuffer()); hayMini = true; }
+    const dur = Math.max(0, Math.min(3600, parseInt(form.get('dur'), 10) || 0));
+    await env.CLIPS_KV.put('m:' + id, JSON.stringify({ mime, size: buf.byteLength, partes, dur }));
+    const juegoF = String(form.get('juego') || '').toLowerCase();
+    const juego = juegoF === 'cs2' ? 'cs2' : juegoF === 'valorant' ? 'valorant' : 'otro';
+    const vurl = INT_URL + '/clips/archivo/' + id;
+    await env.DB.prepare(
+      "INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, 'subido', NULL, ?, ?, ?, ?, ?)"
+    ).bind(id, sub, await nickDe(env.DB, sub), vurl, hayMini ? INT_URL + '/clips/mini/' + id : null, txt(form.get('titulo'), 100) || 'Clip', juego, form.get('publico') === '0' ? 0 : 1, vurl).run();
+    return H.json({ ok: true, id, video: vurl });
+  }
+
   if (p === '/clips/borrar' && m === 'POST') {
     const b = await req.json().catch(() => ({}));
     const owner = await esOwner(env.DB, sub);
+    const ident = await identidadDe(env.DB, sub).catch(() => null);
+    const subs = ident ? ident.subs : [sub];
+    const fila = await env.DB.prepare('SELECT id, auth0_sub, plataforma FROM integ_clips WHERE id = ?').bind(String(b.id || '')).first();
+    if (fila && fila.plataforma === 'subido' && (owner || subs.includes(fila.auth0_sub)) && env.CLIPS_KV) {
+      const meta = await env.CLIPS_KV.get('m:' + fila.id, 'json').catch(() => null);
+      for (let i = 0; i < ((meta && meta.partes) || 3); i++) await env.CLIPS_KV.delete('v:' + fila.id + ':' + i).catch(() => null);
+      await env.CLIPS_KV.delete('t:' + fila.id).catch(() => null);
+      await env.CLIPS_KV.delete('m:' + fila.id).catch(() => null);
+    }
+    if (fila && subs.includes(fila.auth0_sub)) { await env.DB.prepare('DELETE FROM integ_clips WHERE id = ?').bind(fila.id).run(); return H.json({ ok: true }); }
     const r = owner
       ? await env.DB.prepare('DELETE FROM integ_clips WHERE id = ?').bind(String(b.id || '')).run()
       : await env.DB.prepare('DELETE FROM integ_clips WHERE id = ? AND auth0_sub = ?').bind(String(b.id || ''), sub).run();
