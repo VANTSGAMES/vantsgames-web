@@ -21,6 +21,14 @@ jobs:
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/settings" > s.json
           jq '.result | {compatibility_date, compatibility_flags, usage_model, placement, logpush, tail_consumers, observability, bindings: [.bindings[] | del(.text, .json)]}' s.json
+      - name: Versiones y configuración de assets
+        run: |
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/deployments" | jq -c '.result.deployments[0]'
+          V=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/deployments" | jq -r '.result.deployments[0].versions[0].version_id')
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/versions/$V" | jq '.result | del(.resources.bindings) ' > v.json
+          jq 'walk(if type=="object" then with_entries(select(.key|test("text|json|secret";"i")|not)) else . end)' v.json
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/script-settings" | jq -c .result
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/assets-upload-session" -o /dev/null -w "assets-upload-session %{http_code}\n" || true
       - name: Horarios
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/schedules" | jq -c .result
