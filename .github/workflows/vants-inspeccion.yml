@@ -19,10 +19,29 @@ jobs:
           T1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           T2: ${{ secrets.VANTS_CLOUDFLARE_API_TOKEN }}
         run: |
-          echo "-- org CLOUDFLARE_API_TOKEN:"
-          curl -sS -H "Authorization: Bearer $T1" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success, errors, status: .result.status}'
-          echo "-- org VANTS_CLOUDFLARE_API_TOKEN:"
-          curl -sS -H "Authorization: Bearer $T2" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success, errors, status: .result.status}'
+          forma() {
+            local n="$1" V="$2" p="no" e="no" s_="no" c="no"
+            case "$V" in "Bearer "*|"bearer "*) p="si";; esac
+            case "$V" in *" "*) e="si";; esac
+            case "$V" in *$'\n'*|*$'\r'*) s_="si";; esac
+            case "$V" in *'"'*|"'"*) c="si";; esac
+            echo "$n: len=${#V} prefijoBearer=$p espacios=$e saltos=$s_ comillas=$c"
+          }
+          forma "T1" "$T1"
+          forma "T2" "$T2"
+          limpia() {
+            local V="$1"
+            V="${V#Bearer }"; V="${V#bearer }"
+            V="${V%$'\r'}"; V="${V%$'\n'}"
+            V="${V#\"}"; V="${V%\"}"
+            while [ -n "$V" ] && [ "${V%${V#?}}" = " " ]; do V="${V#?}"; done
+            while [ -n "$V" ] && [ "${V#${V%?}}" = " " ]; do V="${V%?}"; done
+            printf '%s' "$V"
+          }
+          A=$(limpia "$T1"); echo "T1 limpiado: len=${#A}"
+          curl -sS -H "Authorization: Bearer $A" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{http:"ok", success, status: .result.status}'
+          B=$(limpia "$T2"); echo "T2 limpiado: len=${#B}"
+          curl -sS -H "Authorization: Bearer $B" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{http:"ok", success, status: .result.status}'
       - name: Lista de Workers
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts" | jq -c '.result[] | {id, has_assets, has_modules, handlers, compatibility_date, modified_on}'
