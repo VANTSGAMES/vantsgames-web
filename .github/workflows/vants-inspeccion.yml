@@ -19,7 +19,8 @@ jobs:
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts" | jq -c '.result[] | {id, has_assets, has_modules, handlers, compatibility_date, modified_on}'
       - name: Ajustes de vants (bindings sin valores secretos)
         run: |
-          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/settings" > s.json
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/settings" > s.json; jq -c "{success, errors}" s.json
+          curl -sS -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c ".result|{status,expires_on}"
           jq '.result | {compatibility_date, compatibility_flags, usage_model, placement, logpush, tail_consumers, observability, bindings: [.bindings[] | del(.text, .json)]}' s.json
       - name: Versiones y configuración de assets
         run: |
