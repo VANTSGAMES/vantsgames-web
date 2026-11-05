@@ -3,7 +3,7 @@ import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./Pe
 import { MisEquiposPanel, MisInscripciones, imagenEquipo, mensajeError } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
-import { FilaInsignias, Sello } from "@/components/Insignia3D";
+import { FilaInsignias, Sello3D } from "@/components/Insignia3D";
 import { useMisInsignias } from "./Membresias";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
 import { Link, useParams } from "wouter";
@@ -109,7 +109,7 @@ function Resumen() {
           <div className="eyebrow mb-1">Nombre público</div>
           {q.isLoading ? <div className="sk" style={{ height: 36, width: 220 }} /> : q.error ? (
             <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
-          ) : nombre ? <h2 className="d-1 flex flex-wrap items-center gap-3">{nombre}<Sello s={ins.data?.sello} /></h2> : (
+          ) : nombre ? <h2 className="d-1 nombre-cromo flex flex-wrap items-center gap-3">{nombre}<Sello3D s={ins.data?.sello} size={56} /></h2> : (
             <div><p className="d-3">Sin nombre público</p><Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir nombre →</Link></div>
           )}
         </div>

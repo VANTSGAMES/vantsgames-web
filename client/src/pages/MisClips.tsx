@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
+import { opcionesJuegos } from "@/lib/juegos";
 import { api, apiForm } from "@/lib/api";
 import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
 import { hace } from "@/lib/format";
@@ -104,7 +105,7 @@ function CambiarJuego({ c }: { c: Clip }) {
     <label className="flex items-center gap-2 text-xs muted">
       Juego
       <select className="input" style={{ height: 28, padding: "0 .5rem", fontSize: 12, width: "auto" }} value={c.juego || "otro"} disabled={st === "guardando"} onChange={(e) => cambiar(e.target.value)} data-testid={"juego-clip-" + c.id} aria-label="Cambiar juego del clip">
-        <option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option>
+        {opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}<option value="otro">Otro</option>
       </select>
       {st === "ok" && <span style={{ color: "var(--ok)" }}>Guardado</span>}
       {st === "error" && <span style={{ color: "#ff5468" }}>No se pudo guardar</span>}
@@ -183,7 +184,7 @@ export function PublicarClip({ onOk }: { onOk?: () => void }) {
           <span className="text-xs muted">FACEIT: faceit.com/…/players/tu-nick/videos/… · Twitch: clips.twitch.tv/… · Kick: kick.com/canal/clips/clip_…</span>
         </div>
         <div className="field"><label htmlFor="clip-titulo">Título (opcional)</label><input id="clip-titulo" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={100} placeholder="Ace en Mirage" /></div>
-        <div className="field"><label htmlFor="clip-juego">Juego</label><select id="clip-juego" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
+        <div className="field"><label htmlFor="clip-juego">Juego</label><select id="clip-juego" className="input" value={juego} onChange={(e) => setJuego(e.target.value)}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}<option value="otro">Otro</option></select></div>
       </div>
       <label className="flex items-center gap-2 small"><input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} /> Mostrar también en Clips de la comunidad VANTS</label>
       <div className="flex items-center gap-3 flex-wrap">
@@ -265,7 +266,7 @@ export function SubirClip() {
           {file && <span className="text-xs muted">{file.name} · {(file.size / 1048576).toFixed(1)} MB</span>}
         </div>
         <div className="field min-w-0"><label htmlFor="clip-titulo-up">Título</label><input id="clip-titulo-up" className="input" value={titulo} onChange={(e) => setTitulo(e.target.value)} maxLength={80} placeholder="Clutch 1v3" /></div>
-        <div className="field min-w-0"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)} required data-testid="select-clip-juego-up"><option value="" disabled>Selecciona el juego</option><option value="valorant">VALORANT</option><option value="cs2">CS2</option><option value="otro">Otro</option></select></div>
+        <div className="field min-w-0"><label htmlFor="clip-juego-up">Juego</label><select id="clip-juego-up" className="input" value={juego} onChange={(e) => setJuego(e.target.value)} required data-testid="select-clip-juego-up"><option value="" disabled>Selecciona el juego</option>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}<option value="otro">Otro</option></select></div>
       </div>
       <div className="flex items-center gap-3 flex-wrap">
         <button className="btn btn-rojo" disabled={st.k === "enviando" || !file || !juego} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>

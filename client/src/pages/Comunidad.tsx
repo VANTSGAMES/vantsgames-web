@@ -5,6 +5,7 @@ import type { Article, Paged, Stream, YtVideo, Creator } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
 import { VideoTile, StreamTile } from "@/components/domain";
 import { fecha, gameLabel, hace } from "@/lib/format";
+import { JUEGOS } from "@/lib/juegos";
 import { MiBiblioteca, ClipsComunidad } from "./MisClips";
 
 /* ---------------- Clips ---------------- */
@@ -43,8 +44,20 @@ function Destacados() {
 function Recientes({ filtro }: { filtro?: string }) {
   const q = useApi<{ videos: YtVideo[]; canal?: { titulo: string } }>("/api/youtube/ultimos");
   let v = q.data?.videos || [];
-  if (filtro === "valorant") v = v.filter((x) => /valorant|reyna|jett|phoenix|fade|sova|omen/i.test(x.titulo));
-  if (filtro === "cs2") v = v.filter((x) => /\bcs2\b|counter[- ]?strike|\bcs\b/i.test(x.titulo));
+  const CLAVES: Record<string, RegExp> = {
+    valorant: /valorant|reyna|jett|phoenix|fade|sova|omen/i,
+    cs2: /\bcs2\b|counter[- ]?strike|\bcs\b/i,
+    fortnite: /fortnite/i,
+    fc27: /\bfc\s?2[0-9]\b|\bfc\b|fifa/i,
+    smash: /smash/i,
+    warzone: /warzone|call of duty|callofduty|\bcod\b/i,
+    freefire: /free ?fire/i,
+    lol: /\blol\b|league of legends/i,
+    wildrift: /wild ?rift/i,
+    mlbb: /mobile legends|mlbb/i,
+    clashroyale: /clash royale/i,
+  };
+  if (filtro && CLAVES[filtro]) v = v.filter((x) => CLAVES[filtro].test(x.titulo));
   if (q.isLoading) return <Skel h={160} n={1} />;
   if (q.error) return <ErrorBox error={q.error} what="los clips" />;
   if (v.length === 0) return <Empty code={"clips · " + (filtro || "0")} title={filtro ? "No hay clips de " + gameLabel(filtro) + " todavía" : "Todavía no hay clips"} />;
@@ -68,7 +81,7 @@ export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }
         {vista === "recientes" && <><ClipsComunidad /><Recientes /></>}
         {vista === "juego" && (
           <>
-            <div className="flex gap-1 mb-6" role="group" aria-label="Juego">{[["valorant", "VALORANT"], ["cs2", "CS2"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)}>{l}</button>)}</div>
+            <div className="flex gap-1 mb-6" role="group" aria-label="Juego">{JUEGOS.map((j) => <button key={j.slug} className={"btn btn-sm " + (juego === j.slug ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.slug} onClick={() => setJuego(j.slug)}>{j.label}</button>)}</div>
             <ClipsComunidad juego={juego} />
             <Recientes filtro={juego} />
           </>

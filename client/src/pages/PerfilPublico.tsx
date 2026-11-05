@@ -14,7 +14,8 @@ import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
 import { FotoEquipo, useRol, mensajeError } from "./Vants";
 import { fecha } from "@/lib/format";
-import { FilaInsignias, Sello, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
+import { FilaInsignias, Sello3D, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
+import { JUEGOS, nombreJuego, opcionesJuegos } from "@/lib/juegos";
 
 type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null; sello?: string | null };
 type Perfil = {
@@ -44,7 +45,7 @@ export function CuentasRegistradas() {
         <Link key={c.pid} href={"/u/" + c.pid} className="p-4 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"cuenta-" + c.pid}>
           <Avatar src={c.avatar} nombre={c.nick} size={40} />
           <div className="min-w-0 grow">
-            <div className="d-3 truncate flex items-center gap-2">{c.nick}<Sello s={c.sello} /></div>
+            <div className="d-3 truncate flex items-center gap-2">{c.nick}<Sello3D s={c.sello} size={26} /></div>
             <div className="small muted">{c.fundador ? "Fundador" : "Jugador"}{c.elo != null ? " · " + c.elo + " ELO" : ""}</div>
           </div>
           {c.nivel ? <NivelFaceit n={c.nivel} size={26} /> : null}
@@ -77,7 +78,7 @@ export function PerfilPublicoPagina() {
           <div className="min-w-0">
             <Link href="/ranking" className="link-arrow mb-3 w-fit" style={{ display: "flex" }}>← Ranking</Link>
             <div className="eyebrow mb-2">{p.fundador ? "Fundador de VANTS" : "Jugador VANTS"}</div>
-            <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello s={p.sello} /></h1>
+            <h1 className="d-1 nombre-cromo flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello3D s={p.sello} size={64} /></h1>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {p.fundador && <span className="tag tag-rojo">Fundador</span>}
               <span className="tag">{p.xp} XP</span>
@@ -201,7 +202,7 @@ function EditorEquipo({ r, onOk }: { r: Roster; onOk: () => void }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="field"><label htmlFor="ro-n">Nombre</label><input id="ro-n" className="input" required maxLength={40} value={f.nombre} onChange={set("nombre")} /></div>
         <div className="field"><label htmlFor="ro-t">Tag</label><input id="ro-t" className="input" maxLength={5} value={f.tag} onChange={set("tag")} /></div>
-        <div className="field"><label htmlFor="ro-j">Juego principal</label><select id="ro-j" className="input" value={f.juego} onChange={set("juego")}><option value="">VALORANT y CS2</option><option value="valorant">VALORANT</option><option value="cs2">CS2</option></select></div>
+        <div className="field"><label htmlFor="ro-j">Juego principal</label><select id="ro-j" className="input" value={f.juego} onChange={set("juego")}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
         <div className="field"><label htmlFor="ro-r">Región</label><input id="ro-r" className="input" maxLength={40} value={f.region} onChange={set("region")} /></div>
       </div>
       <div className="flex items-center gap-3"><button className="btn btn-rojo" disabled={st.k === "enviando"}>{st.k === "enviando" ? "Guardando…" : "Guardar equipo"}</button>{st.m && <span className="small" style={{ color: st.k === "error" ? "#ff5468" : "var(--ok)" }}>{st.m}</span>}</div>
@@ -233,7 +234,7 @@ function EditorJugador({ inicial, onOk, onCancelar }: { inicial?: Roster["jugado
         </div>
         <div className="field"><label>Nombre en el roster</label><input className="input" required minLength={2} maxLength={32} value={f.nombre} onChange={set("nombre")} /></div>
         <div className="field"><label>Rol</label><input className="input" maxLength={32} value={f.rol} onChange={set("rol")} placeholder="IGL, Entry, AWP, Coach…" /></div>
-        <div className="field"><label>Juego</label><select className="input" value={f.juego} onChange={set("juego")}><option value="valorant">VALORANT</option><option value="cs2">CS2</option></select></div>
+        <div className="field"><label>Juego</label><select className="input" value={f.juego} onChange={set("juego")}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
         <div className="field"><label>País</label><input className="input" maxLength={40} value={f.pais} onChange={set("pais")} /></div>
         <div className="field"><label>Orden</label><input className="input" type="number" min={0} max={99} value={f.orden} onChange={set("orden")} /></div>
       </div>
@@ -264,7 +265,9 @@ export function RosterOficialPagina() {
   if (q.error) return <div className="wrap py-16"><ErrorBox error={q.error} what="el roster oficial" /></div>;
   const r = q.data!;
   const e = r.equipo;
-  const porJuego = (["valorant", "cs2"] as const).map((g) => ({ g, xs: r.jugadores.filter((j) => (j.juego || "valorant") === g) })).filter((x) => x.xs.length);
+  const porJuego = JUEGOS.map((d) => ({ g: d.slug, xs: r.jugadores.filter((j) => j.juego === d.slug) })).filter((x) => x.xs.length);
+const fueraRegistro = Array.from(new Set(r.jugadores.map((j) => j.juego).filter((g): g is string => !!g && !JUEGOS.some((d) => d.slug === g)))).map((g) => ({ g, xs: r.jugadores.filter((j) => j.juego === g) }));
+porJuego.push(...fueraRegistro);
   return (
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
@@ -288,7 +291,7 @@ export function RosterOficialPagina() {
       {r.jugadores.length === 0 ? (
         <div className="wrap py-10"><Empty code="roster · 0" title="El roster oficial todavía no está publicado" text={owner ? "Pulsa «Editar roster» y añade a los jugadores del equipo VANTS." : "Cuando la organización publique la plantilla aparecerá aquí."} action={<Link href="/equipos" className="link-arrow">Ver equipos del circuito →</Link>} /></div>
       ) : porJuego.map(({ g, xs }) => (
-        <Section key={g} title={g === "cs2" ? "Counter-Strike 2" : "VALORANT"} eyebrow={xs.length + " jugadores"}>
+        <Section key={g} title={nombreJuego(g)} eyebrow={xs.length + " jugadores"}>
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
             {xs.map((j) => editando === j.id ? (
               <div key={j.id} className="sm:col-span-2"><EditorJugador inicial={j} onOk={() => { setEditando(null); refrescar(); }} onCancelar={() => setEditando(null)} /></div>

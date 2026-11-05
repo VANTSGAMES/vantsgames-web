@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueries } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
+import { filtrosJuegos } from "@/lib/juegos";
 import { api, assetUrl, type Team, type PtPlayer, type AccountPlayer, type Paged } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
 import { TeamTile, PlayerTile, MatchRow } from "@/components/domain";
@@ -32,7 +33,7 @@ export function SalaJugadores() {
         <div className="flex flex-wrap gap-3 items-center justify-between">
           <input className="input w-full sm:w-80" placeholder="Buscar jugador" aria-label="Buscar jugador" value={q} onChange={(e) => setQ(e.target.value)} data-testid="input-buscar-jugador" />
           <div className="flex gap-1" role="group" aria-label="Juego">
-            {[["", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)}>{l}</button>)}
+            {filtrosJuegos().map((j) => <button key={j.v} className={"btn btn-sm " + (juego === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.v} onClick={() => setJuego(j.v)}>{j.l}</button>)}
           </div>
         </div>
         {teams.isLoading || loading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los jugadores" /> : vis.length === 0 ? (
@@ -57,7 +58,7 @@ export function Equipos() {
       <PageHead eyebrow="Circuito" title="Equipos del circuito" lead="Equipos registrados en VANTS con su plantilla y sus partidas. Crea el tuyo e invita a tus compañeros con un código." />
       <div className="wrap grid gap-4">
         <div className="flex gap-1" role="group" aria-label="Juego">
-          {[["", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)} data-testid={"filter-equipos-" + (v || "todos")}>{l}</button>)}
+          {filtrosJuegos().map((j) => <button key={j.v} className={"btn btn-sm " + (juego === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.v} onClick={() => setJuego(j.v)} data-testid={"filter-equipos-" + (j.v || "todos")}>{j.l}</button>)}
         </div>
         {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los equipos" /> : vis.length === 0 ? (
           <Empty code={"equipos · " + (juego || "todos")} title="No hay equipos en esta categoría" />

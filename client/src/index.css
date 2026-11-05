@@ -234,3 +234,24 @@ select.input { appearance: auto; }
 /* Estado de cuenta vinculada: verde visible */
 .tag-conectado { color: #3ddc84; border-color: #3ddc84; background: rgba(61, 220, 132, 0.15); font-weight: 700; }
 .tag-conectado::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; margin-right: 6px; vertical-align: middle; }
+
+/* ============================================================
+   Perfil V1 · nombre cromado y sello 3D
+   Acero con reflejo para el nombre público del perfil (prototipo
+   V1-Insignias-3D). Sin WebGL el sello cae a su versión plana.
+   ============================================================ */
+.nombre-cromo {
+  background: linear-gradient(180deg, #ffffff 20%, #c7cdd6 52%, #8f98a4 54%, #e8ecf1 78%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .nombre-cromo {
+    animation: cromo-barrido 2.4s var(--ease) 0.2s both;
+  }
+  @keyframes cromo-barrido {
+    from { opacity: 0.35; letter-spacing: 0.02em; }
+    to { opacity: 1; letter-spacing: 0; }
+  }
+}

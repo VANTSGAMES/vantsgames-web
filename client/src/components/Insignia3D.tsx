@@ -126,3 +126,36 @@ export function Sello({ s }: { s: string | null | undefined }) {
   const c = s === "SOCIO" ? "#ff0d2e" : s === "CREATOR" ? "#b44cff" : "#ff2d4a";
   return <span className="tag" style={{ color: "#fff", background: c, borderColor: c, letterSpacing: ".08em" }} title={"Sello " + s} data-testid={"sello-" + s}>{s}</span>;
 }
+
+/**
+ * Sello 3D del plan junto al nombre (V1-Insignias-3D): placa octogonal con la V,
+ * partículas doradas, aro orbital, flotación y destello al montar. Reacciona al
+ * puntero (se inclina). Sin WebGL o con movimiento reducido, respaldo: Sello plano.
+ */
+export function Sello3D({ s, size = 56 }: { s: string | null | undefined; size?: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [plano, setPlano] = useState(false);
+  useEffect(() => {
+    let fin: (() => void) | null = null, vivo = true;
+    if (!s) return;
+    motor().then((m) => {
+      if (!vivo || !ref.current) return;
+      if (!m.webglDisponible()) { setPlano(true); return; }
+      fin = m.montarSello(ref.current, s);
+    }).catch(() => vivo && setPlano(true));
+    return () => { vivo = false; fin && fin(); };
+  }, [s]);
+  if (!s) return null;
+  if (plano) return <Sello s={s} />;
+  return (
+    <span
+      ref={ref}
+      className="inline-block shrink-0"
+      style={{ width: size, height: size, filter: "drop-shadow(0 6px 14px rgba(0,0,0,.55))" }}
+      role="img"
+      aria-label={"Sello 3D del plan " + s}
+      title={"Sello " + s}
+      data-testid={"sello-" + s}
+    />
+  );
+}

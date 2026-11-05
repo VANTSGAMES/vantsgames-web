@@ -191,7 +191,7 @@ export function Footer() {
         <div className="grid gap-4 content-start">
           <Wordmark />
           <p className="d-3" style={{ letterSpacing: "0.12em" }}>Compete. Connect. <span style={{ color: "var(--rojo)" }}>Dominate.</span></p>
-          <p className="muted small" style={{ maxWidth: "38ch" }}>Torneos, rankings, clips y comunidad competitiva de VALORANT y Counter-Strike 2.</p>
+          <p className="muted small" style={{ maxWidth: "38ch" }}>Torneos, rankings, clips y comunidad de once juegos competitivos, desde Venezuela para Latinoamérica.</p>
         </div>
         {[NAV[1], NAV[0], NAV[3], NAV[4]].map((g) => (
           <div key={g.base}>
@@ -203,7 +203,7 @@ export function Footer() {
         ))}
       </div>
       <div className="wrap py-5 flex flex-wrap gap-x-6 gap-y-2 justify-between small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
-        <span>© {new Date().getFullYear()} VANTS GAMES. VALORANT es marca de Riot Games. Counter-Strike 2 es marca de Valve.</span>
+        <span>© {new Date().getFullYear()} VANTS GAMES. VALORANT, League of Legends y Wild Rift son marcas de Riot Games; Counter-Strike 2 es marca de Valve; Fortnite es marca de Epic Games; EA SPORTS FC es marca de EA; Super Smash Bros. es marca de Nintendo; Call of Duty es marca de Activision; Free Fire es marca de Garena; Mobile Legends es marca de Moonton y Clash Royale de Supercell.</span>
         <span className="flex gap-4">
           <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
           <Link href="/terminos" className="hover:text-white">Términos</Link>

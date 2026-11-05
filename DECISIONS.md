@@ -16,3 +16,6 @@
 - Configurar las apps OAuth del linker (`FACEIT_CLIENT_ID`, etc.). El linker todavía usa Neon (`pool.query`): migrarlo a D1.
 - El perfil público se guarda en `user_metadata` de Auth0; se propone migrarlo a D1 (migración 35) para garantizar la persistencia del nombre.
 - El workflow de VantsHubLauche despliega sobre el mismo Worker `vants`: separarlo.
+
+9. **Registro central de juegos.** `client/src/lib/juegos.ts` define los once juegos del circuito (slugs, etiquetas, plataforma). Torneos, sala, equipos, roster, clips, eventos y filtros toman las opciones de ahí; la D1 guarda el slug y las columnas `juego` son TEXT, así que no hace falta migración.
+10. **Animaciones V1 del perfil.** El prototipo V1-Insignias-3D se portó al motor propio: el visor de insignias suma partículas, aros orbitales, bloom, flotación y destello de consecución; el sello del plan pasa de etiqueta plana a objeto 3D (`Sello3D`) junto al nombre, que además gana acabado cromado (`.nombre-cromo`). Sin WebGL o con `prefers-reduced-motion` se degrada a la versión plana.

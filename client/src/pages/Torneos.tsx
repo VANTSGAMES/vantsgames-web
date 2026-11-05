@@ -7,9 +7,10 @@ import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/c
 import { TournamentRow, MatchRow } from "@/components/domain";
 import { dinero, fecha, hora } from "@/lib/format";
 import { useMisEquipos, MisInscripciones } from "./Vants";
+import { filtrosJuegos } from "@/lib/juegos";
 import { useQueryClient } from "@tanstack/react-query";
 
-const JUEGOS = [{ v: "", l: "Todos" }, { v: "valorant", l: "VALORANT" }, { v: "cs2", l: "CS2" }];
+const JUEGOS = filtrosJuegos();
 
 function GameFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -48,7 +49,7 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
       <PageHead
         eyebrow={competir ? "Competir" : "Torneos"}
         title={competir ? <>Inscribe a tu <span style={{ color: "var(--rojo)" }}>equipo</span></> : "Descubrir torneos"}
-        lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de VALORANT y Counter-Strike 2 publicados por la organización de VANTS."}
+        lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de los once juegos del circuito publicados por la organización de VANTS."}
       />
       <div className="wrap">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">

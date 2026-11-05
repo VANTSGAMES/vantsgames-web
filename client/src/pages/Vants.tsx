@@ -7,6 +7,7 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
+import { opcionesJuegos } from "@/lib/juegos";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag, Initials } from "@/components/ui-vants";
@@ -169,7 +170,7 @@ function CrearEquipo({ onOk }: { onOk: (slug: string) => void }) {
       <div className="field"><label htmlFor="ce-n">Nombre</label><input id="ce-n" className="input" required minLength={2} maxLength={32} value={f.nombre} onChange={set("nombre")} /></div>
       <div className="grid grid-cols-2 gap-3">
         <div className="field"><label htmlFor="ce-t">Tag</label><input id="ce-t" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" value={f.tag} onChange={set("tag")} /></div>
-        <div className="field"><label htmlFor="ce-j">Juego</label><select id="ce-j" className="input" value={f.juego} onChange={set("juego")}><option value="cs2">CS2</option><option value="valorant">VALORANT</option></select></div>
+        <div className="field"><label htmlFor="ce-j">Juego</label><select id="ce-j" className="input" value={f.juego} onChange={set("juego")}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
       </div>
       <div className="field"><label htmlFor="ce-r">Región</label><input id="ce-r" className="input" maxLength={40} value={f.region} onChange={set("region")} /></div>
       <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-crear-equipo">{st.k === "enviando" ? "Creando…" : "Crear equipo"}</button>
@@ -510,7 +511,7 @@ function FormTorneo({ refrescar, editar, limpiar }: { refrescar: () => void; edi
       <h3 className="d-3">{f.slug ? "Editar torneo" : "Nuevo torneo"}</h3>
       <div className="field"><label htmlFor="t-n">Nombre</label><input id="t-n" className="input" required minLength={3} maxLength={80} value={f.nombre} onChange={set("nombre")} /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="field"><label htmlFor="t-j">Juego</label><select id="t-j" className="input" value={f.juego} onChange={set("juego")}><option value="cs2">CS2</option><option value="valorant">VALORANT</option></select></div>
+        <div className="field"><label htmlFor="t-j">Juego</label><select id="t-j" className="input" value={f.juego} onChange={set("juego")}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
         <div className="field"><label htmlFor="t-e">Estado</label><select id="t-e" className="input" value={f.estado} onChange={set("estado")}><option value="upcoming">Próximo (inscripciones abiertas)</option><option value="ongoing">En curso</option><option value="finished">Finalizado</option><option value="cancelled">Cancelado</option></select></div>
         <div className="field"><label htmlFor="t-r">Región</label><input id="t-r" className="input" maxLength={40} value={f.region} onChange={set("region")} /></div>
         <div className="field"><label htmlFor="t-l">Modalidad</label><select id="t-l" className="input" value={f.location_type} onChange={set("location_type")}><option value="online">Online</option><option value="lan">LAN</option></select></div>
@@ -544,7 +545,7 @@ function FormAnuncio({ refrescar }: { refrescar: () => void }) {
       <h3 className="d-3">Nuevo anuncio</h3>
       <div className="grid md:grid-cols-[1fr_180px] gap-3">
         <div className="field"><label htmlFor="a-t">Título</label><input id="a-t" className="input" required minLength={3} maxLength={140} value={f.titulo} onChange={set("titulo")} /></div>
-        <div className="field"><label htmlFor="a-j">Juego</label><select id="a-j" className="input" value={f.juego} onChange={set("juego")}><option value="">General</option><option value="cs2">CS2</option><option value="valorant">VALORANT</option></select></div>
+        <div className="field"><label htmlFor="a-j">Juego</label><select id="a-j" className="input" value={f.juego} onChange={set("juego")}>{[{ value: "", label: "General" }, ...opcionesJuegos()].map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
       </div>
       <div className="field"><label htmlFor="a-r">Resumen</label><input id="a-r" className="input" maxLength={300} value={f.resumen} onChange={set("resumen")} /></div>
       <div className="field"><label htmlFor="a-c">Texto</label><textarea id="a-c" className="input" required rows={8} maxLength={20000} value={f.cuerpo} onChange={set("cuerpo")} /></div>
@@ -566,7 +567,7 @@ function FormEvento({ refrescar }: { refrescar: () => void }) {
       <div className="field"><label htmlFor="e-t">Título</label><input id="e-t" className="input" required maxLength={120} value={f.titulo} onChange={set("titulo")} /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="field"><label htmlFor="e-ty">Tipo</label><select id="e-ty" className="input" value={f.tipo} onChange={set("tipo")}><option value="comunidad">Comunidad</option><option value="scrim">Scrim abierta</option><option value="directo">Directo</option><option value="torneo">Torneo</option><option value="sorteo">Sorteo</option></select></div>
-        <div className="field"><label htmlFor="e-j">Juego</label><select id="e-j" className="input" value={f.juego} onChange={set("juego")}><option value="">General</option><option value="cs2">CS2</option><option value="valorant">VALORANT</option></select></div>
+        <div className="field"><label htmlFor="e-j">Juego</label><select id="e-j" className="input" value={f.juego} onChange={set("juego")}>{[{ value: "", label: "General" }, ...opcionesJuegos()].map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
         <div className="field"><label htmlFor="e-i">Inicio</label><input id="e-i" type="datetime-local" required className="input" value={f.empieza} onChange={set("empieza")} /></div>
         <div className="field"><label htmlFor="e-f">Fin</label><input id="e-f" type="datetime-local" className="input" value={f.termina} onChange={set("termina")} /></div>
       </div>

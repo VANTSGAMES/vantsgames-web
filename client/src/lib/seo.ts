@@ -3,9 +3,9 @@ import { useLocation } from "wouter";
 
 /** Títulos y descripciones por ruta. En Cloudflare el Worker inyecta los mismos metadatos en el HTML inicial. */
 export const SEO: [RegExp, string, string][] = [
-  [/^\/$/, "VANTS GAMES — Torneos de VALORANT y Counter-Strike 2", "Torneos, rankings, clips y comunidad competitiva de VALORANT y CS2. Compete. Connect. Dominate."],
+  [/^\/$/, "VANTS GAMES — Torneos, rankings y comunidad esports", "Once juegos competitivos: VALORANT, CS2, Fortnite, FC 27, Smash, Warzone, Free Fire, LoL, Wild Rift, Mobile Legends y Clash Royale. Compete. Connect. Dominate."],
   [/^\/torneos\/competir/, "Competir — VANTS GAMES", "Inscribe a tu equipo en torneos de VALORANT y CS2."],
-  [/^\/torneos/, "Torneos — VANTS GAMES", "Torneos próximos, en curso y archivo de VALORANT y Counter-Strike 2."],
+  [/^\/torneos/, "Torneos — VANTS GAMES", "Torneos próximos, en curso y archivo de los once juegos del circuito VANTS."],
   [/^\/agenda/, "Agenda en vivo — VANTS GAMES", "Partidos en directo y próximos enfrentamientos."],
   [/^\/resultados/, "Resultados — VANTS GAMES", "Últimos resultados de los torneos de VANTS."],
   [/^\/bracket/, "Bracket principal — VANTS GAMES", "El cuadro del torneo principal en curso."],

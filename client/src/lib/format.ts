@@ -1,3 +1,4 @@
+import { JUEGOS } from "@/lib/juegos";
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 export function fecha(iso?: string | null, opts: Intl.DateTimeFormatOptions = { day: "2-digit", month: "short" }) {
   if (!iso) return "Por anunciar";
@@ -23,7 +24,7 @@ export function hace(iso?: string | null) {
   if (s < 86400) return "hace " + Math.round(s / 3600) + " h";
   return "hace " + Math.round(s / 86400) + " d";
 }
-export const GAME_LABEL: Record<string, string> = { valorant: "VALORANT", cs2: "CS2" };
+export const GAME_LABEL: Record<string, string> = Object.fromEntries(JUEGOS.map((j) => [j.slug, j.label]));
 export const gameLabel = (g?: string | null | { slug?: string; nombre?: string }) => {
   if (!g) return "";
   if (typeof g === "string") return GAME_LABEL[g] || g.toUpperCase();

@@ -8,6 +8,7 @@ import { assetUrl } from "@/lib/api";
 import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
 import { fecha } from "@/lib/format";
+import { JUEGOS } from "@/lib/juegos";
 import { PLANES } from "./Membresias";
 import { useRanking, useEventos, FilaEvento } from "./Vants";
 import { NivelFaceit } from "./PerfilFaceit";
@@ -21,12 +22,12 @@ function Hero() {
       <img src={pub("img/arena.jpg")} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.55 }} />
       <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(10,10,11,.96) 0%, rgba(10,10,11,.75) 45%, rgba(10,10,11,.2) 100%)" }} />
       <div className="wrap relative py-20 md:py-28 lg:py-36">
-        <div className="eyebrow mb-6 reveal">VALORANT · COUNTER-STRIKE 2</div>
+        <div className="eyebrow mb-6 reveal">ESPORTS · HECHO EN VENEZUELA</div>
         <h1 className="d-hero reveal" style={{ animationDelay: "40ms" }}>
           Compete.<br />Connect.<br /><span style={{ color: "var(--rojo)" }}>Dominate.</span>
         </h1>
         <p className="lead mt-6 reveal" style={{ animationDelay: "80ms" }}>
-          La plataforma competitiva de VANTS: torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
+          Una plataforma para conectar jugadores, comunidades y oportunidades competitivas en Venezuela y Latinoamérica: torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
         </p>
         <div className="flex flex-wrap gap-3 mt-8 reveal" style={{ animationDelay: "120ms" }}>
           <Link href="/torneos" className="btn btn-rojo" data-testid="hero-torneos">Ver torneos</Link>
@@ -81,6 +82,21 @@ export default function Home() {
   return (
     <>
       <Hero />
+
+      <Section id="juegos" eyebrow="El circuito" title={<>Juegos de <span style={{ color: "var(--rojo)" }}>VANTS</span></>} more={{ to: "/torneos", label: "Torneos por juego" }}>
+        <p className="muted" style={{ maxWidth: "72ch" }}>Once títulos competitivos entre PC, consola y móvil. VALORANT y CS2 tienen integración de estadísticas y logros; el resto completa el circuito de torneos, equipos y clips.</p>
+        <div className="grid-auto grid sm:grid-cols-3 lg:grid-cols-4" data-testid="home-juegos">
+          {JUEGOS.map((j) => (
+            <Link key={j.slug} href={"/torneos?juego=" + j.slug} className="panel p-5 flex items-center justify-between gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"home-juego-" + j.slug}>
+              <div className="min-w-0">
+                <div className="font-semibold leading-tight">{j.nombre}</div>
+                <div className="small muted mt-1">{j.plataforma}{j.integrado ? " · estadísticas y logros" : ""}</div>
+              </div>
+              <span className="tag shrink-0">{j.label}</span>
+            </Link>
+          ))}
+        </div>
+      </Section>
 
       <Section id="torneos" eyebrow="Circuito" title="Torneos destacados" more={{ to: "/torneos", label: "Todos los torneos" }}>
         <div className="panel">

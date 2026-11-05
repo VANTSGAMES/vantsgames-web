@@ -1,10 +1,10 @@
 # VANTS GAMES — Web Privada
 
-<sub>PROJECT STATUS: ARCHIVED · COMPLETED</sub>
+<sub>PROJECT STATUS: ACTIVE</sub>
 
-Web pública de **VANTS GAMES** para jugadores y visitantes: torneos de VALORANT y Counter-Strike 2, sala de jugadores, clips, comunidad, membresías y perfiles.
+Web pública de **VANTS GAMES** para jugadores y visitantes: torneos de once juegos (VALORANT, CS2, Fortnite, FC 27, Super Smash Bros. Ultimate, Call of Duty: Warzone, Free Fire, League of Legends, Wild Rift, Mobile Legends y Clash Royale), sala de jugadores, clips, comunidad, membresías y perfiles con insignias y sellos 3D.
 
-Este proyecto ha alcanzado su estado de desarrollo previsto. El repositorio queda archivado hasta nuevo aviso, conservando su código, documentación e historial.
+El repositorio volvió a desarrollo activo para la expansión del circuito y las nuevas animaciones del perfil (V1-Insignias-3D).
 
 > Este repositorio es independiente de **VantsHubLauche**, el Dashboard interno de operaciones. La administración se realiza desde VantsHubLauche y se comunica con esta web mediante la API autorizada del Worker de Vantsgames. Esta web no incorpora un panel administrativo.
 
@@ -14,13 +14,13 @@ Este proyecto ha alcanzado su estado de desarrollo previsto. El repositorio qued
 
 | Área | Estado |
 |---|---|
-| Desarrollo principal | Finalizado |
-| Frontend público | Conservado |
+| Desarrollo principal | Activo |
+| Frontend público | En expansión |
 | Arquitectura | Documentada |
-| Nuevas funcionalidades | Suspendidas |
-| Mejoras | Suspendidas |
-| Mantenimiento evolutivo | Suspendido |
-| Repositorio | Archivado |
+| Nuevas funcionalidades | En curso |
+| Mejoras | En curso |
+| Mantenimiento evolutivo | Activo |
+| Repositorio | Activo |
 
 ## Arquitectura
 
