@@ -5,6 +5,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useApi } from "@/lib/useApi";
 import type { DefInsignia } from "@/lib/insignia3d";
+import { DEF_V1, slugInsignia } from "@/lib/emblemaV1";
+import { pub } from "@/lib/api";
 
 export type Insignia = DefInsignia & {
   nombre: string; categoria: string; descripcion: string; requisito: string; titulares?: number; manual?: boolean; meta?: number;
@@ -13,55 +15,40 @@ export type EstadoInsignia = { code: string; ok: boolean; progreso?: { actual: n
 
 const motor = () => import("@/lib/insignia3d");
 
-/** Silueta 2D (respaldo sin WebGL y marcador mientras se renderiza). */
-function Insignia2D({ d, size }: { d: DefInsignia; size: number }) {
-  const formas: Record<string, string> = {
-    hex: "50,4 90,27 90,73 50,96 10,73 10,27",
-    diamante: "50,3 97,50 50,97 3,50",
-  };
-  const escudo = "M50 4 L90 16 L90 50 Q88 80 50 96 Q12 80 10 50 L10 16 Z";
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
-      <defs>
-        <linearGradient id={"g-" + d.code.replace(/\W/g, "")} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity=".55" /><stop offset=".45" stopColor={d.color} /><stop offset="1" stopColor="#000" stopOpacity=".6" />
-        </linearGradient>
-      </defs>
-      {d.forma === "escudo" ? <path d={escudo} fill={d.color} stroke="#c9ced8" strokeWidth="4" /> : d.forma === "circulo" || d.forma === "estrella" ? <circle cx="50" cy="50" r="45" fill={d.color} stroke="#c9ced8" strokeWidth="4" /> : <polygon points={formas[d.forma] || formas.hex} fill={d.color} stroke="#c9ced8" strokeWidth="4" />}
-      {d.forma === "escudo" ? <path d={escudo} fill={"url(#g-" + d.code.replace(/\W/g, "") + ")"} opacity=".6" /> : null}
-      <text x="50" y="58" textAnchor="middle" fontSize="22" fontWeight="800" fill="#fff" fontFamily="system-ui">{d.code.slice(0, 2)}</text>
-    </svg>
-  );
+/** PNG oficial V1 de la insignia (client/public/insignias, generado con script/insignias-png.mjs). */
+export function pngInsignia(code: string, size: number, conseguida = true) {
+  const s = slugInsignia(code);
+  return pub("insignias/" + s + (conseguida ? (size > 128 ? "" : "-256") : "-bloqueada") + ".png");
 }
 
-/** Insignia 3D estática (PNG renderizado una vez con Three.js). */
+/** Insignia estática: PNG del diseño V1 + brillo CSS (aura, barrido y destello). */
 export function Insignia3D({ d, size = 72, conseguida = true, titulo }: { d: DefInsignia; size?: number; conseguida?: boolean; titulo?: string }) {
-  const [src, setSrc] = useState<string | null>(null);
   const [fallo, setFallo] = useState(false);
-  useEffect(() => {
-    let vivo = true;
-    motor().then((m) => (m.webglDisponible() ? m.renderInsignia(d, size > 96 ? 512 : 256) : null)).then((u) => { if (vivo) { if (u) setSrc(u); else setFallo(true); } }).catch(() => vivo && setFallo(true));
-    return () => { vivo = false; };
-  }, [d.code, size > 96]);
-  const estilo = { width: size, height: size, filter: conseguida ? "drop-shadow(0 6px 14px rgba(0,0,0,.55))" : "grayscale(1) brightness(.45)", opacity: conseguida ? 1 : 0.7 } as const;
+  const src = pngInsignia(d.code, size, conseguida);
+  const color = (DEF_V1[d.code.toUpperCase()]?.col) || d.color;
+  const img = <img src={src} alt={titulo || d.code} width={size} height={size} loading="lazy" decoding="async" onError={() => setFallo(true)} style={{ width: size, height: size, filter: conseguida ? "drop-shadow(0 6px 14px rgba(0,0,0,.55))" : "none" }} draggable={false} />;
   return (
     <span className="inline-block shrink-0 relative" style={{ width: size, height: size }} title={titulo} data-testid={"insignia3d-" + d.code}>
-      {src ? <SelloBrillo src={src} color={d.color}><img src={src} alt={titulo || d.code} width={size} height={size} style={estilo} draggable={false} /></SelloBrillo> : <span style={{ ...estilo, display: "block", opacity: fallo ? estilo.opacity : 0.35 }}><Insignia2D d={d} size={size} /></span>}
-      {!conseguida && <span className="absolute inset-0 flex items-center justify-center" aria-hidden><svg width={size * 0.28} height={size * 0.28} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2" fill="rgba(0,0,0,.5)" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg></span>}
+      {fallo ? <span className="grid place-items-center rounded-full font-bold" style={{ width: size, height: size, fontSize: size * 0.3, background: "#111318", border: "2px solid " + color, color, opacity: conseguida ? 1 : 0.5 }}>{d.code.slice(0, 2)}</span> : conseguida ? <SelloBrillo src={src} color={color}>{img}</SelloBrillo> : img}
     </span>
   );
 }
 
-/** Visor 3D en vivo: gira solo y se puede arrastrar. */
-export function VisorInsignia({ d, size = 260 }: { d: DefInsignia; size?: number }) {
+/** Visor 3D en vivo (motor V1): entra con destello, gira solo y se puede arrastrar. */
+export function VisorInsignia({ d, size = 260, arrastre = true }: { d: DefInsignia; size?: number; arrastre?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
+  const visor = useRef<{ destello: () => void; fin: () => void } | null>(null);
   const [sin, setSin] = useState(false);
   useEffect(() => {
-    let fin: (() => void) | null = null, vivo = true;
-    motor().then((m) => { if (!vivo || !ref.current) return; if (!m.webglDisponible()) { setSin(true); return; } fin = m.montarVisor(ref.current, d); }).catch(() => setSin(true));
-    return () => { vivo = false; fin && fin(); };
+    let vivo = true;
+    motor().then((m) => { if (!vivo || !ref.current) return; if (!m.webglDisponible()) { setSin(true); return; } visor.current = m.montarVisor(ref.current, d.code, { arrastre }); }).catch(() => setSin(true));
+    return () => { vivo = false; visor.current?.fin(); visor.current = null; };
   }, [d.code]);
-  return <div ref={ref} style={{ width: size, height: size }} className="mx-auto flex items-center justify-center" aria-label={"Insignia " + d.code + " en 3D"}>{sin && <Insignia3D d={d} size={size} />}</div>;
+  return (
+    <div ref={ref} style={{ width: size, height: size }} className="mx-auto relative" aria-label={"Insignia " + d.code + " en 3D"} onDoubleClick={() => visor.current?.destello()} data-testid={"visor3d-" + d.code}>
+      {sin && <Insignia3D d={d} size={size} />}
+    </div>
+  );
 }
 
 /** Catálogo público de insignias. */
@@ -114,7 +101,7 @@ export function DetalleInsignia({ b, conseguida, estado, onCerrar, sinEstado }: 
           </div>
         )}
         {typeof b.titulares === "number" && <p className="text-xs muted">{b.titulares === 1 ? "1 jugador la tiene" : b.titulares + " jugadores la tienen"}</p>}
-        <p className="text-xs muted">Arrastra para girarla.</p>
+        <p className="text-xs muted">Arrastra para girarla · doble clic para el destello.</p>
       </div>
     </div>
   );
@@ -122,13 +109,12 @@ export function DetalleInsignia({ b, conseguida, estado, onCerrar, sinEstado }: 
 
 /* ---------------- sello del plan (V1 · como el preview) ---------------- */
 
-/** Definiciones del sello de cada plan. */
+/** Sello de cada plan = su insignia V1. */
 const SELLOS: Record<string, DefInsignia> = {
-  SOCIO: { code: "sello-socio", color: "#ff0d2e", forma: "escudo", icono: "v", rareza: "mythic", sinHalo: true },
-  CREATOR: { code: "sello-creator", color: "#b44cff", forma: "hex", icono: "play", rareza: "epic" },
-  PRO: { code: "sello-pro", color: "#ff2d4a", forma: "hex", icono: "rayo", rareza: "epic" },
+  SOCIO: { code: "SOCIO", color: "#FF0D2E", forma: "oct", icono: "v", rareza: "mythic" },
+  CREATOR: { code: "CREATOR", color: "#B44CFF", forma: "hex", icono: "play", rareza: "epic" },
+  PRO: { code: "PRO", color: "#FF0D2E", forma: "hex", icono: "zap", rareza: "epic" },
 };
-
 /** Brillo del sello/insignia: aura que respira + barrido de luz (CSS puro, sin canvas). */
 export function SelloBrillo({ src, color, children }: { src: string; color: string; children: ReactNode }) {
   const rgba = (hex: string, a: number) => { const f = parseInt(hex.slice(1), 16); return `rgba(${(f >> 16) & 255},${(f >> 8) & 255},${f & 255},${a})`; };
@@ -148,39 +134,47 @@ export function Sello({ s }: { s: string | null | undefined }) {
   return <span className="tag" style={{ color: "#fff", background: c, borderColor: c, letterSpacing: ".08em" }} title={"Sello " + s} data-testid={"sello-" + s}>{s}</span>;
 }
 
-/** Sello 3D del plan junto al nombre: PNG renderizado una vez + brillo CSS (como el preview). */
+/** Sello del plan junto al nombre: PNG V1 + entrada 3D con destello (como el video) + brillo CSS. Clic → visor 3D. */
 export function Sello3D({ s, size = 26 }: { s: string | null | undefined; size?: number }) {
   const d = s ? SELLOS[s.toUpperCase()] : undefined;
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let vivo = true;
-    if (!d) return;
-    motor().then((m) => (m.webglDisponible() ? m.renderInsignia(d, 256) : null)).then((u) => { if (vivo && u) setSrc(u); }).catch(() => {});
-    return () => { vivo = false; };
-  }, [d?.code]);
+  const [abierto, setAbierto] = useState(false);
   if (!s) return null;
-  if (!d || !src) return <Sello s={s} />;
+  if (!d) return <Sello s={s} />;
+  const src = pngInsignia(d.code, size * 2);
   return (
-    <SelloBrillo src={src} color={d.color}>
-      <img src={src} alt={"Sello " + s} width={size} height={size} style={{ width: size, height: size, filter: "drop-shadow(0 3px 8px rgba(0,0,0,.45))" }} title={"Sello " + s} data-testid={"sello-" + s} draggable={false} />
-    </SelloBrillo>
+    <>
+      <button type="button" className="sello-entrada inline-grid" onClick={() => setAbierto(true)} title={"Sello " + s + " · ver en 3D"} aria-label={"Sello " + s + ", ver en 3D"}>
+        <SelloBrillo src={src} color={d.color}>
+          <img src={src} alt={"Sello " + s} width={size} height={size} style={{ width: size, height: size, filter: "drop-shadow(0 3px 8px rgba(0,0,0,.45))" }} data-testid={"sello-" + s} draggable={false} />
+        </SelloBrillo>
+      </button>
+      {abierto && <VisorModal d={d} titulo={s === "CREATOR" ? "VANTS CREADOR" : s === "SOCIO" ? "SOCIO VANTS" : "VANTS PRO"} onCerrar={() => setAbierto(false)} />}
+    </>
   );
 }
 
-/** Sello del plan en la esquina del avatar (como el preview). */
+/** Visor 3D a pantalla completa del sello del plan. */
+function VisorModal({ d, titulo, onCerrar }: { d: DefInsignia; titulo: string; onCerrar: () => void }) {
+  useEffect(() => { const k = (e: KeyboardEvent) => e.key === "Escape" && onCerrar(); window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k); }, [onCerrar]);
+  return (
+    <div role="dialog" aria-modal="true" aria-label={"Sello " + titulo} className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: "rgba(5,5,7,.86)", backdropFilter: "blur(6px)" }} onClick={onCerrar}>
+      <div className="grid gap-3 text-center" onClick={(e) => e.stopPropagation()}>
+        <VisorInsignia d={d} size={320} />
+        <div className="d-2" style={{ color: d.color }}>{titulo}</div>
+        <p className="text-xs muted">Arrastra para girarlo · doble clic para el destello · Esc para cerrar</p>
+      </div>
+    </div>
+  );
+}
+
+/** Sello del plan en la esquina del avatar. */
 export function SelloAvatar({ s, size = 36 }: { s: string | null | undefined; size?: number }) {
   const d = s ? SELLOS[s.toUpperCase()] : undefined;
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let vivo = true;
-    if (!d) return;
-    motor().then((m) => (m.webglDisponible() ? m.renderInsignia(d, 256) : null)).then((u) => { if (vivo && u) setSrc(u); }).catch(() => {});
-    return () => { vivo = false; };
-  }, [d?.code]);
-  if (!s || !d || !src) return null;
+  if (!s || !d) return null;
   const p = Math.round(size * 0.22), inner = size - 8;
+  const src = pngInsignia(d.code, inner * 2);
   return (
-    <span className="absolute z-10 grid place-items-center rounded-full" style={{ top: -p, right: -p, width: size, height: size, background: "var(--grafito-1, #111318)", border: "2px solid rgba(255,255,255,.16)", boxShadow: "0 4px 12px rgba(0,0,0,.6)" }} title={"Plan " + s} data-testid={"sello-avatar-" + s}>
+    <span className="absolute z-10 grid place-items-center rounded-full sello-entrada" style={{ top: -p, right: -p, width: size, height: size, background: "var(--grafito-1, #111318)", border: "2px solid rgba(255,255,255,.16)", boxShadow: "0 4px 12px rgba(0,0,0,.6)" }} title={"Plan " + s} data-testid={"sello-avatar-" + s}>
       <SelloBrillo src={src} color={d.color}>
         <img src={src} alt={"Plan " + s} width={inner} height={inner} style={{ width: inner, height: inner }} draggable={false} />
       </SelloBrillo>

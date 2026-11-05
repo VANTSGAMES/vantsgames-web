@@ -257,6 +257,16 @@ select.input { appearance: auto; }
   filter: blur(1px); transform: translate(-120%) skew(-10deg);
   animation: sello-barrido 5s cubic-bezier(.4,0,.2,1) .5s infinite;
 }
+/* Entrada del sello (V1): gira en 3D desde el canto con destello dorado y asienta con rebote. */
+.sello-entrada { perspective: 400px; background: none; border: 0; padding: 0; cursor: pointer; }
+.sello-entrada > .sello-brillo { animation: sello-entrada 1.5s cubic-bezier(.2,.7,.2,1) both; transform-style: preserve-3d; }
+@keyframes sello-entrada {
+  0% { transform: rotateY(-540deg) scale(.25); filter: brightness(3) drop-shadow(0 0 10px rgba(245,192,68,.95)); opacity: 0; }
+  15% { opacity: 1; }
+  60% { transform: rotateY(-20deg) scale(1.12); filter: brightness(1.9) drop-shadow(0 0 12px rgba(245,192,68,.85)); }
+  80% { transform: rotateY(8deg) scale(.97); }
+  to { transform: none; filter: none; }
+}
 @keyframes sello-barrido { 0% { transform: translate(-120%) skew(-10deg); } 24% { transform: translate(300%) skew(-10deg); } to { transform: translate(300%) skew(-10deg); } }
 @keyframes sello-aura { 0% { opacity: 0; } 8% { opacity: 1; } 26% { opacity: 0; } to { opacity: 0; } }
 @keyframes sello-flash {
@@ -264,5 +274,5 @@ select.input { appearance: auto; }
   9% { filter: brightness(2.1) saturate(1.3) drop-shadow(0 3px 12px rgba(0,0,0,.5)); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sello-brillo > img, .sello-brillo .aura, .sello-brillo .brillo:before { animation: none; }
+  .sello-brillo > img, .sello-brillo .aura, .sello-brillo .brillo:before, .sello-entrada > .sello-brillo { animation: none; }
 }
