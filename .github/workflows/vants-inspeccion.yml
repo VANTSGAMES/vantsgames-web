@@ -14,6 +14,15 @@ jobs:
       CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers
       TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
+      - name: Prueba de tokens (diagnóstico, solo verify)
+        env:
+          T1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          T2: ${{ secrets.VANTS_CLOUDFLARE_API_TOKEN }}
+        run: |
+          echo "-- org CLOUDFLARE_API_TOKEN:"
+          curl -sS -H "Authorization: Bearer $T1" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success, errors, status: .result.status}'
+          echo "-- org VANTS_CLOUDFLARE_API_TOKEN:"
+          curl -sS -H "Authorization: Bearer $T2" https://api.cloudflare.com/client/v4/user/tokens/verify | jq -c '{success, errors, status: .result.status}'
       - name: Lista de Workers
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts" | jq -c '.result[] | {id, has_assets, has_modules, handlers, compatibility_date, modified_on}'
