@@ -1,0 +1,39 @@
+name: "Worker vants · inspección (solo lectura)"
+# Lee la configuración del Worker de producción `vants` sin modificar nada.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/vants-inspeccion.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  inspeccion:
+    runs-on: ubuntu-latest
+    env:
+      CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers
+      TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Lista de Workers
+        run: |
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts" | jq -c '.result[] | {id, has_assets, has_modules, handlers, compatibility_date, modified_on}'
+      - name: Ajustes de vants (bindings sin valores secretos)
+        run: |
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/settings" > s.json
+          jq '.result | {compatibility_date, compatibility_flags, usage_model, placement, logpush, tail_consumers, observability, bindings: [.bindings[] | del(.text, .json)]}' s.json
+      - name: Horarios
+        run: |
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/schedules" | jq -c .result
+      - name: Código actual (módulos)
+        run: |
+          mkdir -p codigo
+          curl -fsS -D h.txt -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/content/v2" -o codigo/contenido.bin
+          cat h.txt | grep -i content-type; ls -la codigo
+          grep -a -o 'name="[^"]*"' codigo/contenido.bin | sort -u | head -50
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vants-codigo
+          retention-days: 2
+          path: |
+            codigo/
+            s.json
