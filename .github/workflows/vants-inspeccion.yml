@@ -14,17 +14,6 @@ jobs:
       CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers
       TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
     steps:
-      - name: Verdad runtime de secretos org (sin exponer valores)
-        env:
-          CFID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          AWSR: ${{ secrets.AWS_REGION }}
-          T1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          T2: ${{ secrets.VANTS_CLOUDFLARE_API_TOKEN }}
-        run: |
-          if [ "$CFID" = "8f2424e95fec4860e19257226f209fbc" ]; then echo "org CLOUDFLARE_ACCOUNT_ID: LLEGA BIEN"; else echo "org CLOUDFLARE_ACCOUNT_ID: NO coincide (len=${#CFID})"; fi
-          echo "org AWS_REGION: len=${#AWSR}"
-          echo "org CLOUDFLARE_API_TOKEN: len=${#T1}"
-          echo "org VANTS_CLOUDFLARE_API_TOKEN: len=${#T2}"
       - name: Lista de Workers
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts" | jq -c '.result[] | {id, has_assets, has_modules, handlers, compatibility_date, modified_on}'
