@@ -5,6 +5,7 @@ import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
 import { FilaInsignias, Sello3D, SelloAvatar } from "@/components/Insignia3D";
 import { useMisInsignias } from "./Membresias";
+import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
@@ -190,6 +191,8 @@ function Cuentas() {
     const sp = new URLSearchParams(window.location.search);
     const ok = sp.get("linked"), ko = sp.get("linkerr");
     if (!ok && !ko) return;
+    const esEpic = ok === "epic" || !!ko && /^(epic|intercambio_epic)/.test(ko); // lo muestra la tarjeta de Epic
+    if (esEpic) { window.history.replaceState(null, "", window.location.pathname); return; }
     if (ok) setAviso({ ok: true, m: "Cuenta de " + (PROVEEDORES.find((p) => p.id === ok)?.nombre || ok) + " vinculada y verificada." });
     else if (ko) setAviso({ ok: false, m: mensajeLink(ko) });
     window.history.replaceState(null, "", window.location.pathname);
@@ -272,6 +275,7 @@ function Cuentas() {
             </div>
           );
         })}
+        <TarjetaEpic />
       </div>
       <div className="mt-4"><RiotIdForm /></div>
     </div>
@@ -317,12 +321,17 @@ function Membresia() {
   );
 }
 
+function FortnitePropio() {
+  const q = useCuentaEpic();
+  return <div className="wrap grid gap-3"><h2 className="d-3">Fortnite</h2>{q.isLoading ? <div className="sk" style={{ height: 120 }} /> : <PanelFortnite c={q.data} propio />}</div>;
+}
+
 const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   "": { t: "Mi perfil", el: Resumen },
   ajustes: { t: "Configuración", el: Ajustes },
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
   membresia: { t: "Membresía", el: Membresia },
-  estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-8"><EstadisticasFaceit /><div className="wrap grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div></div> },
+  estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-8"><EstadisticasFaceit /><div className="wrap grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div><FortnitePropio /></div> },
   equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit pie={(actual) => <VincularEquipoFaceit actual={actual} />} /></div></div> },
   torneos: { t: "Mis torneos", el: MisInscripciones },
   clips: { t: "Mis clips", el: () => <div className="wrap"><MiBiblioteca /></div> },

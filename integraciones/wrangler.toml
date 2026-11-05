@@ -21,6 +21,7 @@ SITE_ORIGINS = "https://vants.vants.workers.dev"
 SITE_URL = "https://vants.vants.workers.dev"
 TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
+EPIC_CLIENT_ID = "xyza7891azbKp4nKKiepfFrTUbR99GI7"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
 

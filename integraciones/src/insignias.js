@@ -35,6 +35,7 @@ export const CATALOGO = [
   { code: 'CAPITAN', nombre: 'CAPITÁN', categoria: 'comunidad', rareza: 'rare', color: '#ff7a1a', forma: 'circulo', icono: 'brazalete', descripcion: 'Capitán de un equipo del circuito.', requisito: 'Crear un equipo en VANTS y ser su capitán.' },
   { code: 'ROSTER', nombre: 'ROSTER VANTS', categoria: 'comunidad', rareza: 'legendary', color: '#ff0d2e', forma: 'circulo', icono: 'v', descripcion: 'Jugador del roster oficial de VANTS.', requisito: 'Formar parte del roster oficial (/equipo-vants).' },
   { code: 'STREAMER', nombre: 'STREAMER', categoria: 'comunidad', rareza: 'common', color: '#a970ff', forma: 'circulo', icono: 'directo', descripcion: 'Emite sus partidas en Twitch o Kick.', requisito: 'Vincular tu canal de Twitch o Kick.' },
+  { code: 'FORTNITE', nombre: 'FORTNITE', categoria: 'competitivo', rareza: 'rare', color: '#9d4dff', forma: 'escudo', icono: 'f', descripcion: 'Cuenta de Epic Games verificada para jugar Fortnite en el circuito VANTS.', requisito: 'Vincular tu cuenta de Epic Games (Fortnite) con el inicio de sesión oficial de Epic.' },
   { code: 'CLIPPER', nombre: 'CLIPPER', categoria: 'comunidad', rareza: 'rare', color: '#53fc18', forma: 'circulo', icono: 'clip', descripcion: 'Comparte sus mejores jugadas con la comunidad.', requisito: 'Publicar 5 clips en VANTS.', meta: 5 },
 ];
 const POR_CODE = new Map(CATALOGO.map((b) => [b.code, b]));
@@ -57,7 +58,7 @@ export async function evaluar(env, ident, { conValorant = true } = {}) {
   const db = env.DB;
   await asegurar(db);
   const s = ident.subs.length ? ident.subs : ['-'];
-  const [ents, logros, clips, capitan, canales, torneos, finales, manual, roster] = await Promise.all([
+  const [ents, logros, clips, capitan, canales, torneos, finales, manual, roster, epic] = await Promise.all([
     todas(db, `SELECT tier, expires_at FROM entitlements WHERE auth0_sub IN (${enLista(s)}) AND is_active = 1 AND (expires_at IS NULL OR expires_at > datetime('now'))`, ...s),
     todas(db, `SELECT COUNT(DISTINCT code) n FROM integ_logros_ok WHERE auth0_sub IN (${enLista(s)})`, ...s),
     todas(db, `SELECT COUNT(*) n FROM integ_clips WHERE auth0_sub IN (${enLista(s)})`, ...s),
@@ -67,6 +68,7 @@ export async function evaluar(env, ident, { conValorant = true } = {}) {
     todas(db, `SELECT COUNT(*) n FROM tournament_matches m JOIN tournament_teams t ON t.id = m.ganador WHERE m.ronda IN ('f','lf') AND m.estado = 'final' AND t.auth0_sub IN (${enLista(s)})`, ...s),
     todas(db, 'SELECT code, creado FROM integ_insignias_manual WHERE pid = ?', ident.pid),
     todas(db, 'SELECT 1 FROM integ_roster WHERE pid = ? LIMIT 1', ident.pid),
+    todas(db, `SELECT 1 FROM integ_epic WHERE auth0_sub IN (${enLista(s)}) LIMIT 1`, ...s),
   ]);
   // Insignias que ya concedió el motor de logros del Worker principal (si hay acceso de lectura).
   let motor = [];
@@ -110,6 +112,7 @@ export async function evaluar(env, ident, { conValorant = true } = {}) {
     CAPITAN: r(((capitan[0] && capitan[0].n) || 0) > 0),
     ROSTER: r(roster.length > 0),
     STREAMER: r(tieneCanal),
+    FORTNITE: r(epic.length > 0),
     CLIPPER: r(nClips >= 5, nClips, 5),
   };
   const sello = ev.SOCIO.ok ? 'SOCIO' : ev.CREATOR.ok ? 'CREATOR' : ev.PRO.ok || ev.PLUS.ok ? 'PRO' : null;

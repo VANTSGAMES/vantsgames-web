@@ -10,13 +10,15 @@
 //
 // Secretos (wrangler secret / GitHub Actions):
 //   FACEIT_API_KEY, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET,
-//   KICK_CLIENT_ID, KICK_CLIENT_SECRET, DISCORD_BOT_TOKEN
+//   KICK_CLIENT_ID, KICK_CLIENT_SECRET, DISCORD_BOT_TOKEN,
+//   EPIC_CLIENT_SECRET, FORTNITE_API_KEY (opcional, estadísticas)
 // Variables: AUTH0_DOMAIN, AUTH0_AUDIENCE, SITE_ORIGINS, SITE_URL,
 //   CANALES_TWITCH, CANALES_KICK (canales oficiales, separados por coma)
 
 import { rutasComunidad, refrescarRanking, guardarRanking } from './comunidad.js';
 import { rutasJuegos, equipoFaceit } from './juegos.js';
 import { rutasExtras } from './extras.js';
+import { rutasEpic } from './epic.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -352,6 +354,7 @@ async function rutas(req, env, url) {
       claves: {
         faceit: !!env.FACEIT_API_KEY, twitch: !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
         kick: !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET), discord: !!env.DISCORD_BOT_TOKEN, db: !!env.DB,
+        epic: !!(env.EPIC_CLIENT_ID && env.EPIC_CLIENT_SECRET), fortnite: !!env.FORTNITE_API_KEY,
       },
     });
   }
@@ -394,6 +397,10 @@ async function rutas(req, env, url) {
     if (!f) return json({ ok: false, error: 'no_encontrado' }, 404);
     return json({ ok: true, ...f, actual: await partidaActual(env, id) });
   }
+
+  // Epic Games / Fortnite (vinculación OAuth y estadísticas)
+  const re = await rutasEpic(req, env, url, p, m, { json, cacheado, usuario });
+  if (re) return re;
 
   // Clips, foto de equipo y membresía
   const rx = await rutasExtras(req, env, url, p, m, { json, cacheado, usuario });

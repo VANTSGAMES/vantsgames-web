@@ -8,6 +8,7 @@
 
 import { datosValorant, iconoTier } from './juegos.js';
 import { evaluar } from './insignias.js';
+import { fortnitePublico } from './epic.js';
 
 const TTL = 60_000;
 let cache = { at: 0, val: null };
@@ -128,6 +129,7 @@ export async function perfilPublico(env, pid) {
     const d = await datosValorant(env, subRiot).catch(() => null);
     if (d && (d.tier_id || d.riot)) valorant = { riot: d.riot || null, tier: d.tier || null, tier_id: d.tier_id || null, rr: d.rr ?? null, icono: iconoTier(d.tier_id), pico: d.pico || null, fuente: d.fuente || null };
   }
+  const fortnite = await fortnitePublico(env, id.subs).catch(() => null);
   const rk = id.ranking;
   const ins = await evaluar(env, id).catch(() => null);
   return {
@@ -135,6 +137,7 @@ export async function perfilPublico(env, pid) {
     sello: ins ? ins.sello : null, insignias: ins ? ins.conseguidas : ['MEMBER'],
     faceit: rk ? { nick: rk.nick, nivel: rk.nivel, elo: rk.elo, partidas: rk.partidas, winrate: rk.winrate, kd: rk.kd, pais: rk.pais, avatar: rk.avatar, url: 'https://www.faceit.com/es/players/' + encodeURIComponent(rk.nick) } : null,
     valorant,
+    fortnite,
     cuentas: [...new Map(id.links.filter((l) => ['twitch', 'kick', 'youtube', 'x', 'tiktok', 'steam', 'discord', 'faceit'].includes(l.platform)).map((l) => [l.platform, { plataforma: l.platform, handle: l.handle }])).values()],
     equipos: [
       ...roster.map((r) => ({ slug: 'vants', nombre: r.nombre || 'VANTS', tag: r.tag || 'VTS', juego: r.juego, logo_url: r.logo_url, rol: r.rol || 'Jugador', oficial: true })),

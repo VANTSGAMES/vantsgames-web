@@ -6,6 +6,7 @@
  */
 import { useState, type FormEvent } from "react";
 import { Link, useParams } from "wouter";
+import { PanelFortnite, type StatsFortnite } from "@/components/Fortnite";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
@@ -25,6 +26,7 @@ type Perfil = {
   cuentas: { plataforma: string; handle: string }[];
   equipos: { slug: string; nombre: string; tag: string | null; juego: string | null; logo_url: string | null; rol: string; oficial: boolean }[];
   logros: { faceit: number; valorant: number; total: number };
+  fortnite?: { nombre: string | null; stats: StatsFortnite | null; error_stats: string | null } | null;
   clips: Clip[];
 };
 
@@ -120,6 +122,7 @@ export function PerfilPublicoPagina() {
           <div className="d-1 num">{p.logros.total}</div>
           <div className="small muted">{p.logros.faceit} de FACEIT · {p.logros.valorant} de VALORANT</div>
         </div>
+        {p.fortnite && <div className="md:col-span-3"><PanelFortnite c={{ vinculada: true, ...p.fortnite }} /></div>}
       </div>
       <Section title="Insignias" eyebrow={(p.insignias || []).length + " conseguidas"} more={{ to: "/insignias", label: "Catálogo" }}>
         <div className="panel panel-pad grid gap-4" data-testid="perfil-publico-insignias">

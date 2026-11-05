@@ -22,5 +22,12 @@ jobs:
         run: for f in migraciones/*.sql; do npx -y wrangler@4 d1 execute vants-db --remote --file "$f" --yes; done
       - name: Deploy
         run: npx -y wrangler@4 deploy
+      - name: Secretos de Epic / Fortnite
+        env:
+          EPIC_CLIENT_SECRET: ${{ secrets.EPIC_CLIENT_SECRET }}
+          FORTNITE_API_KEY: ${{ secrets.FORTNITE_API_KEY }}
+        run: |
+          if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
+          if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
       - name: Salud
         run: curl -fsS https://vants-integraciones.vants.workers.dev/salud
