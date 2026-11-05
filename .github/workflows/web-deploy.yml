@@ -2,8 +2,9 @@ name: "Web · build y publicación automática"
 
 # Publica la web en https://vants.vants.workers.dev:
 # 1) construye el cliente de este repo (única fuente de verdad del frontend)
-# 2) copia el build a VANTSGAMES/Vantsgames → vants-server/public
-# 3) ese push dispara el deploy de Cloudflare que ya existe allí
+# 2) descarga el código de API que corre hoy en el Worker `vants` y su configuración
+# 3) vuelve a desplegar ese mismo código con los archivos nuevos de la web
+#    (si algo falla tras el deploy, vuelve automáticamente a la versión anterior)
 on:
   push:
     branches: [main]
@@ -31,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Instalar dependencias
@@ -46,36 +47,71 @@ jobs:
           VITE_AUTH0_CLIENT_ID: totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo
         run: npx vite build --base=/ --outDir ../dist-web --emptyOutDir
 
-      - name: Checkout de la API (VANTSGAMES/Vantsgames)
-        uses: actions/checkout@v4
-        with:
-          repository: VANTSGAMES/Vantsgames
-          ref: main
-          token: ${{ secrets.GHPAT_VANTS }}
-          path: api
-
-      - name: Publicar build en vants-server/public
+      - name: Código y configuración actuales del Worker vants
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants
         run: |
-          P=api/vants-server/public
-          # limpiar solo lo que produce el build (los extras ya viajan dentro del build)
-          rm -rf "$P/assets" "$P/brand" "$P/img" "$P/static" "$P/.well-known" \
-                 "$P/index.html" "$P/robots.txt" "$P/sitemap.xml" "$P/llms.txt" \
-                 "$P/_headers" "$P/sw.js" "$P/admin-logros.html" \
-                 "$P/google80230e398ba4bb1f.html" "$P/googleda687349417bc44b.html" \
-                 "$P"/manicule-verification-*.txt
-          cp -r dist-web/. "$P"/
-          echo "--- contenido publicado ---"
-          ls "$P"
+          set -euo pipefail
+          mkdir -p vants && cd vants
+          H="Authorization: Bearer $TOKEN"
+          curl -fsS -H "$H" "$CF/settings" > settings.json
+          curl -fsS -H "$H" "$CF/deployments" > deployments.json
+          V=$(jq -r '.result.deployments[0].versions[0].version_id' deployments.json)
+          echo "ANTERIOR=$V" >> "$GITHUB_ENV"
+          curl -fsS -H "$H" "$CF/versions/$V" > version.json
+          curl -fsS -H "$H" "$CF/schedules" | jq -c '[.result.schedules[].cron]' > crons.json
+          curl -fsS -D h.txt -H "$H" "$CF/content/v2" -o contenido.bin
+          node -e '
+            const fs=require("fs");
+            const ct=fs.readFileSync("h.txt","utf8").match(/boundary=([^\r\n;]+)/i)[1].trim();
+            const b=fs.readFileSync("contenido.bin"); const sep=Buffer.from("--"+ct);
+            let i=b.indexOf(sep), n=0;
+            while(i>=0){ const j=b.indexOf(sep,i+sep.length); if(j<0)break;
+              const p=b.subarray(i+sep.length+2,j-2); const k=p.indexOf("\r\n\r\n");
+              const cab=p.subarray(0,k).toString(); const nm=(cab.match(/name="([^"]+)"/)||[])[1];
+              if(nm==="worker.js"){ fs.mkdirSync("src",{recursive:true}); fs.writeFileSync("src/worker.js",p.subarray(k+4)); n++; }
+              i=j; }
+            if(!n) { console.error("worker.js no encontrado"); process.exit(1); }'
+          node --input-type=module --check < src/worker.js
+          grep -q "export" src/worker.js
+          CRONS=$(cat crons.json) node ../script/ci/vants-config.mjs settings.json version.json ../dist-web > wrangler.json
+          jq '{name, compatibility_date, vars: (.vars|keys), d1_databases, assets: (.assets|del(.directory)), triggers}' wrangler.json
+          jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
+          echo "bindings: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
-      - name: Commit y push (dispara el deploy de Cloudflare)
-        working-directory: api
+      - name: Prueba en seco
+        working-directory: vants
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+        run: npx -y wrangler@4 deploy --dry-run --outdir seco
+
+      - name: Deploy del Worker vants (API intacta + web nueva)
+        working-directory: vants
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+        run: npx -y wrangler@4 deploy
+
+      - name: Verificación (y vuelta atrás si falla)
+        working-directory: vants
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
-          git config user.name "vantsgames-web-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A vants-server/public
-          if git diff --cached --quiet; then
-            echo "Sin cambios respecto al build anterior"
-            exit 0
-          fi
-          git commit -m "web: build desde vantsgames-web@${GITHUB_SHA::7}"
-          git push origin main
+          set -u
+          ok=1
+          sleep 8
+          D=$(curl -fsS -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants/settings | jq -r '[.result.bindings[].name]|sort|join(",")')
+          [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
+          U=https://vants.vants.workers.dev
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
+          c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
+          if [ $ok = 1 ]; then echo "Producción OK"; exit 0; fi
+          echo "Fallo: vuelvo a la versión $ANTERIOR"
+          npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
+          exit 1
