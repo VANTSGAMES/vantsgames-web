@@ -236,22 +236,33 @@ select.input { appearance: auto; }
 .tag-conectado::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #3ddc84; margin-right: 6px; vertical-align: middle; }
 
 /* ============================================================
-   Perfil V1 · nombre cromado y sello 3D
-   Acero con reflejo para el nombre público del perfil (prototipo
-   V1-Insignias-3D). Sin WebGL el sello cae a su versión plana.
+   Sello del plan (V1 · como el preview): PNG + brillo CSS
+   Aura que respira, barrido de luz y destello periódico.
    ============================================================ */
-.nombre-cromo {
-  background: linear-gradient(180deg, #ffffff 20%, #c7cdd6 52%, #8f98a4 54%, #e8ecf1 78%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+.sello-brillo { position: relative; display: inline-block; }
+.sello-brillo > img { position: relative; z-index: 1; display: block; animation: sello-flash 5s ease-in-out .5s infinite; }
+.sello-brillo .aura {
+  position: absolute; inset: -38%; z-index: 0; pointer-events: none;
+  background: radial-gradient(circle, rgba(255,255,255,.34) 0%, var(--sello-glow, rgba(255,13,46,.4)) 46%, transparent 70%);
+  opacity: 0; animation: sello-aura 5s ease-in-out .5s infinite;
 }
-@media (prefers-reduced-motion: no-preference) {
-  .nombre-cromo {
-    animation: cromo-barrido 2.4s var(--ease) 0.2s both;
-  }
-  @keyframes cromo-barrido {
-    from { opacity: 0.35; letter-spacing: 0.02em; }
-    to { opacity: 1; letter-spacing: 0; }
-  }
+.sello-brillo .brillo {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.sello-brillo .brillo:before {
+  content: ""; position: absolute; top: -30%; bottom: -30%; left: -35%; width: 55%;
+  background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,.08) 22%, rgba(255,255,255,.9) 50%, rgba(255,255,255,.08) 78%, transparent 100%);
+  filter: blur(1px); transform: translate(-120%) skew(-10deg);
+  animation: sello-barrido 5s cubic-bezier(.4,0,.2,1) .5s infinite;
+}
+@keyframes sello-barrido { 0% { transform: translate(-120%) skew(-10deg); } 24% { transform: translate(300%) skew(-10deg); } to { transform: translate(300%) skew(-10deg); } }
+@keyframes sello-aura { 0% { opacity: 0; } 8% { opacity: 1; } 26% { opacity: 0; } to { opacity: 0; } }
+@keyframes sello-flash {
+  0%, 26%, to { filter: brightness(1) drop-shadow(0 3px 8px rgba(0,0,0,.45)); }
+  9% { filter: brightness(2.1) saturate(1.3) drop-shadow(0 3px 12px rgba(0,0,0,.5)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sello-brillo > img, .sello-brillo .aura, .sello-brillo .brillo:before { animation: none; }
 }

@@ -14,7 +14,7 @@ import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
 import { FotoEquipo, useRol, mensajeError } from "./Vants";
 import { fecha } from "@/lib/format";
-import { FilaInsignias, Sello3D, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
+import { FilaInsignias, Sello3D, SelloAvatar, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
 import { JUEGOS, nombreJuego, opcionesJuegos } from "@/lib/juegos";
 
 type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null; sello?: string | null };
@@ -74,11 +74,14 @@ export function PerfilPublicoPagina() {
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
         <div className="wrap py-12 flex flex-wrap items-end gap-6">
-          <Avatar src={p.avatar} nombre={p.nick} size={112} />
+          <span className="relative inline-block shrink-0">
+            <Avatar src={p.avatar} nombre={p.nick} size={112} />
+            <SelloAvatar s={p.sello} size={40} />
+          </span>
           <div className="min-w-0">
             <Link href="/ranking" className="link-arrow mb-3 w-fit" style={{ display: "flex" }}>← Ranking</Link>
             <div className="eyebrow mb-2">{p.fundador ? "Fundador de VANTS" : "Jugador VANTS"}</div>
-            <h1 className="d-1 nombre-cromo flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello3D s={p.sello} size={64} /></h1>
+            <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello3D s={p.sello} size={26} /></h1>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {p.fundador && <span className="tag tag-rojo">Fundador</span>}
               <span className="tag">{p.xp} XP</span>
