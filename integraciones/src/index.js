@@ -482,6 +482,8 @@ export default {
       if (!auth) console.error(JSON.stringify({ tipo: 'integ_error', ruta: url.pathname, error: msg }));
       res = json({ ok: false, error: msg }, auth ? 401 : 502);
     }
+    // Response.redirect() trae cabeceras inmutables: se copia antes de añadir CORS.
+    res = new Response(res.body, res);
     for (const [k, v] of Object.entries(h)) res.headers.set(k, v);
     return res;
   },
