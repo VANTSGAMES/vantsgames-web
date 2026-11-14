@@ -19,9 +19,9 @@ type Estado = "conectada" | "desconectada" | "pendiente" | "error";
 const PROVEEDORES = [
   { id: "faceit", nombre: "FACEIT", logo: "brand/logo-faceit.png", linker: "faceit" },
   { id: "discord", nombre: "Discord", logo: "brand/logo-discord.png", linker: "discord" },
-  { id: "twitch", nombre: "Twitch", logo: null, linker: "twitch" },
-  { id: "riot", nombre: "Riot Games", logo: null, linker: "riot" },
-  { id: "steam", nombre: "Steam", logo: null, linker: "steam" },
+  { id: "twitch", nombre: "Twitch", logo: "brand/logo-twitch.svg", linker: "twitch" },
+  { id: "riot", nombre: "Riot Games", logo: "brand/logo-riot.svg", linker: "riot" },
+  { id: "steam", nombre: "Steam", logo: "brand/logo-steam.svg", linker: "steam" },
 ] as const;
 
 const ESTADO_UI: Record<Estado, { l: string; c: string }> = {
@@ -160,8 +160,73 @@ function Ajustes() {
           {st.k === "error" && <span className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</span>}
         </div>
       </form>
+      <div className="mt-6"><PerfilPublicoForm /></div>
       <div className="mt-6"><CanalesForm /></div>
     </div>
+  );
+}
+
+const REDES_FORM = [
+  { k: "twitch", l: "Twitch", ph: "tu canal (miuser)" },
+  { k: "youtube", l: "YouTube", ph: "@tucanal" },
+  { k: "x", l: "X / Twitter", ph: "@tucuenta" },
+  { k: "tiktok", l: "TikTok", ph: "@tucuenta" },
+  { k: "instagram", l: "Instagram", ph: "@tucuenta" },
+] as const;
+
+/** Banner y redes sociales de la ficha pública (/u/tu-pid). */
+function PerfilPublicoForm() {
+  const qc = useQueryClient();
+  const q = useApi<{ banner: string | null; redes: Record<string, string> | null }>("/int/perfil/publico", { auth: true });
+  const [banner, setBanner] = useState("");
+  const [redes, setRedes] = useState<Record<string, string>>({});
+  const [st, setSt] = useState<{ k: "idle" | "guardando" | "ok" | "error"; m?: string }>({ k: "idle" });
+  useEffect(() => {
+    if (!q.data) return;
+    setBanner(q.data.banner || "");
+    setRedes(q.data.redes || {});
+  }, [q.data]);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setSt({ k: "guardando" });
+    try {
+      await api("/int/perfil/publico", { method: "POST", auth: true, body: { banner: banner.trim() || null, redes } });
+      const foto = await qc.getQueryData<{ pid: string | null }>(["/int/perfil/foto", true]);
+      if (foto?.pid) qc.invalidateQueries({ queryKey: ["/int/u/" + foto.pid, false] });
+      await qc.invalidateQueries({ queryKey: ["/int/perfil/publico", true] });
+      setSt({ k: "ok" });
+    } catch (err: any) {
+      const m: Record<string, string> = { banner_invalido: "El banner debe ser un enlace https:// de una imagen.", sin_sesion: "Tu sesión caducó. Vuelve a iniciar sesión." };
+      setSt({ k: "error", m: m[err.code] || "No se pudo guardar (" + err.code + ")." });
+    }
+  };
+  return (
+    <form onSubmit={submit} className="panel panel-pad grid gap-4 max-w-xl" data-testid="form-perfil-publico">
+      <h2 className="d-3">Ficha pública</h2>
+      <p className="small muted">El banner y tus redes se muestran arriba de tu perfil público. El banner debe ser el enlace (https) de una imagen horizontal (sugerido 1200×400).</p>
+      {q.isLoading ? <div className="sk" style={{ height: 44 }} /> : (
+        <>
+          <div className="field">
+            <label htmlFor="banner">Banner (URL de imagen)</label>
+            <input id="banner" className="input" value={banner} onChange={(e) => setBanner(e.target.value)} placeholder="https://…/mi-banner.jpg" maxLength={600} data-testid="input-banner" />
+          </div>
+          {banner.trim() && <img src={banner.trim()} alt="Vista previa del banner" className="chamfer object-cover w-full" style={{ height: 120 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} onLoad={(e) => { (e.target as HTMLImageElement).style.display = "block"; }} />}
+          <div className="grid sm:grid-cols-2 gap-3">
+            {REDES_FORM.map((r) => (
+              <div className="field" key={r.k}>
+                <label htmlFor={"red-" + r.k}>{r.l}</label>
+                <input id={"red-" + r.k} className="input" value={redes[r.k] || ""} maxLength={120} placeholder={r.ph} onChange={(e) => setRedes({ ...redes, [r.k]: e.target.value })} data-testid={"input-red-" + r.k} />
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="btn btn-rojo" disabled={st.k === "guardando"} data-testid="button-guardar-ficha">{st.k === "guardando" ? "Guardando…" : "Guardar ficha"}</button>
+            {st.k === "ok" && <span className="small" style={{ color: "var(--ok)" }} role="status">Ficha pública actualizada.</span>}
+            {st.k === "error" && <span className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</span>}
+          </div>
+        </>
+      )}
+    </form>
   );
 }
 

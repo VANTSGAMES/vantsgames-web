@@ -37,7 +37,9 @@ async function leerState(env, st) {
   return o.e > Date.now() ? o.s : null;
 }
 
-const callbackUrl = (url) => url.origin + '/epic/callback';
+// Redirect URI fijo (debe coincidir EXACTAMENTE con el registrado en el Epic
+// Developer Portal). Se puede sobreescribir con la variable EPIC_REDIRECT_URI.
+const callbackUrl = (env, url) => env.EPIC_REDIRECT_URI || (url.origin + '/epic/callback');
 const volver = (env, q) => Response.redirect((env.SITE_URL || 'https://vants.vants.workers.dev') + '/perfil/cuentas?' + q, 302);
 
 function resumen(d) {
@@ -97,15 +99,18 @@ export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }
     if (!sub) return volver(env, 'linkerr=epic_state');
     const code = url.searchParams.get('code');
     if (!code) return volver(env, 'linkerr=epic_sin_codigo');
+    const redirect = callbackUrl(env, url);
     const r = await fetch(TOKEN, {
       method: 'POST',
       headers: { Authorization: 'Basic ' + btoa(env.EPIC_CLIENT_ID + ':' + env.EPIC_CLIENT_SECRET), 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callbackUrl(url) }),
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirect }),
     });
     const t = await r.json().catch(() => ({}));
     if (!r.ok || !t.account_id) {
-      console.error(JSON.stringify({ tipo: 'epic_token', status: r.status, error: t.errorCode || t.error }));
-      return volver(env, 'linkerr=intercambio_epic_' + r.status);
+      // El motivo real del fallo viaja en el código: intercambio_epic_<status>_<errorCode>
+      const motivo = String(t.errorCode || t.error || 'desconocido').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 40);
+      console.error(JSON.stringify({ tipo: 'epic_token', status: r.status, error: t.errorCode || t.error, desc: t.errorDescription || t.errorMessage || null, redirect }));
+      return volver(env, 'linkerr=intercambio_epic_' + r.status + '_' + motivo);
     }
     let nombre = null;
     try {
@@ -136,7 +141,7 @@ export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }
 
   if (p === '/epic/inicio' && m === 'POST') {
     if (!env.EPIC_CLIENT_ID || !env.EPIC_CLIENT_SECRET) return json({ ok: false, error: 'epic_sin_configurar' }, 503);
-    const q = new URLSearchParams({ client_id: env.EPIC_CLIENT_ID, redirect_uri: callbackUrl(url), response_type: 'code', scope: 'basic_profile', state: await crearState(env, sub) });
+    const q = new URLSearchParams({ client_id: env.EPIC_CLIENT_ID, redirect_uri: callbackUrl(env, url), response_type: 'code', scope: 'basic_profile', state: await crearState(env, sub) });
     return json({ ok: true, url: AUTORIZAR + '?' + q });
   }
   if (p === '/epic/yo' && m === 'GET') return json({ ok: true, ...(await cuenta(env, sub, cacheado)) });

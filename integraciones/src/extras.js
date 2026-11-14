@@ -33,6 +33,7 @@ async function preparar(env) {
   if (listo) return;
   await asegurar(env.DB);
   await env.DB.prepare('ALTER TABLE integ_clips ADD COLUMN video TEXT').run().catch(() => null); // ya existe
+  await env.DB.prepare('ALTER TABLE perfiles_publicos ADD COLUMN banner TEXT').run().catch(() => null); // ya existe
   listo = true;
 }
 
@@ -333,12 +334,46 @@ export async function rutasExtras(req, env, url, p, m, H) {
     return H.json(r, r.ok ? 200 : st);
   }
 
-  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia', '/perfil/foto'];
+  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia', '/perfil/foto', '/perfil/publico'];
   if (!privadas.includes(p)) return null;
   await preparar(env);
   const sub = await H.usuario(req, env);
 
   if (p === '/membresia' && m === 'GET') return H.json({ ok: true, ...(await membresiaDe(env, sub)) });
+
+  // Perfil público editable: banner (URL https) y redes sociales del jugador.
+  const REDES_OK = ['twitch', 'youtube', 'x', 'tiktok', 'instagram'];
+  if (p === '/perfil/publico') {
+    if (m === 'GET') {
+      const fila = await env.DB.prepare('SELECT banner, redes FROM perfiles_publicos WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+      let redes = null;
+      try { redes = fila && fila.redes ? JSON.parse(fila.redes) : null; } catch { redes = null; }
+      return H.json({ ok: true, banner: fila ? fila.banner : null, redes });
+    }
+    if (m !== 'POST') return H.json({ ok: false, error: 'metodo' }, 405);
+    const b = await req.json().catch(() => ({}));
+    // Banner: URL https válida o null (quitar).
+    let banner = null;
+    if (typeof b.banner === 'string' && b.banner.trim()) {
+      if (!/^https:\/\/[^\s"'<>]{4,600}$/.test(b.banner.trim())) return H.json({ ok: false, error: 'banner_invalido' }, 400);
+      banner = b.banner.trim();
+    }
+    // Redes: solo claves permitidas, valores usuario/url de hasta 120 chars.
+    const redes = {};
+    if (b.redes && typeof b.redes === 'object') {
+      for (const k of REDES_OK) {
+        const v = txt(b.redes[k], 120);
+        if (v) redes[k] = v;
+      }
+    }
+    const nick = await nickDe(env.DB, sub);
+    await env.DB.prepare(
+      `INSERT INTO perfiles_publicos (auth0_sub, nickname, redes, banner, updated_at) VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(auth0_sub) DO UPDATE SET redes = excluded.redes, banner = excluded.banner, updated_at = datetime('now')`
+    ).bind(sub, nick, JSON.stringify(redes), banner).run();
+    invalidarIdentidades();
+    return H.json({ ok: true, banner, redes });
+  }
 
   // Foto del perfil principal: subida (data URL ≤ 300 KB), enlace https (p. ej. la foto de Google/Twitch) o quitar.
   if (p === '/perfil/foto') {

@@ -277,6 +277,48 @@ button { font: inherit; color: inherit; }
   .palabra, .contador-entrada, .check-circulo, .candado { animation: none; }
 }
 
+/* ---------- Adaptación móvil ---------- */
+@media (max-width: 640px) {
+  .nav-menu { min-width: 200px; max-width: calc(100vw - 2 * var(--gutter)); }
+  .d-hero { font-size: clamp(2.6rem, 14vw, 4rem); }
+  .d-1 { font-size: clamp(1.8rem, 8vw, 2.6rem); }
+  .lead { font-size: 0.98rem; }
+  /* Objetivos táctiles: botones y pestañas más cómodos con el dedo */
+  .btn-sm { height: 38px; }
+  .tab { padding: 0.8rem 0.7rem; font-size: 0.9rem; }
+  .tag { height: 24px; }
+}
+
+/* ---------- Pantallas grandes y consola (PS5 / Xbox: 10 pies) ---------- */
+@media (min-width: 1600px) {
+  :root { --gutter: clamp(2rem, 5vw, 4.5rem); --max: 1480px; }
+  body { font-size: 16.5px; }
+  .hdr-in { height: 72px; }
+  .nav-btn { font-size: 1.1rem; }
+  .d-hero { font-size: clamp(4rem, 8vw, 9rem); }
+}
+@media (min-width: 2200px) {
+  :root { --max: 1700px; }
+  body { font-size: 18px; }
+}
+
+/* ---------- Control con mando / teclado (consola) ---------- */
+/* El foco visible ya existe (outline rojo); en pantallas de TV se engrosa y
+   se hace siempre visible para navegar con D-pad / Tab sin ratón. */
+@media (pointer: coarse) and (min-width: 1024px) {
+  :focus-visible { outline-width: 3px; outline-offset: 3px; }
+  .btn:focus-visible { box-shadow: 0 0 0 3px var(--rojo-tenue); }
+  /* Sin hover fiable en consola: los menús del nav quedan marcados al abrirlos */
+  .nav-btn[aria-expanded="true"] { background: var(--grafito-2); }
+}
+/* Táctil (móvil y tablet): objetivos de toque mínimos de 44px donde aplica */
+@media (hover: none) and (pointer: coarse) {
+  .btn { height: 48px; }
+  .btn-sm { height: 42px; }
+  .row { padding: 0.95rem 1rem; }
+  a.tag, button.tag { height: 30px; }
+}
+
 /* ---------- Formularios ---------- */
 .field { display: grid; gap: 0.35rem; }
 .field label { font-family: var(--f-display); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.8rem; font-weight: 700; color: var(--gris-2); }

@@ -41,7 +41,7 @@ function Campana() {
         {n > 0 && <span style={{ position: "absolute", top: -4, right: -4, background: "var(--rojo)", color: "#fff", borderRadius: 999, fontSize: 10, minWidth: 16, height: 16, lineHeight: "16px", textAlign: "center", padding: "0 4px" }} data-testid="badge-notificaciones">{n > 9 ? "9+" : n}</span>}
       </button>
       {open && (
-        <div className="nav-menu" role="menu" style={{ right: 0, left: "auto", width: 320, maxHeight: 420, overflowY: "auto" }}>
+        <div className="nav-menu" role="menu" style={{ right: 0, left: "auto", width: "min(320px, calc(100vw - 2 * var(--gutter)))", maxHeight: 420, overflowY: "auto" }}>
           {q.isLoading ? <div className="small muted p-3">Cargando…</div> : q.error ? <div className="small muted p-3">No se pudieron cargar las notificaciones.</div> :
             (q.data?.notificaciones || []).length === 0 ? <div className="small muted p-3">Sin notificaciones. Aquí verás tus partidas de FACEIT y quién entra en directo.</div> :
             q.data!.notificaciones.map((x) => (

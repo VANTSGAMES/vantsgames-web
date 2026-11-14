@@ -22,6 +22,7 @@ SITE_URL = "https://vants.cc"
 TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
 EPIC_CLIENT_ID = "xyza7891azbKp4nKKiepfFrTUbR99GI7"
+EPIC_REDIRECT_URI = "https://vants-integraciones.vants.workers.dev/epic/callback"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
 

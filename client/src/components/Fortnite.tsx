@@ -10,6 +10,7 @@ import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
 import { Insignia3D } from "@/components/Insignia3D";
 import type { DefInsignia } from "@/lib/insignia3d";
+import { pub } from "@/lib/api";
 
 const DEF_FORTNITE: DefInsignia = { code: "FORTNITE", color: "#9d4dff", forma: "escudo", icono: "f", rareza: "rare" };
 
@@ -27,7 +28,17 @@ const ERR_LINK: Record<string, string> = {
   epic_ya_vinculada: "Esa cuenta de Epic Games ya está vinculada a otro perfil de VANTS.",
   epic_sin_configurar: "La vinculación con Epic Games todavía no está activa en el servidor.",
 };
-export const mensajeEpic = (k: string) => ERR_LINK[k] || (k.startsWith("intercambio_epic") ? "Epic rechazó la autorización (" + k + "). Revisa la app en el Epic Developer Portal." : "No se pudo vincular Epic Games (" + k + ").");
+export const mensajeEpic = (k: string) => {
+  if (ERR_LINK[k]) return ERR_LINK[k];
+  if (k.startsWith("intercambio_epic")) {
+    // Formato: intercambio_epic_<status>_<errorCode> (p. ej. intercambio_epic_401_invalid_client)
+    if (/invalid_client|unauthorized_client/.test(k)) return "Epic rechazó las credenciales de la app (invalid_client): el Client Secret guardado no corresponde al Client ID. Genera un nuevo Client Secret en el Epic Developer Portal y avisa a la organización para actualizarlo en el servidor.";
+    if (/redirect/.test(k)) return "Epic rechazó la URL de retorno (redirect_uri). En el Epic Developer Portal, la app debe tener registrada exactamente: https://vants-integraciones.vants.workers.dev/epic/callback";
+    if (k.includes("_400")) return "El código de autorización de Epic expiró o ya se usó (" + k + "). Cierra la pestaña de Epic y vuelve a intentarlo.";
+    return "Epic rechazó la autorización (" + k + "). Revisa la app en el Epic Developer Portal.";
+  }
+  return "No se pudo vincular Epic Games (" + k + ").";
+};
 
 const fmt = (n: number | null | undefined, d = 0) => (n == null ? "—" : n.toLocaleString("es", { maximumFractionDigits: d }));
 
@@ -101,7 +112,7 @@ export function TarjetaEpic() {
   return (
     <div className="p-5 grid gap-3" data-testid="cuenta-epic">
       <div className="flex items-center gap-3">
-        <Insignia3D d={DEF_FORTNITE} size={32} titulo="FORTNITE" />
+        <img src={pub("brand/logo-epic.svg")} alt="Epic Games" width={32} height={32} style={{ width: 32, height: 32 }} aria-hidden="true" />
         <span className="d-3">Epic Games · Fortnite</span>
         <span className={(conectada ? "tag tag-ok" : "tag") + " ml-auto"} data-testid="estado-epic">{q.isLoading ? "…" : conectada ? "Conectada" : "Desconectada"}</span>
       </div>

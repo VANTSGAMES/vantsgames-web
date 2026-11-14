@@ -9,7 +9,7 @@ import { Link, useParams } from "wouter";
 import { PanelFortnite, type StatsFortnite } from "@/components/Fortnite";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api } from "@/lib/api";
+import { api, pub } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
 import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
@@ -21,6 +21,7 @@ import { JUEGOS, nombreJuego, opcionesJuegos } from "@/lib/juegos";
 type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null; sello?: string | null };
 type Perfil = {
   pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; desde: string | null; sello?: string | null; insignias?: string[];
+  banner?: string | null; redes?: Record<string, string> | null;
   faceit: { nick: string; nivel: number | null; elo: number | null; partidas: number | null; winrate: number | null; kd: number | null; pais: string | null; url: string } | null;
   valorant: { riot: string | null; tier: string | null; tier_id: number | null; rr: number | null; icono: string | null; pico: string | null } | null;
   cuentas: { plataforma: string; handle: string }[];
@@ -28,6 +29,26 @@ type Perfil = {
   logros: { faceit: number; valorant: number; total: number };
   fortnite?: { nombre: string | null; stats: StatsFortnite | null; error_stats: string | null } | null;
   clips: Clip[];
+};
+
+/* Iconos de marcas (client/public/brand) para cuentas y redes. */
+const LOGO: Record<string, string> = {
+  twitch: "brand/logo-twitch.svg", youtube: "brand/logo-youtube.svg", x: "brand/logo-x.svg",
+  tiktok: "brand/logo-tiktok.svg", instagram: "brand/logo-instagram.svg", steam: "brand/logo-steam.svg",
+  riot: "brand/logo-riot.svg", epic: "brand/logo-epic.svg",
+  discord: "brand/logo-discord.png", faceit: "brand/logo-faceit.png",
+};
+const IconoMarca = ({ plataforma, size = 14 }: { plataforma: string; size?: number }) =>
+  LOGO[plataforma] ? <img src={pub(LOGO[plataforma])} alt="" width={size} height={size} style={{ width: size, height: size }} loading="lazy" /> : null;
+
+/** URL de una red social: si el valor es un enlace se usa tal cual; si es usuario se construye. */
+const urlRed = (k: string, v: string): string | null => {
+  if (/^https?:\/\//i.test(v)) return v;
+  const bases: Record<string, string> = {
+    twitch: "https://www.twitch.tv/", youtube: "https://www.youtube.com/@", x: "https://x.com/",
+    tiktok: "https://www.tiktok.com/@", instagram: "https://www.instagram.com/",
+  };
+  return bases[k] ? bases[k] + v.replace(/^@/, "") : null;
 };
 
 function Avatar({ src, nombre, size }: { src: string | null; nombre: string; size: number }) {
@@ -61,35 +82,68 @@ export function CuentasRegistradas() {
 const RED: Record<string, { l: string; url?: (h: string) => string }> = {
   twitch: { l: "Twitch", url: (h) => "https://www.twitch.tv/" + h },
   kick: { l: "Kick", url: (h) => "https://kick.com/" + h },
-  youtube: { l: "YouTube" }, x: { l: "X" }, tiktok: { l: "TikTok" }, steam: { l: "Steam" }, discord: { l: "Discord" },
+  youtube: { l: "YouTube" }, x: { l: "X" }, tiktok: { l: "TikTok" }, steam: { l: "Steam" }, discord: { l: "Discord" }, instagram: { l: "Instagram" },
   faceit: { l: "FACEIT", url: (h) => "https://www.faceit.com/es/players/" + h },
 };
 
 export function PerfilPublicoPagina() {
   const { pid } = useParams<{ pid: string }>();
   const q = useApi<{ perfil: Perfil }>("/int/u/" + pid);
+  const cat = useCatalogoInsignias();
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
   if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · jugador" title="Este jugador no existe" action={<Link href="/ranking" className="link-arrow">Ver ranking →</Link>} /> : <ErrorBox error={q.error} what="el perfil" />}</div>;
   const p = q.data!.perfil;
   const f = p.faceit, v = p.valorant;
+  const minis = (p.insignias || []).filter((c) => c !== "MEMBER").slice(0, 6);
+  const redes = Object.entries(p.redes || {}).filter(([, val]) => !!val);
   return (
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
-        <div className="wrap py-12 flex flex-wrap items-end gap-6">
-          <span className="relative inline-block shrink-0">
+        {/* Banner del jugador (o retícula técnica si no configuró uno) */}
+        <div className="relative overflow-hidden" style={{ height: 176 }}>
+          {p.banner ? (
+            <img src={p.banner} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+          ) : <div className="hero-fondo absolute inset-0" aria-hidden="true" />}
+          <div className="absolute inset-0" style={{ background: "linear-gradient(0deg, var(--grafito-1) 0%, rgba(17,17,19,.55) 55%, rgba(17,17,19,.15) 100%)" }} />
+        </div>
+        <div className="wrap pb-10 flex flex-wrap items-end gap-6" style={{ marginTop: -56 }}>
+          <span className="relative inline-block shrink-0" style={{ border: "3px solid var(--grafito-1)" }}>
             <Avatar src={p.avatar} nombre={p.nick} size={112} />
             <SelloAvatar s={p.sello} size={40} />
           </span>
           <div className="min-w-0">
             <Link href="/ranking" className="link-arrow mb-3 w-fit" style={{ display: "flex" }}>← Ranking</Link>
             <div className="eyebrow mb-2">{p.fundador ? "Fundador de VANTS" : "Jugador VANTS"}</div>
-            <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">{p.nick}<Sello3D s={p.sello} size={26} /></h1>
+            <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">
+              {p.nick}<Sello3D s={p.sello} size={26} />
+              {minis.length > 0 && (
+                <span className="flex flex-wrap items-center gap-1.5" data-testid="perfil-mininsignias">
+                  {minis.map((code) => {
+                    const d = (cat.data?.catalogo || []).find((x) => x.code === code);
+                    return d ? <Insignia3D key={code} d={d} size={20} titulo={d.nombre} /> : null;
+                  })}
+                  {(p.insignias || []).length > minis.length + 1 && <span className="small muted num">+{p.insignias!.length - minis.length - 1}</span>}
+                </span>
+              )}
+            </h1>
             <div className="flex flex-wrap gap-1.5 mt-3">
               {p.fundador && <span className="tag tag-rojo">Fundador</span>}
               <span className="tag">{p.xp} XP</span>
               {p.desde && <span className="tag">Desde {fecha(p.desde)}</span>}
-              {p.cuentas.map((c) => { const r = RED[c.plataforma]; const u = r?.url?.(c.handle); return u ? <a key={c.plataforma} href={u} target="_blank" rel="noopener noreferrer" className="tag hover:text-[var(--rojo)]">{r.l} · {c.handle}</a> : <span key={c.plataforma} className="tag">{r?.l || c.plataforma}{c.plataforma === "steam" ? "" : " · " + c.handle}</span>; })}
+              {p.cuentas.map((c) => { const r = RED[c.plataforma]; const u = r?.url?.(c.handle); return u ? <a key={c.plataforma} href={u} target="_blank" rel="noopener noreferrer" className="tag hover:text-[var(--rojo)]" style={{ gap: 6 }}><IconoMarca plataforma={c.plataforma} />{r.l} · {c.handle}</a> : <span key={c.plataforma} className="tag" style={{ gap: 6 }}><IconoMarca plataforma={c.plataforma} />{r?.l || c.plataforma}{c.plataforma === "steam" ? "" : " · " + c.handle}</span>; })}
             </div>
+            {redes.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3" data-testid="perfil-redes">
+                {redes.map(([k, val]) => {
+                  const u = urlRed(k, val);
+                  const lbl = RED[k]?.l || k;
+                  const contenido = <><IconoMarca plataforma={k} size={16} /><span>{val}</span></>;
+                  return u
+                    ? <a key={k} href={u} target="_blank" rel="noopener noreferrer" className="tag hover:text-[var(--rojo)]" style={{ gap: 7, height: 26, paddingLeft: 10, paddingRight: 10 }}>{contenido}</a>
+                    : <span key={k} className="tag" style={{ gap: 7, height: 26, paddingLeft: 10, paddingRight: 10 }}>{contenido}</span>;
+                })}
+              </div>
+            )}
           </div>
         </div>
       </header>
