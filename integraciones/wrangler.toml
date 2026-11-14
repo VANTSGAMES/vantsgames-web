@@ -17,20 +17,20 @@ database_id = "11e5d82c-307b-44ba-9682-501d8df593d3"
 [vars]
 AUTH0_DOMAIN = "vants.eu.auth0.com"
 AUTH0_AUDIENCE = "https://api.vants.app"
-SITE_ORIGINS = "https://vants.vants.workers.dev"
-SITE_URL = "https://vants.vants.workers.dev"
+SITE_ORIGINS = "https://vants.cc,https://vants.vants.workers.dev"
+SITE_URL = "https://vants.cc"
 TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
 EPIC_CLIENT_ID = "xyza7891azbKp4nKKiepfFrTUbR99GI7"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
 
-# Clips subidos desde el ordenador (vídeo en trozos de 20 MB + miniatura).
+# Clips subidos desde el ordenador (vÃ­deo en trozos de 20 MB + miniatura).
 [[kv_namespaces]]
 binding = "CLIPS_KV"
 id = "41ab2fde4424430c9702509ed3b4236f"
 
-# Lectura de las insignias que ya concedió el motor de logros del Worker principal.
+# Lectura de las insignias que ya concediÃ³ el motor de logros del Worker principal.
 [[d1_databases]]
 binding = "ACH_DB"
 database_name = "vants-logros-db"
