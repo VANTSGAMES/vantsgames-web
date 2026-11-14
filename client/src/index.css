@@ -203,12 +203,78 @@ button { font: inherit; color: inherit; }
 .grid-auto { display: grid; gap: 1px; }
 .grid-auto > * { background: var(--grafito-1); outline: 1px solid var(--linea-suave); }
 
-/* ---------- Animaciones ---------- */
-.reveal { animation: sube var(--t-base) var(--ease) both; }
+/* ---------- Animaciones ----------
+   Sistema organizado: .reveal con delay escalonado via --d,
+   clases .anim-1…6 para secuencias, y keyframes nombrados
+   reutilizables (marquee, palabra, contador, latido).        */
+.reveal { animation: sube var(--t-base) var(--ease) both; animation-delay: var(--d, 0ms); }
 @keyframes sube { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Escalones de entrada: 40ms → 390ms */
+.anim-1 { --d: 40ms; }  .anim-2 { --d: 110ms; }  .anim-3 { --d: 180ms; }
+.anim-4 { --d: 250ms; } .anim-5 { --d: 320ms; }  .anim-6 { --d: 390ms; }
+
+/* Titular del hero: cada palabra asciende con leve inclinación */
+.palabra { display: inline-block; animation: palabra var(--t-base) cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+@keyframes palabra { from { opacity: 0; transform: translateY(0.35em) skewY(1.5deg); } to { opacity: 1; transform: none; } }
+
+/* Cinta marquee infinita: la pista lleva el contenido duplicado */
+.marquee { overflow: hidden; }
+.marquee-pista { display: flex; width: max-content; animation: marquee 30s linear infinite; }
+.marquee:hover .marquee-pista, .marquee:focus-within .marquee-pista { animation-play-state: paused; }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* Número de contador al asentar */
+.contador-entrada { animation: contador 500ms var(--ease) both; animation-delay: var(--d, 0ms); }
+@keyframes contador { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* Tarjetas que levitan al pasar el cursor */
+.flotar { transition: transform var(--t-base) var(--ease), border-color var(--t-base) var(--ease), background var(--t-fast) var(--ease); }
+.flotar:hover { transform: translateY(-4px); }
+
+/* Borde de luz roja que respira (tarjeta destacada) */
+.brillo-borde { position: relative; }
+.brillo-borde::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 13, 46, 0.45);
+  animation: borde-latido 3.2s ease-in-out infinite;
+}
+@keyframes borde-latido { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(255,13,46,.35); } 50% { box-shadow: inset 0 0 0 1px rgba(255,13,46,.8); } }
+
+/* Fondo del hero: retícula técnica + resplandor rojo que respira (sin imágenes) */
+.hero-fondo {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.25) 55%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.9), rgba(0,0,0,.25) 55%, transparent);
+}
+.hero-glow {
+  position: absolute; pointer-events: none;
+  width: min(60rem, 120vw); aspect-ratio: 1; right: -18%; top: -42%;
+  background: radial-gradient(circle, rgba(255,13,46,0.16) 0%, rgba(255,13,46,0.05) 40%, transparent 68%);
+  animation: glow-respira 7s ease-in-out infinite;
+}
+@keyframes glow-respira { 0%, 100% { opacity: 0.55; transform: none; } 50% { opacity: 1; transform: scale(1.06); } }
+
+/* Portada de juego: zoom contenido al hover */
+.juego-cover { overflow: hidden; }
+.juego-cover img { transition: transform 420ms var(--ease), filter 420ms var(--ease); }
+.juego-cover:hover img, .juego-cover:focus-within img { transform: scale(1.06); filter: saturate(1.12); }
+
+/* Check animado del estado de éxito */
+.check-circulo { animation: check-pop 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes check-pop { 0% { transform: scale(0.2); opacity: 0; } 60% { transform: scale(1.15); } 100% { transform: scale(1); opacity: 1; } }
+
+/* Candado de contenido bloqueado por plan */
+.candado { animation: candado-tiembla 4s ease-in-out infinite; transform-origin: top center; }
+@keyframes candado-tiembla { 0%, 92%, 100% { transform: none; } 94% { transform: rotate(-6deg); } 96% { transform: rotate(5deg); } 98% { transform: rotate(-2deg); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  .marquee-pista { animation: none; }
+  .palabra, .contador-entrada, .check-circulo, .candado { animation: none; }
 }
 
 /* ---------- Formularios ---------- */

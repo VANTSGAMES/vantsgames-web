@@ -8,6 +8,7 @@ import { TournamentRow, MatchRow } from "@/components/domain";
 import { dinero, fecha, hora } from "@/lib/format";
 import { useMisEquipos, MisInscripciones } from "./Vants";
 import { filtrosJuegos } from "@/lib/juegos";
+import { useMembresia } from "@/lib/useMembresia";
 import { useQueryClient } from "@tanstack/react-query";
 
 const JUEGOS = filtrosJuegos();
@@ -49,7 +50,8 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
       <PageHead
         eyebrow={competir ? "Competir" : "Torneos"}
         title={competir ? <>Inscribe a tu <span style={{ color: "var(--rojo)" }}>equipo</span></> : "Descubrir torneos"}
-        lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de los once juegos del circuito publicados por la organización de VANTS."}
+        lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de los once juegos del circuito publicados por la organización de VANTS y por la comunidad con plan."}
+        actions={<Link href="/torneos/crear" className="btn" data-testid="cta-crear-torneo">Crear mi torneo</Link>}
       />
       <div className="wrap">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -123,6 +125,7 @@ export function Bracket({ torneo }: { torneo: string }) {
 /* ---------------- Inscripción ---------------- */
 function Inscripcion({ t }: { t: Tournament }) {
   const { status, login } = useAuth();
+  const mem = useMembresia();
   const [form, setForm] = useState({ equipo: "", tag: "", capitan: "", region: t.region || "" });
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; msg?: string }>({ k: "idle" });
   const qc = useQueryClient();
@@ -143,14 +146,32 @@ function Inscripcion({ t }: { t: Tournament }) {
       </div>
     );
   }
-  if (st.k === "ok") return <div className="empty" style={{ borderColor: "rgba(61,220,132,.4)" }} role="status"><span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span><p className="d-3">Solicitud registrada</p><p className="small muted">La organización revisará la inscripción. Su estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link> y recibirás un aviso en la campana.</p></div>;
+  if (st.k === "ok") {
+    return (
+      <div className="grid gap-4" data-testid="inscripcion-ok">
+        <div className="empty" style={{ borderColor: "rgba(61,220,132,.4)" }} role="status">
+          <div className="check-circulo d-2" style={{ color: "var(--ok)" }} aria-hidden="true">✓</div>
+          <span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span>
+          <p className="d-3">Solicitud registrada</p>
+          <p className="small muted">La organización revisará la inscripción de <strong>{form.equipo}</strong>{form.tag ? <span className="num"> [{form.tag}]</span> : null} en <strong>{t.name}</strong>.</p>
+          <p className="small muted">Recibirás un correo de confirmación y el estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link>.</p>
+        </div>
+        {mem.sinPlan && <UpsellPlan motivo="inscripcion" />}
+      </div>
+    );
+  }
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (form.equipo.trim().length < 3) { setSt({ k: "error", msg: "El nombre del equipo debe tener al menos 3 caracteres." }); return; }
+    if (!/^[A-Za-z0-9]{2,4}$/.test(form.tag)) { setSt({ k: "error", msg: "El tag debe tener entre 2 y 4 caracteres alfanuméricos." }); return; }
+    if (!form.capitan.trim()) { setSt({ k: "error", msg: "Indica el nick del capitán." }); return; }
     setSt({ k: "enviando" });
     try {
       await api("/api/torneos/inscribir", { method: "POST", auth: true, body: { torneo: t.slug, juego: t.game?.slug, ...form } });
       setSt({ k: "ok" });
       qc.invalidateQueries({ queryKey: ["/int/mis-inscripciones"] });
+      // Correo de confirmación al capitán (lo omite el worker si no hay email o API key).
+      api("/int/email/inscripcion", { method: "POST", auth: true, body: { torneo: t.slug } }).catch(() => null);
     } catch (err: any) {
       const m: Record<string, string> = { equipo_ya_inscrito: "Ese equipo ya está inscrito en este torneo.", datos_invalidos: "Revisa los datos del equipo.", sin_sesion: "Tu sesión expiró.", "Origen no permitido": "Este dominio aún no está autorizado por la API para inscribir equipos." };
       setSt({ k: "error", msg: m[err.code] || "No se pudo registrar la inscripción (" + err.code + ")." });
@@ -158,19 +179,47 @@ function Inscripcion({ t }: { t: Tournament }) {
   };
   const set = (k: keyof typeof form) => (e: any) => setForm({ ...form, [k]: e.target.value });
   return (
-    <form onSubmit={submit} className="grid gap-3" data-testid="form-inscripcion">
+    <form onSubmit={submit} className="grid gap-4" data-testid="form-inscripcion">
+      <div className="flex flex-wrap gap-2">
+        <span className="tag">{t.game?.nombre || ""}</span>
+        {t.format ? <span className="tag">{t.format}</span> : null}
+        {t.prize ? <span className="tag tag-rojo">{dinero(t.prize.value, t.prize.currency)}</span> : null}
+      </div>
       {delJuego.length > 0 ? (
         <div className="field"><label htmlFor="mi-eq">Inscribir uno de mis equipos</label><select id="mi-eq" className="input" defaultValue="" onChange={(e) => usarEquipo(e.target.value)} data-testid="select-mi-equipo"><option value="" disabled>Elegir equipo…</option>{delJuego.map((e) => <option key={e.slug} value={e.slug}>{e.nombre}{e.tag ? " [" + e.tag + "]" : ""}</option>)}</select></div>
       ) : mis.data ? <p className="small muted">¿Aún no tienes equipo de {t.game?.nombre || "este juego"}? <Link href="/equipos" className="link-arrow">Crea uno</Link> y vuelve aquí.</p> : null}
-      <div className="field"><label htmlFor="eq">Nombre del equipo</label><input id="eq" className="input" required maxLength={32} value={form.equipo} onChange={set("equipo")} /></div>
+      <div className="field"><label htmlFor="eq">Nombre del equipo</label><input id="eq" className="input" required maxLength={32} value={form.equipo} onChange={set("equipo")} placeholder="Ej.: Reyes del Aim" /></div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="field"><label htmlFor="tg">Tag</label><input id="tg" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" value={form.tag} onChange={set("tag")} /></div>
-        <div className="field"><label htmlFor="rg">Región</label><input id="rg" className="input" maxLength={40} value={form.region} onChange={set("region")} /></div>
+        <div className="field"><label htmlFor="tg">Tag (2–4)</label><input id="tg" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" value={form.tag} onChange={set("tag")} placeholder="VNTS" /></div>
+        <div className="field"><label htmlFor="rg">Región</label><input id="rg" className="input" maxLength={40} value={form.region} onChange={set("region")} placeholder="LATAM" /></div>
       </div>
-      <div className="field"><label htmlFor="cp">Capitán (nick en el juego)</label><input id="cp" className="input" required maxLength={40} value={form.capitan} onChange={set("capitan")} /></div>
+      <div className="field"><label htmlFor="cp">Capitán (nick en el juego)</label><input id="cp" className="input" required maxLength={40} value={form.capitan} onChange={set("capitan")} placeholder="Tu nick dentro del juego" /></div>
       <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-inscribir">{st.k === "enviando" ? "Enviando…" : "Solicitar inscripción"}</button>
       {st.k === "error" && <p className="small" role="alert" style={{ color: "#ff5468" }}>{st.msg}</p>}
+      <p className="small muted">La organización confirma cada plaza. Te avisaremos por correo y en la campana de notificaciones.</p>
     </form>
+  );
+}
+
+/** Upsell a planes para jugadores sin plan (tras inscribirse, en Ranked…). */
+export function UpsellPlan({ motivo }: { motivo: "inscripcion" | "ranked" | "clips" }) {
+  const textos = {
+    inscripcion: { t: "Inscríbete sin fee con VANTS PRO", d: "Los planes VANTS quitan el fee de inscripción en torneos abiertos y te dan cola prioritaria en VANTS Ranked." },
+    ranked: { t: "Cola prioritaria con VANTS PRO", d: "Con un plan activo entras primero en las colas de VANTS Ranked y acumulas rango más rápido." },
+    clips: { t: "Canal verificado con VANTS CREATOR", d: "Los creadores con plan tienen canal de clips verificado, destacado en la sala y kit de overlays." },
+  }[motivo];
+  return (
+    <div className="panel panel-pad flotar" style={{ borderColor: "rgba(255,13,46,.4)" }} data-testid={"upsell-" + motivo}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="eyebrow mb-2">Ventaja de planes</div>
+          <div className="d-3">{textos.t}</div>
+          <p className="small muted mt-2" style={{ maxWidth: "44ch" }}>{textos.d}</p>
+        </div>
+        <span className="candado" style={{ fontSize: "1.6rem" }} aria-hidden="true">🔒</span>
+      </div>
+      <Link href="/membresias" className="btn btn-rojo btn-sm mt-3" data-testid={"upsell-btn-" + motivo}>Ver planes VANTS</Link>
+    </div>
   );
 }
 

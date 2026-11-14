@@ -218,7 +218,7 @@ function b64aBytes(b64) {
 
 /* ------------------------------------------------------------ membresía */
 
-async function membresiaDe(env, sub) {
+export async function membresiaDe(env, sub) {
   const owner = await esOwner(env.DB, sub);
   if (owner) {
     return { plan: 'socio', planes: PLANES, nombre: 'SOCIO VANTS · Dueño', origen: 'owner', caduca: null, activo: true, todos: true };

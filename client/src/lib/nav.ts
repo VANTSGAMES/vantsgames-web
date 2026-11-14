@@ -11,6 +11,7 @@ export const NAV: NavGroup[] = [
   ]},
   { label: "Torneos", base: "/torneos", links: [
     { label: "Competir", to: "/torneos/competir", hint: "Inscripciones abiertas" },
+    { label: "Crear mi torneo", to: "/torneos/crear", hint: "Torneos de comunidad · con plan VANTS" },
     { label: "Descubrir torneos", to: "/torneos", hint: "Próximos, en curso y archivo" },
     { label: "Agenda en vivo", to: "/agenda", hint: "Partidos en directo y próximos" },
     { label: "Últimos resultados", to: "/resultados" },

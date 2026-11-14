@@ -9,6 +9,8 @@ import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/c
 import { TeamTile, PlayerTile, MatchRow } from "@/components/domain";
 import { fecha, gameLabel } from "@/lib/format";
 import { EquiposCTA, MiembrosVants, FaceitDeJugador } from "./Vants";
+import { UpsellPlan } from "./Torneos";
+import { useMembresia } from "@/lib/useMembresia";
 
 function useRosters(teams: Team[] | undefined) {
   const qs = useQueries({
@@ -161,6 +163,7 @@ export function JugadorDetalle() {
 }
 
 export function Ranked() {
+  const mem = useMembresia();
   return (
     <>
       <PageHead eyebrow="VANTS Ranked" title={<>VANTS <span style={{ color: "var(--rojo)" }}>Ranked</span></>} lead="Partidas con rango propio de VANTS para VALORANT y CS2. El emparejamiento y los puntos se calculan en el servidor." />
@@ -171,6 +174,11 @@ export function Ranked() {
           ["03", "Sube de rango", "Cada resultado verificado suma o resta puntos de temporada."],
         ].map(([n, t, d]) => <div key={n} className="panel panel-pad"><div className="num muted">{n}</div><div className="d-3 mt-2">{t}</div><p className="small muted mt-2">{d}</p></div>)}
       </div>
+      {mem.sinPlan && (
+        <div className="wrap pb-2">
+          <UpsellPlan motivo="ranked" />
+        </div>
+      )}
       <Section title="Clasificación de la temporada">
         <Empty code="ranked · sin temporada" title="La temporada de Ranked todavía no ha empezado" text="La tabla aparecerá cuando el backend publique la primera temporada. No se muestran posiciones provisionales." />
       </Section>

@@ -19,24 +19,29 @@ export type DefJuego = {
   plataforma: PlataformaJuego;
   /** Tiene integración de estadísticas/logros (FACEIT, Riot…). */
   integrado?: boolean;
+  /** Portada del juego (client/public/img/juegos/{slug}.jpg). */
+  img?: string;
 };
 
 export const JUEGOS: DefJuego[] = [
-  { slug: "valorant", label: "VALORANT", nombre: "VALORANT", plataforma: "PC", integrado: true },
-  { slug: "cs2", label: "CS2", nombre: "Counter-Strike 2", plataforma: "PC", integrado: true },
-  { slug: "fortnite", label: "FORTNITE", nombre: "Fortnite", plataforma: "PC" },
-  { slug: "fc27", label: "FC 27", nombre: "EA SPORTS FC 27", plataforma: "Consola" },
-  { slug: "smash", label: "SMASH ULTIMATE", nombre: "Super Smash Bros. Ultimate", plataforma: "Consola" },
-  { slug: "warzone", label: "WARZONE", nombre: "Call of Duty: Warzone", plataforma: "PC" },
-  { slug: "freefire", label: "FREE FIRE", nombre: "Free Fire", plataforma: "Móvil" },
-  { slug: "lol", label: "LOL", nombre: "League of Legends", plataforma: "PC" },
-  { slug: "wildrift", label: "WILD RIFT", nombre: "League of Legends: Wild Rift", plataforma: "Móvil" },
-  { slug: "mlbb", label: "MOBILE LEGENDS", nombre: "Mobile Legends: Bang Bang", plataforma: "Móvil" },
-  { slug: "clashroyale", label: "CLASH ROYALE", nombre: "Clash Royale", plataforma: "Móvil" },
+  { slug: "valorant", label: "VALORANT", nombre: "VALORANT", plataforma: "PC", integrado: true, img: "img/juegos/valorant.jpg" },
+  { slug: "cs2", label: "CS2", nombre: "Counter-Strike 2", plataforma: "PC", integrado: true, img: "img/juegos/cs2.jpg" },
+  { slug: "fortnite", label: "FORTNITE", nombre: "Fortnite", plataforma: "PC", img: "img/juegos/fortnite.jpg" },
+  { slug: "fc27", label: "FC 27", nombre: "EA SPORTS FC 27", plataforma: "Consola", img: "img/juegos/fc27.jpg" },
+  { slug: "smash", label: "SMASH ULTIMATE", nombre: "Super Smash Bros. Ultimate", plataforma: "Consola", img: "img/juegos/smash.jpg" },
+  { slug: "warzone", label: "WARZONE", nombre: "Call of Duty: Warzone", plataforma: "PC", img: "img/juegos/warzone.jpg" },
+  { slug: "freefire", label: "FREE FIRE", nombre: "Free Fire", plataforma: "Móvil", img: "img/juegos/freefire.jpg" },
+  { slug: "lol", label: "LOL", nombre: "League of Legends", plataforma: "PC", img: "img/juegos/lol.jpg" },
+  { slug: "wildrift", label: "WILD RIFT", nombre: "League of Legends: Wild Rift", plataforma: "Móvil", img: "img/juegos/wildrift.jpg" },
+  { slug: "mlbb", label: "MOBILE LEGENDS", nombre: "Mobile Legends: Bang Bang", plataforma: "Móvil", img: "img/juegos/mlbb.jpg" },
+  { slug: "clashroyale", label: "CLASH ROYALE", nombre: "Clash Royale", plataforma: "Móvil", img: "img/juegos/clashroyale.jpg" },
 ];
 
 /** Mapa slug → definición. */
 export const JUEGO_POR_SLUG: Record<string, DefJuego> = Object.fromEntries(JUEGOS.map((j) => [j.slug, j]));
+
+/** Portada de un juego por slug (fallback: cadena vacía). */
+export const portadaJuego = (slug?: string | null) => (slug ? JUEGO_POR_SLUG[slug]?.img || "" : "");
 
 /** Nombre completo de un juego por slug (fallback: el slug en mayúsculas). */
 export const nombreJuego = (slug?: string | null) => (slug ? JUEGO_POR_SLUG[slug]?.nombre || slug : "");

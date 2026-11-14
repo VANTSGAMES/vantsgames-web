@@ -654,8 +654,15 @@ export function Publicar() {
                     <FormTorneo key={editar?.slug || "nuevo"} refrescar={refrescar} editar={editar} limpiar={() => setEditar(null)} />
                     <div className="panel">{r.torneos.length === 0 ? <Empty code="torneos · 0" title="Sin torneos publicados" /> : r.torneos.map((t) => (
                       <div key={t.slug} className="row grid-cols-[1fr_auto] items-center">
-                        <Link href={"/torneos/" + t.slug} className="min-w-0"><span className="font-semibold truncate block">{t.nombre}</span><span className="small muted">{gameLabel(t.game_slug)} · {t.estado}{t.starts_at ? " · " + fecha(t.starts_at) : ""}</span></Link>
-                        <span className="flex gap-2"><button className="btn btn-sm" onClick={() => editarTorneo(t.slug)}>Editar</button><button className="btn btn-sm btn-ghost" onClick={() => borrar("torneo", t.slug, t.nombre)}>Borrar</button></span>
+                        <Link href={"/torneos/" + t.slug} className="min-w-0"><span className="font-semibold truncate block">{t.nombre}{t.estado === "pendiente" ? <span className="tag tag-aviso ml-2">revisión</span> : null}</span><span className="small muted">{gameLabel(t.game_slug)} · {t.estado}{t.starts_at ? " · " + fecha(t.starts_at) : ""}</span></Link>
+                        {t.estado === "pendiente" ? (
+                          <span className="flex gap-2">
+                            <button className="btn btn-sm btn-rojo" data-testid={"btn-aprobar-" + t.slug} onClick={() => enviar("/int/admin/torneo", { accion: "publicar", slug: t.slug, aprobar: true }, "Torneo aprobado y publicado.")}>Aprobar</button>
+                            <button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm("¿Rechazar «" + t.nombre + "»? Se borrará y se le notificará al creador.")) enviar("/int/admin/torneo", { accion: "publicar", slug: t.slug, aprobar: false }, "Torneo rechazado."); }}>Rechazar</button>
+                          </span>
+                        ) : (
+                          <span className="flex gap-2"><button className="btn btn-sm" onClick={() => editarTorneo(t.slug)}>Editar</button><button className="btn btn-sm btn-ghost" onClick={() => borrar("torneo", t.slug, t.nombre)}>Borrar</button></span>
+                        )}
                       </div>
                     ))}</div>
                   </div>

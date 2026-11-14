@@ -7,6 +7,8 @@ import { VideoTile, StreamTile } from "@/components/domain";
 import { fecha, gameLabel, hace } from "@/lib/format";
 import { JUEGOS } from "@/lib/juegos";
 import { MiBiblioteca, ClipsComunidad } from "./MisClips";
+import { UpsellPlan } from "./Torneos";
+import { useMembresia } from "@/lib/useMembresia";
 
 /* ---------------- Clips ---------------- */
 const CLIP_TABS = [
@@ -71,10 +73,12 @@ function Recientes({ filtro }: { filtro?: string }) {
 
 export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }) {
   const [juego, setJuego] = useState("valorant");
+  const mem = useMembresia();
   const actual = vista === "destacados" ? "/clips" : vista === "recientes" ? "/clips/recientes" : "/clips/juego";
   return (
     <>
       <PageHead eyebrow="Clips" title={<>Las mejores <span style={{ color: "var(--rojo)" }}>jugadas</span></>} lead="Clips de la comunidad VANTS. Los clips automáticos de tus directos los edita y publica el bot de clips (VANTS-Clipper); también puedes subir los tuyos desde el ordenador o pegar el enlace de Twitch o Kick." actions={<Link href="/clips/publicar" className="btn btn-sm">Publicar clip</Link>} />
+      {mem.sinPlan && <div className="wrap pb-2"><UpsellPlan motivo="clips" /></div>}
       <div className="wrap">
         <ClipTabs actual={actual} />
         {vista === "destacados" && <><Destacados /><div className="mt-10"><ClipsComunidad /></div></>}

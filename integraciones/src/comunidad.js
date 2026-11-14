@@ -1,4 +1,6 @@
 import { identidades } from './perfiles.js';
+import { membresiaDe } from './extras.js';
+import { asegurarEmail, guardarEmailSub, emailDe, enviarEmail, plantillaEmail } from './email.js';
 // VANTS · Integraciones · comunidad
 // -----------------------------------------------------------------------------
 // Funciones de la web que faltaban, todas sobre D1 vants-db:
@@ -15,7 +17,21 @@ import { identidades } from './perfiles.js';
 // La vinculación de FACEIT NO se toca aquí: solo se lee vants_links.
 
 const JUEGOS = ['valorant', 'cs2'];
+// Catálogo completo de la web: los torneos de comunidad pueden elegir
+// cualquiera de los 11 juegos del circuito, no solo los integrados.
+const JUEGOS_CATALOGO = ['valorant', 'cs2', 'fortnite', 'fc27', 'smash', 'warzone', 'freefire', 'lol', 'wildrift', 'mlbb', 'clashroyale'];
 const ESTADOS_T = ['upcoming', 'ongoing', 'finished', 'cancelled'];
+const PLAZAS_C = [4, 8, 16, 32, 64];
+
+// Columnas para torneos de comunidad (creador) y caché de emails.
+// Idempotente: se ejecuta una vez por isolate.
+let comunidadLista = false;
+async function prepararComunidad(db) {
+  if (comunidadLista) return;
+  await asegurarEmail(db);
+  await db.prepare('ALTER TABLE pt_torneos ADD COLUMN creador_sub TEXT').run().catch(() => null); // ya existe
+  comunidadLista = true;
+}
 
 const txt = (v, max) => {
   const s = String(v == null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim();
@@ -368,6 +384,123 @@ async function avisarTodos(env, notificar, discord, tipo, titulo, cuerpo, url) {
   await discord(env, 'anuncios', { embeds: [{ title: titulo, description: cuerpo || '', url: base + url, color: 0xff2e4d, footer: { text: 'VANTS GAMES' } }] }).catch(() => null);
 }
 
+/* ------------------------------------------------ torneos de comunidad */
+
+/**
+ * POST /int/torneos/crear — un jugador con plan activo propone un torneo.
+ * Se guarda con estado 'pendiente' (invisible en el circuito público) hasta
+ * que el owner lo aprueba con /admin/torneo {accion:'publicar'}.
+ */
+async function crearTorneoComunidad(env, req, sub, b, H) {
+  const db = env.DB;
+  await prepararComunidad(db);
+  const mem = await membresiaDe(env, sub);
+  if (!mem.activo) return { body: { ok: false, error: 'sin_plan' }, status: 403 };
+
+  const nombre = txt(b.nombre, 80);
+  const juego = String(b.juego || '');
+  const plazas = numOrNull(b.plazas);
+  const inicio = fechaISO(b.inicio);
+  if (!nombre || nombre.length < 3) return { body: { ok: false, error: 'datos_invalidos' }, status: 400 };
+  if (!JUEGOS_CATALOGO.includes(juego)) return { body: { ok: false, error: 'juego_invalido' }, status: 400 };
+  if (!PLAZAS_C.includes(plazas)) return { body: { ok: false, error: 'datos_invalidos' }, status: 400 };
+  if (!inicio || new Date(inicio).getTime() < Date.now() - 60_000) return { body: { ok: false, error: 'fechas_invalidas' }, status: 400 };
+
+  // Premio: numérico si es posible; si es texto libre, va a la descripción.
+  const premioTxt = txt(b.premio, 60);
+  const premioNum = numOrNull(premioTxt);
+  const descripcion = premioTxt && premioNum == null ? 'Premio: ' + premioTxt : null;
+
+  const nick = await nickDe(db, sub);
+  const slug = await slugLibre(db, 'pt_torneos', slugify(nombre));
+  try {
+    await db.prepare(
+      `INSERT INTO pt_torneos (id, slug, source, nombre, descripcion, game_slug, estado, region, location_type,
+         prize_value, prize_currency, fee, max_teams, starts_at, formato, reglas, creador_sub)
+       VALUES (?, ?, 'comunidad', ?, ?, ?, 'pendiente', ?, 'online', ?, 'USD', 0, ?, ?, ?, ?, ?)`
+    ).bind(uid(), slug, nombre, descripcion, juego, txt(b.region, 40) || 'LATAM', premioNum, plazas, inicio, txt(b.formato, 80), txt(b.reglas, 4000), sub).run();
+  } catch {
+    return { body: { ok: false, error: 'datos_invalidos' }, status: 400 };
+  }
+
+  // Aviso al owner (in-app) + Discord del equipo.
+  const owners = await db.prepare("SELECT auth0_sub FROM players WHERE role = 'owner'").all();
+  for (const o of owners.results || []) {
+    await H.notificar(env, o.auth0_sub, 'torneo', 'Torneo de comunidad pendiente: ' + nombre, nick + ' · ' + juego + ' · inicio ' + inicio, '/torneos/' + slug).catch(() => null);
+  }
+  await H.discord(env, 'anuncios', {
+    embeds: [{ title: 'Torneo de comunidad a revisión', description: '**' + nombre + '**\nPor ' + nick + ' · ' + juego + ' · ' + plazas + ' equipos', url: String(env.SITE_URL || '').replace(/\/$/, '') + '/torneos/' + slug, color: 0xff2e4d, footer: { text: 'VANTS GAMES · revisión pendiente' } }],
+  }).catch(() => null);
+
+  // Email de confirmación al creador (si hay email verificado en el JWT).
+  const claims = await H.usuarioClaims(req, env).catch(() => ({ email: null }));
+  const email = claims.email || await emailDe(db, sub);
+  if (claims.email) await guardarEmailSub(db, sub, claims.email);
+  if (email) {
+    await enviarEmail(env, {
+      to: email,
+      asunto: 'Recibimos tu torneo: ' + nombre,
+      html: plantillaEmail({
+        base: env.SITE_URL,
+        titulo: 'Torneo enviado a revisión',
+        saludo: 'Hola ' + nick + ',',
+        parrafos: [
+          'Tu torneo de comunidad «' + nombre + '» quedó registrado. El equipo VANTS lo revisará y te avisaremos por correo y notificación cuando se publique en el circuito.',
+        ],
+        datos: [['Torneo', nombre], ['Juego', juego], ['Inicio', inicio], ['Plazas', String(plazas) + ' equipos'], ['Estado', 'Pendiente de revisión']],
+        cta: { texto: 'Ver torneos', url: '/torneos' },
+      }),
+    }).catch(() => null);
+  }
+  return { body: { ok: true, slug }, status: 200 };
+}
+
+/**
+ * POST /int/email/inscripcion — el cliente lo llama justo después de
+ * inscribirse en un torneo. Verifica que la inscripción sea del usuario y
+ * envía el correo de confirmación (una sola vez por inscripción).
+ */
+async function emailInscripcion(env, req, sub, b, H) {
+  const db = env.DB;
+  await prepararComunidad(db);
+  const torneo = String(b.torneo || '');
+  if (!torneo) return { body: { ok: false, error: 'datos_invalidos' }, status: 400 };
+  const claims = await H.usuarioClaims(req, env).catch(() => ({ email: null }));
+  if (!claims.email) return { body: { ok: true, omitido: 'sin_email' }, status: 200 };
+  await guardarEmailSub(db, sub, claims.email);
+
+  const fila = await db.prepare(
+    `SELECT tt.id, tt.name, tt.tag, tt.status, pt.nombre torneo, pt.starts_at
+     FROM tournament_teams tt LEFT JOIN pt_torneos pt ON pt.slug = tt.tournament_id
+     WHERE tt.auth0_sub = ? AND tt.tournament_id = ? ORDER BY tt.created_at DESC LIMIT 1`
+  ).bind(sub, torneo).first();
+  if (!fila) return { body: { ok: false, error: 'no_encontrado' }, status: 404 };
+
+  // Un correo por inscripción: marca en integ_estado.
+  const clave = 'email_insc_' + fila.id;
+  const ya = await db.prepare('SELECT 1 FROM integ_estado WHERE clave = ?').bind(clave).first();
+  if (ya) return { body: { ok: true, omitido: 'ya_enviado' }, status: 200 };
+  await db.prepare('INSERT INTO integ_estado (clave, valor) VALUES (?, 1)').bind(clave).run().catch(() => null);
+
+  const nick = await nickDe(db, sub);
+  await enviarEmail(env, {
+    to: claims.email,
+    asunto: 'Inscripción recibida: ' + (fila.torneo || torneo),
+    html: plantillaEmail({
+      base: env.SITE_URL,
+      titulo: 'Inscripción registrada',
+      saludo: 'Hola ' + nick + ',',
+      parrafos: [
+        'Recibimos la inscripción de tu equipo ' + (fila.name || '') + (fila.tag ? ' [' + fila.tag + ']' : '') + ' al torneo ' + (fila.torneo || torneo) + '.',
+        'El equipo VANTS revisará la solicitud y confirmará tu plaza. El estado aparece en tu perfil, en «Mis torneos».',
+      ],
+      datos: [['Torneo', fila.torneo || torneo], ['Equipo', (fila.name || '') + (fila.tag ? ' [' + fila.tag + ']' : '')], ['Inicio', fila.starts_at || '—'], ['Estado', 'Pendiente de confirmación']],
+      cta: { texto: 'Ver mis torneos', url: '/perfil/torneos' },
+    }),
+  }).catch(() => null);
+  return { body: { ok: true }, status: 200 };
+}
+
 async function owner(env, sub, p, m, req, H) {
   const db = env.DB;
   if (!(await esOwner(db, sub))) return H.json({ ok: false, error: 'solo_owner' }, 403);
@@ -387,6 +520,50 @@ async function owner(env, sub, p, m, req, H) {
   }
 
   if (p === '/admin/torneo' && m === 'POST') {
+    // Torneos de comunidad: aprobar (publicar) o rechazar (borrar).
+    if (b.accion === 'publicar') {
+      await prepararComunidad(db);
+      const ex = await db.prepare('SELECT slug, nombre, game_slug, estado, creador_sub FROM pt_torneos WHERE slug = ?').bind(String(b.slug || '')).first();
+      if (!ex) return H.json({ ok: false, error: 'no_encontrado' }, 404);
+      const nick = ex.creador_sub ? await nickDe(db, ex.creador_sub) : null;
+      if (b.aprobar) {
+        await db.prepare("UPDATE pt_torneos SET estado = 'upcoming', updated_at = datetime('now') WHERE slug = ?").bind(ex.slug).run();
+        await avisarTodos(env, H.notificar, H.discord, 'torneo', 'Nuevo torneo: ' + ex.nombre, nick ? 'Torneo de comunidad organizado por ' + nick : 'Inscripciones abiertas en VANTS.', '/torneos/' + ex.slug);
+      } else {
+        await db.batch([
+          db.prepare('DELETE FROM pt_torneos WHERE slug = ?').bind(ex.slug),
+          db.prepare('DELETE FROM tournament_teams WHERE tournament_id = ?').bind(ex.slug),
+          db.prepare('DELETE FROM tournament_matches WHERE tournament_id = ?').bind(ex.slug),
+        ]);
+      }
+      if (ex.creador_sub) {
+        await H.notificar(env, ex.creador_sub, 'torneo',
+          b.aprobar ? 'Tu torneo fue aprobado: ' + ex.nombre : 'Tu torneo no fue aprobado: ' + ex.nombre,
+          b.aprobar ? 'Ya está publicado en el circuito. ¡A llenar las plazas!' : 'Revisa las reglas del circuito y vuelve a proponerlo cuando quieras.',
+          b.aprobar ? '/torneos/' + ex.slug : '/torneos/crear').catch(() => null);
+        const correo = await emailDe(db, ex.creador_sub);
+        if (correo) {
+          await enviarEmail(env, {
+            to: correo,
+            asunto: (b.aprobar ? 'Tu torneo está publicado: ' : 'Tu torneo no fue aprobado: ') + ex.nombre,
+            html: plantillaEmail({
+              base: env.SITE_URL,
+              titulo: b.aprobar ? 'Torneo aprobado' : 'Torneo no aprobado',
+              saludo: nick ? 'Hola ' + nick + ',' : 'Hola,',
+              parrafos: b.aprobar ? [
+                '«' + ex.nombre + '» ya está publicado en el circuito VANTS con el estado Próximo. Comparte el enlace y llena las plazas.',
+              ] : [
+                'Tu propuesta «' + ex.nombre + '» no pasó la revisión del equipo VANTS esta vez. Puedes ajustar las reglas o el calendario y volver a proponerla cuando quieras.',
+              ],
+              datos: [['Torneo', ex.nombre], ['Juego', ex.game_slug || '—']],
+              cta: b.aprobar ? { texto: 'Ver mi torneo', url: '/torneos/' + ex.slug } : { texto: 'Proponer otro torneo', url: '/torneos/crear' },
+            }),
+          }).catch(() => null);
+        }
+      }
+      return H.json({ ok: true, publicado: !!b.aprobar });
+    }
+
     const t = torneoDesde(b);
     const edita = !!b.slug;
     if ((!edita || b.nombre !== undefined) && (!t.nombre || t.nombre.length < 3)) return H.json({ ok: false, error: 'nombre_invalido' }, 400);
@@ -468,9 +645,31 @@ async function owner(env, sub, p, m, req, H) {
     if (!fila) return H.json({ ok: false, error: 'no_encontrado' }, 404);
     await db.prepare('UPDATE tournament_teams SET status = ? WHERE id = ?').bind(status, id).run();
     if (fila.auth0_sub && status !== 'pendiente') {
+      const nick = await nickDe(db, fila.auth0_sub);
       await H.notificar(env, fila.auth0_sub, 'torneo',
         (status === 'confirmado' ? 'Inscripción confirmada: ' : 'Inscripción rechazada: ') + fila.name,
         fila.nombre || fila.tournament_id, '/torneos/' + fila.tournament_id).catch(() => null);
+      // Correo al capitán con el resultado de la revisión.
+      await prepararComunidad(db);
+      const correo = await emailDe(db, fila.auth0_sub);
+      if (correo) {
+        await enviarEmail(env, {
+          to: correo,
+          asunto: (status === 'confirmado' ? 'Plaza confirmada: ' : 'Inscripción rechazada: ') + (fila.nombre || fila.tournament_id),
+          html: plantillaEmail({
+            base: env.SITE_URL,
+            titulo: status === 'confirmado' ? 'Plaza confirmada' : 'Inscripción rechazada',
+            saludo: 'Hola ' + nick + ',',
+            parrafos: status === 'confirmado' ? [
+              'Tu equipo ' + fila.name + ' tiene plaza confirmada en ' + (fila.nombre || fila.tournament_id) + '. ¡Nos vemos en el bracket!',
+            ] : [
+              'Tu inscripción de ' + fila.name + ' en ' + (fila.nombre || fila.tournament_id) + ' no fue confirmada esta vez. Sigue el circuito: hay más torneos cada semana.',
+            ],
+            datos: [['Torneo', fila.nombre || fila.tournament_id], ['Equipo', fila.name || '—'], ['Estado', status]],
+            cta: { texto: 'Ver el torneo', url: '/torneos/' + fila.tournament_id },
+          }),
+        }).catch(() => null);
+      }
     }
     return H.json({ ok: true });
   }
@@ -513,7 +712,7 @@ export async function rutasComunidad(req, env, url, p, m, H) {
     return H.json({ ok: true, faceit: r ? { ...r, url: 'https://www.faceit.com/es/players/' + encodeURIComponent(r.nick) } : null });
   }
 
-  const privadas = ['/mis-equipos', '/equipos', '/equipos/unirse', '/equipos/salir', '/equipos/expulsar', '/equipos/codigo', '/mis-inscripciones', '/logros', '/rol'];
+  const privadas = ['/mis-equipos', '/equipos', '/equipos/unirse', '/equipos/salir', '/equipos/expulsar', '/equipos/codigo', '/mis-inscripciones', '/mis-torneos', '/torneos/crear', '/email/inscripcion', '/logros', '/rol'];
   if (!privadas.includes(p) && !p.startsWith('/admin/')) return null;
 
   // ---- privadas (Auth0)
@@ -550,6 +749,15 @@ export async function rutasComunidad(req, env, url, p, m, H) {
     ).bind(sub).all();
     return H.json({ ok: true, inscripciones: rs.results || [] });
   }
+  if (p === '/torneos/crear' && m === 'POST') return res(await crearTorneoComunidad(env, req, sub, await req.json().catch(() => ({})), H));
+  if (p === '/mis-torneos' && m === 'GET') {
+    await prepararComunidad(env.DB);
+    const rs = await env.DB.prepare(
+      'SELECT slug, nombre, game_slug juego, estado, created_at creado FROM pt_torneos WHERE creador_sub = ? ORDER BY created_at DESC LIMIT 100'
+    ).bind(sub).all();
+    return H.json({ ok: true, torneos: rs.results || [] });
+  }
+  if (p === '/email/inscripcion' && m === 'POST') return res(await emailInscripcion(env, req, sub, await req.json().catch(() => ({})), H));
   if (p === '/logros' && m === 'GET') return H.json({ ok: true, ...(await logrosDe(env, sub, H.perfilFaceit)) });
   if (p.startsWith('/admin/')) return owner(env, sub, p, m, req, H);
   return H.json({ ok: false, error: 'no_encontrado' }, 404);

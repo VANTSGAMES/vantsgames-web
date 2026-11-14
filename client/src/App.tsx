@@ -16,6 +16,7 @@ import Tienda from "./pages/Tienda";
 import Perfil, { Acceso } from "./pages/Perfil";
 import Legal from "./pages/Legal";
 import { RankingVants, EventosLista, Publicar } from "./pages/Vants";
+import CrearTorneo from "./pages/CrearTorneo";
 
 /** URLs de la web anterior → equivalente en la nueva (enlaces externos, buscadores, Auth0/Stripe). */
 const ANTIGUAS: [string, string][] = [
@@ -47,6 +48,7 @@ function Rutas() {
         <Route path="/ranked" component={Ranked} />
         <Route path="/torneos">{() => <TorneosLista />}</Route>
         <Route path="/torneos/competir">{() => <TorneosLista competir />}</Route>
+        <Route path="/torneos/crear" component={CrearTorneo} />
         <Route path="/torneos/:slug" component={TorneoDetalle} />
         <Route path="/agenda">{() => <Agenda modo="agenda" />}</Route>
         <Route path="/resultados">{() => <Agenda modo="resultados" />}</Route>

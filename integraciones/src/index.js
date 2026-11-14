@@ -65,7 +65,9 @@ function b64uBytes(s) {
   return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 }
 const b64uJson = (s) => JSON.parse(new TextDecoder().decode(b64uBytes(s)));
-async function usuario(req, env) {
+// Verifica el JWT de Auth0 y devuelve los claims completos (sub + email
+// verificado, usado por los correos transaccionales).
+async function usuarioClaims(req, env) {
   const a = req.headers.get('authorization') || '';
   if (!a.startsWith('Bearer ')) throw new Error('sin_sesion');
   const partes = a.slice(7).split('.');
@@ -81,7 +83,11 @@ async function usuario(req, env) {
   if (cuerpo.exp && cuerpo.exp * 1000 < Date.now()) throw new Error('jwt_exp');
   const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
   if (env.AUTH0_AUDIENCE && !auds.includes(env.AUTH0_AUDIENCE)) throw new Error('jwt_aud');
-  return String(cuerpo.sub);
+  return { sub: String(cuerpo.sub), email: typeof cuerpo.email === 'string' && cuerpo.email ? cuerpo.email : null };
+}
+// Firma histórica: solo el sub (identidad). Los claims completos van arriba.
+async function usuario(req, env) {
+  return (await usuarioClaims(req, env)).sub;
 }
 
 // ---------------------------------------------------------------- FACEIT
@@ -411,7 +417,7 @@ async function rutas(req, env, url) {
   if (rj) return rj;
 
   // Ranking, equipos, eventos, logros, inscripciones y publicación (owner)
-  const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, perfilFaceit, notificar, discord });
+  const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, usuarioClaims, perfilFaceit, notificar, discord });
   if (rc) return rc;
 
   // ---- privadas (Auth0)
