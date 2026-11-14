@@ -1,6 +1,6 @@
 name: "Web · build y publicación automática"
 
-# Publica la web en https://vants.vants.workers.dev:
+# Publica la web en https://vants.cc:
 # 1) construye el cliente de este repo (única fuente de verdad del frontend)
 # 2) descarga el código de API que corre hoy en el Worker `vants` y su configuración
 # 3) vuelve a desplegar ese mismo código con los archivos nuevos de la web
@@ -106,7 +106,7 @@ jobs:
           sleep 8
           D=$(curl -fsS -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants/settings | jq -r '[.result.bindings[].name]|sort|join(",")')
           [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
-          U=https://vants.vants.workers.dev
+          U=https://vants.cc
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
           c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }

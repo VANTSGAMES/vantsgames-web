@@ -41,5 +41,5 @@ Allow: /
 User-agent: YouBot
 Allow: /
 
-Sitemap: https://vants.vants.workers.dev/sitemap.xml
-# Resumen para LLMs: https://vants.vants.workers.dev/llms.txt
+Sitemap: https://vants.cc/sitemap.xml
+# Resumen para LLMs: https://vants.cc/llms.txt
