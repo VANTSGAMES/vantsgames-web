@@ -9,7 +9,8 @@ import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
 import { fecha } from "@/lib/format";
 import { JUEGOS } from "@/lib/juegos";
-import { PLANES } from "./Membresias";
+import { countGamesByPlatform, filterGamesByPlatform, type PlataformaFiltro } from "@/lib/discovery";
+import { PLANES } from "@/lib/planes";
 import { useRanking, useEventos, FilaEvento } from "./Vants";
 import { NivelFaceit } from "./PerfilFaceit";
 
@@ -201,14 +202,19 @@ function ComoFunciona() {
   );
 }
 
-function List<T>({ q, empty, render, what }: { q: { isLoading: boolean; error: any; data?: T[] }; empty: JSX.Element; render: (x: T, i: number) => JSX.Element; what: string }) {
+function List<T>({ q, empty, render, what }: { q: { isLoading: boolean; error: any; data?: T[]; onRetry?: () => void }; empty: JSX.Element; render: (x: T, i: number) => JSX.Element; what: string }) {
   if (q.isLoading) return <Skel />;
-  if (q.error) return <ErrorBox error={q.error} what={what} />;
+  if (q.error) return <ErrorBox error={q.error} what={what} onRetry={q.onRetry} />;
   if (!q.data || q.data.length === 0) return empty;
   return <>{q.data.map(render)}</>;
 }
 
+const PLATAFORMAS: PlataformaFiltro[] = ["Todas", "PC", "Consola", "Móvil"];
+
 export default function Home() {
+  const [plataforma, setPlataforma] = useState<PlataformaFiltro>("Todas");
+  const juegosVisibles = useMemo(() => filterGamesByPlatform(JUEGOS, plataforma), [plataforma]);
+  const conteoPlataformas = useMemo(() => countGamesByPlatform(JUEGOS), []);
   const destacados = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=ongoing&porPagina=4");
   const proximos = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=upcoming&porPagina=5");
   const live = useApi<{ data: Paged<Match> }>("/api/matches?estado=live&porPagina=5", { refetchMs: 30_000 });
@@ -260,9 +266,25 @@ export default function Home() {
       </div>
 
       <Section id="juegos" eyebrow="El circuito" title={<>Juegos de <span style={{ color: "var(--rojo)" }}>VANTS</span></>} more={{ to: "/torneos", label: "Torneos por juego" }}>
-        <p className="muted" style={{ maxWidth: "72ch" }}>Once títulos competitivos entre PC, consola y móvil. VALORANT y CS2 tienen integración de estadísticas y logros; el resto completa el circuito de torneos, equipos y clips.</p>
+        <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+          <p className="muted" style={{ maxWidth: "66ch" }}>Once títulos competitivos entre PC, consola y móvil. VALORANT y CS2 tienen integración de estadísticas y logros; el resto completa el circuito de torneos, equipos y clips.</p>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar juegos por plataforma" data-testid="home-platform-filter">
+            {PLATAFORMAS.map((plat) => (
+              <button
+                key={plat}
+                type="button"
+                className={"btn btn-sm " + (plataforma === plat ? "btn-rojo" : "btn-ghost")}
+                aria-pressed={plataforma === plat}
+                onClick={() => setPlataforma(plat)}
+                data-testid={"platform-filter-" + plat.toLowerCase()}
+              >
+                {plat} <span className="num opacity-75">({conteoPlataformas[plat]})</span>
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="grid-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4" data-testid="home-juegos">
-          {JUEGOS.map((j, i) => (
+          {juegosVisibles.map((j, i) => (
             <Link
               key={j.slug}
               href={"/torneos?juego=" + j.slug}
@@ -274,8 +296,8 @@ export default function Home() {
               <div className="absolute inset-0" style={{ background: "linear-gradient(0deg, rgba(10,10,11,.95) 8%, rgba(10,10,11,.25) 60%)" }} />
               <div className="relative h-full flex flex-col justify-end p-4">
                 <div className="font-semibold leading-tight">{j.nombre}</div>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="tag">{j.label}</span>
+                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                  <span className="tag">{j.plataforma}</span>
                   {j.integrado ? <span className="tag tag-rojo">Integrado</span> : null}
                 </div>
               </div>
@@ -287,7 +309,12 @@ export default function Home() {
       <Section id="torneos" eyebrow="Circuito" title="Torneos destacados" more={{ to: "/torneos", label: "Todos los torneos" }}>
         <div className="panel">
           <List
-            q={{ isLoading: destacados.isLoading || proximos.isLoading, error: destacados.error || proximos.error, data: torneos }}
+            q={{
+              isLoading: destacados.isLoading || proximos.isLoading,
+              error: destacados.error || proximos.error,
+              data: torneos,
+              onRetry: () => { destacados.refetch(); proximos.refetch(); },
+            }}
             what="los torneos"
             render={(t) => <TournamentRow key={t.slug} t={t} />}
             empty={<Empty code="torneos · 0" title="No hay torneos publicados ahora mismo" text="Cuando la organización publique un torneo desde el panel de administración aparecerá aquí con su fecha, formato y premio." />}
@@ -299,7 +326,12 @@ export default function Home() {
         <Section id="agenda" eyebrow="Agenda" title="Próximos enfrentamientos" more={{ to: "/agenda", label: "Agenda completa" }} className="!px-0">
           <div className="panel">
             <List
-              q={{ isLoading: live.isLoading || upcomingM.isLoading, error: live.error || upcomingM.error, data: matches }}
+              q={{
+                isLoading: live.isLoading || upcomingM.isLoading,
+                error: live.error || upcomingM.error,
+                data: matches,
+                onRetry: () => { live.refetch(); upcomingM.refetch(); },
+              }}
               what="la agenda"
               render={(m, i) => <MatchRow key={i} m={m} />}
               empty={<Empty code="partidos · 0" title="Sin partidos programados" text="Los enfrentamientos se publican cuando un torneo genera su bracket." />}
@@ -308,7 +340,7 @@ export default function Home() {
         </Section>
         <Section id="ranking" eyebrow="Ranking global" title="Top jugadores VANTS" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
           <div className="panel">
-            {ranking.isLoading ? <Skel n={5} h={44} /> : ranking.error ? <ErrorBox error={ranking.error} what="el ranking" /> : top.length === 0 ? (
+            {ranking.isLoading ? <Skel n={5} h={44} /> : ranking.error ? <ErrorBox error={ranking.error} what="el ranking" onRetry={() => ranking.refetch()} /> : top.length === 0 ? (
               <Empty code="ranking · 0" title="Aún no hay jugadores clasificados" text="Vincula FACEIT en tu perfil para entrar en el ranking VANTS." action={<Link href="/perfil/cuentas" className="link-arrow">Vincular FACEIT →</Link>} />
             ) : (
               <>
@@ -388,7 +420,7 @@ export default function Home() {
           <div className="panel">
             {eventos.isLoading ? <Skel n={2} h={56} /> : eventos.error ? <ErrorBox error={eventos.error} what="los eventos" /> : (eventos.data?.eventos || []).length === 0 ? (
               <Empty code="eventos · 0" title="No hay eventos programados" />
-            ) : eventos.data.eventos.slice(0, 3).map((e) => <FilaEvento key={e.id} e={e} />)}
+            ) : (eventos.data?.eventos || []).slice(0, 3).map((e) => <FilaEvento key={e.id} e={e} />)}
           </div>
         </Section>
       </div>

@@ -3,7 +3,7 @@
  * ranking de jugadores VANTS, equipos de jugadores, inscripciones, logros de juego,
  * eventos y el panel de publicación de la organización (solo cuenta owner).
  */
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -11,8 +11,15 @@ import { opcionesJuegos } from "@/lib/juegos";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag, Initials } from "@/components/ui-vants";
+import { useFeedback } from "@/components/FeedbackProvider";
 import { NivelFaceit } from "./PerfilFaceit";
 import { fecha, hora, gameLabel } from "@/lib/format";
+import {
+  filterAndSortRankingFaceit,
+  filterRankingXp,
+  type RankingSort,
+  type TeamPresenceFilter,
+} from "@/lib/competitive";
 
 /* ------------------------------------------------------------------ tipos */
 export type EquipoRef = { slug: string; nombre: string; tag: string | null; juego: string };
@@ -113,39 +120,198 @@ export function TablaRankingFaceit({ filas, max }: { filas: FilaFaceit[]; max?: 
   );
 }
 
+function PodioFaceit({ top }: { top: FilaFaceit[] }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3" data-testid="ranking-podio">
+      {top.map((r, idx) => (
+        <EnlaceJugador
+          key={r.nick + r.pos}
+          pid={r.pid}
+          url={r.url}
+          testid={"podio-jugador-" + (idx + 1)}
+          className="panel panel-pad chamfer grid gap-4 content-between hover:bg-[var(--grafito-2)] transition-colors"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              {r.avatar ? (
+                <img src={r.avatar} alt="" width={48} height={48} className="chamfer object-cover shrink-0" style={{ width: 48, height: 48 }} loading="lazy" />
+              ) : (
+                <Initials name={r.vants || r.nick} size={48} />
+              )}
+              <div className="min-w-0">
+                <div className="eyebrow" style={{ color: idx === 0 ? "var(--rojo)" : "var(--gris-2)" }}>
+                  #{String(r.pos).padStart(2, "0")} · {idx === 0 ? "Líder ELO" : "Top 3"}
+                </div>
+                <div className="d-3 truncate mt-0.5">{r.vants || r.nick}</div>
+                {r.equipo ? (
+                  <div className="text-xs muted truncate">{r.equipo.tag ? `[${r.equipo.tag}] ` : ""}{r.equipo.nombre}</div>
+                ) : (
+                  <div className="text-xs muted">Agente libre</div>
+                )}
+              </div>
+            </div>
+            <NivelFaceit n={r.nivel} size={32} />
+          </div>
+          <div className="grid grid-cols-3 gap-2 pt-3 border-t small" style={{ borderColor: "var(--linea-suave)" }}>
+            <div>
+              <div className="text-xs muted">ELO</div>
+              <div className="num font-semibold" style={{ color: idx === 0 ? "var(--rojo)" : "var(--blanco)" }}>{r.elo ?? "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs muted">K/D</div>
+              <div className="num font-semibold">{r.kd != null ? r.kd.toFixed(2) : "—"}</div>
+            </div>
+            <div>
+              <div className="text-xs muted">Winrate</div>
+              <div className="num font-semibold">{r.winrate != null ? `${r.winrate}%` : "—"}</div>
+            </div>
+          </div>
+        </EnlaceJugador>
+      ))}
+    </div>
+  );
+}
+
+const TEAM_FILTERS: { v: TeamPresenceFilter; l: string }[] = [
+  { v: "todos", l: "Todos" },
+  { v: "con_equipo", l: "Con equipo" },
+  { v: "agentes_libres", l: "Agentes libres" },
+];
+
 export function RankingVants() {
   const q = useRanking();
   const [tab, setTab] = useState<"faceit" | "xp">("faceit");
-  const f = q.data?.faceit || [], x = q.data?.xp || [];
+  const [busqueda, setBusqueda] = useState("");
+  const [teamFilter, setTeamFilter] = useState<TeamPresenceFilter>("todos");
+  const [sort, setSort] = useState<RankingSort>("elo");
+
+  const f = q.data?.faceit || [];
+  const x = q.data?.xp || [];
+
+  const fFiltered = useMemo(
+    () => filterAndSortRankingFaceit(f, { query: busqueda, teamFilter, sort }),
+    [f, busqueda, teamFilter, sort],
+  );
+  const xFiltered = useMemo(
+    () => filterRankingXp(x, { query: busqueda, teamFilter }),
+    [x, busqueda, teamFilter],
+  );
+
+  const hasFilters = busqueda.trim().length > 0 || teamFilter !== "todos" || (tab === "faceit" && sort !== "elo");
+  const showPodio = tab === "faceit" && !busqueda.trim() && teamFilter === "todos" && sort === "elo" && fFiltered.length >= 3;
+  const resetFilters = () => {
+    setBusqueda("");
+    setTeamFilter("todos");
+    setSort("elo");
+  };
+
   return (
     <>
       <PageHead eyebrow="Ranking global" title={<>Ranking <span style={{ color: "var(--rojo)" }}>VANTS</span></>} lead="Clasificación de los jugadores registrados en VANTS. Pulsa un jugador para ver su perfil. El ELO y el nivel salen de FACEIT (CS2) al vincular la cuenta; la XP se gana en la plataforma." />
       <div className="wrap grid gap-4">
-        <div className="tabs" role="tablist">
-          <button role="tab" className="tab" aria-selected={tab === "faceit"} onClick={() => setTab("faceit")} data-testid="tab-ranking-faceit">ELO FACEIT</button>
-          <button role="tab" className="tab" aria-selected={tab === "xp"} onClick={() => setTab("xp")} data-testid="tab-ranking-xp">XP VANTS</button>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="tabs" role="tablist">
+            <button role="tab" className="tab" aria-selected={tab === "faceit"} onClick={() => setTab("faceit")} data-testid="tab-ranking-faceit">ELO FACEIT</button>
+            <button role="tab" className="tab" aria-selected={tab === "xp"} onClick={() => setTab("xp")} data-testid="tab-ranking-xp">XP VANTS</button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+            <input
+              type="search"
+              className="input h-10 w-full sm:w-64"
+              placeholder="Buscar jugador, equipo o país…"
+              aria-label="Buscar jugador en el ranking"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              data-testid="input-buscar-ranking"
+            />
+            {tab === "faceit" && (
+              <select
+                className="input h-10 w-full sm:w-52"
+                aria-label="Ordenar ranking FACEIT"
+                value={sort}
+                onChange={(e) => setSort(e.target.value as RankingSort)}
+                data-testid="select-orden-ranking"
+              >
+                <option value="elo">Orden: Mayor ELO</option>
+                <option value="kd">Orden: Mejor K/D</option>
+                <option value="winrate">Orden: Mejor Winrate</option>
+                <option value="partidas">Orden: Más partidas</option>
+              </select>
+            )}
+          </div>
         </div>
-        {q.isLoading ? <Skel n={6} h={44} /> : q.error ? <ErrorBox error={q.error} what="el ranking" /> : tab === "faceit" ? (
-          f.length === 0 ? <Empty code="ranking · 0" title="Aún no hay jugadores con FACEIT vinculado" text="Vincula tu cuenta de FACEIT en tu perfil para entrar en el ranking." action={<Link href="/perfil/cuentas" className="link-arrow">Vincular FACEIT →</Link>} /> : (
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por estado de equipo">
+            {TEAM_FILTERS.map((tf) => (
+              <button
+                key={tf.v}
+                type="button"
+                className={"btn btn-sm " + (teamFilter === tf.v ? "btn-rojo" : "btn-ghost")}
+                aria-pressed={teamFilter === tf.v}
+                onClick={() => setTeamFilter(tf.v)}
+                data-testid={"filter-ranking-team-" + tf.v}
+              >
+                {tf.l}
+              </button>
+            ))}
+          </div>
+          {hasFilters && (
+            <button type="button" className="btn btn-sm btn-ghost" onClick={resetFilters} data-testid="button-reset-ranking">
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+
+        {q.isLoading ? <Skel n={6} h={44} /> : q.error ? <ErrorBox error={q.error} what="el ranking" onRetry={() => q.refetch()} /> : tab === "faceit" ? (
+          f.length === 0 ? <Empty code="ranking · 0" title="Aún no hay jugadores con FACEIT vinculado" text="Vincula tu cuenta de FACEIT en tu perfil para entrar en el ranking." action={<Link href="/perfil/cuentas" className="link-arrow">Vincular FACEIT →</Link>} /> : fFiltered.length === 0 ? (
+            <Empty
+              code="ranking · filtro"
+              title="Ningún jugador coincide con tu filtro"
+              text="Prueba con otro nombre, tag de equipo o limpia los filtros activos."
+              action={<button type="button" className="btn btn-sm" onClick={resetFilters}>Limpiar filtros</button>}
+            />
+          ) : (
             <>
-              <TablaRankingFaceit filas={f} />
-              <p className="small muted">{f.length} jugadores VANTS · datos de FACEIT actualizados cada pocos minutos. ¿No apareces? <Link href="/perfil/cuentas" className="link-arrow">Vincula FACEIT</Link></p>
+              {showPodio && <PodioFaceit top={fFiltered.slice(0, 3)} />}
+              <TablaRankingFaceit filas={fFiltered} />
+              <p className="small muted">
+                {fFiltered.length === f.length
+                  ? `${f.length} ${f.length === 1 ? "jugador" : "jugadores"} VANTS`
+                  : `Mostrando ${fFiltered.length} de ${f.length} ${f.length === 1 ? "jugador" : "jugadores"} VANTS`} · datos de FACEIT actualizados cada pocos minutos. ¿No apareces? <Link href="/perfil/cuentas" className="link-arrow">Vincula FACEIT</Link>
+              </p>
             </>
           )
-        ) : x.length === 0 ? <Empty code="xp · 0" title="Sin jugadores con XP todavía" /> : (
-          <div className="panel">
-            <div className="row grid-cols-[48px_1fr_180px_90px] small muted" style={{ background: "var(--grafito-2)" }}><span>#</span><span>Jugador</span><span>Equipo</span><span className="text-right">XP</span></div>
-            <ol>
-              {x.map((r) => (
-                <li key={r.nick + r.pos} className="row grid-cols-[48px_1fr_180px_90px] items-center">
-                  <span className="num" style={{ color: r.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(r.pos).padStart(2, "0")}</span>
-                  <EnlaceJugador pid={r.pid} className="flex items-center gap-2 min-w-0 hover:text-[var(--rojo)]" testid={"ranking-xp-" + r.pos}>{r.avatar ? <img src={r.avatar} alt="" width={28} height={28} className="rounded-full" loading="lazy" /> : <Initials name={r.nick} size={28} />}<span className="font-semibold truncate">{r.nick}</span>{r.fundador && <span className="tag tag-rojo">Fundador</span>}</EnlaceJugador>
-                  <span className="min-w-0"><EquipoMini e={r.equipo} /></span>
-                  <span className="num text-right">{r.xp}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
+        ) : x.length === 0 ? <Empty code="xp · 0" title="Sin jugadores con XP todavía" /> : xFiltered.length === 0 ? (
+          <Empty
+            code="xp · filtro"
+            title="Ningún jugador coincide con tu filtro"
+            text="Ajusta la búsqueda o cambia el filtro de equipo."
+            action={<button type="button" className="btn btn-sm" onClick={resetFilters}>Limpiar filtros</button>}
+          />
+        ) : (
+          <>
+            <div className="panel" data-testid="ranking-xp-tabla">
+              <div className="row grid-cols-[48px_1fr_auto] md:grid-cols-[48px_1fr_180px_90px] small muted" style={{ background: "var(--grafito-2)" }}>
+                <span>#</span><span>Jugador</span><span className="hidden md:block">Equipo</span><span className="text-right">XP</span>
+              </div>
+              <ol>
+                {xFiltered.map((r) => (
+                  <li key={r.nick + r.pos} className="row grid-cols-[48px_1fr_auto] md:grid-cols-[48px_1fr_180px_90px] items-center">
+                    <span className="num" style={{ color: r.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(r.pos).padStart(2, "0")}</span>
+                    <EnlaceJugador pid={r.pid} className="flex items-center gap-2 min-w-0 hover:text-[var(--rojo)]" testid={"ranking-xp-" + r.pos}>{r.avatar ? <img src={r.avatar} alt="" width={28} height={28} className="rounded-full" loading="lazy" /> : <Initials name={r.nick} size={28} />}<span className="font-semibold truncate">{r.nick}</span>{r.fundador && <span className="tag tag-rojo">Fundador</span>}</EnlaceJugador>
+                    <span className="hidden md:block min-w-0"><EquipoMini e={r.equipo} /></span>
+                    <span className="num text-right">{r.xp}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <p className="small muted">
+              {xFiltered.length === x.length
+                ? `${x.length} ${x.length === 1 ? "jugador" : "jugadores"} con XP`
+                : `Mostrando ${xFiltered.length} de ${x.length} ${x.length === 1 ? "jugador" : "jugadores"}`}
+            </p>
+          </>
         )}
       </div>
     </>
@@ -216,6 +382,7 @@ export async function imagenEquipo(file: File): Promise<string> {
 }
 
 export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nombre: string; tag?: string | null; logo_url?: string | null; capitan: boolean }; size?: number; onCambio: (m: { k: "ok" | "error"; m: string }) => void }) {
+  const { confirm } = useFeedback();
   const [busy, setBusy] = useState(false);
   const [logo, setLogo] = useState<string | null>(e.logo_url || null);
   const subir = async (f: File | undefined) => {
@@ -229,7 +396,8 @@ export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nomb
     finally { setBusy(false); }
   };
   const quitar = async () => {
-    if (!window.confirm("¿Quitar la foto del equipo?")) return;
+    const ok = await confirm({ title: "Quitar foto del equipo", description: `Se quitará el escudo actual de ${e.nombre}.`, confirmLabel: "Quitar foto", danger: true });
+    if (!ok) return;
     setBusy(true);
     try { await api("/int/equipos/logo", { method: "POST", auth: true, body: { slug: e.slug, quitar: true } }); setLogo(null); onCambio({ k: "ok", m: "Foto quitada." }); }
     catch (err) { onCambio({ k: "error", m: msg(err) }); }
@@ -257,10 +425,14 @@ export function FotoEquipo({ e, onCambio, size = 72 }: { e: { slug: string; nomb
 }
 
 function TarjetaMiEquipo({ e, refrescar }: { e: MiEquipo; refrescar: () => void }) {
+  const { confirm } = useFeedback();
   const [codigo, setCodigo] = useState(e.codigo);
   const [st, setSt] = useState<{ k: "idle" | "ok" | "error"; m?: string }>({ k: "idle" });
   const accion = async (ruta: string, body: any, conf?: string) => {
-    if (conf && !window.confirm(conf)) return;
+    if (conf) {
+      const ok = await confirm({ title: "Confirmar cambio en el equipo", description: conf, confirmLabel: "Continuar", danger: true });
+      if (!ok) return;
+    }
     try { const r = await api<any>(ruta, { method: "POST", auth: true, body }); if (r.codigo) setCodigo(r.codigo); setSt({ k: "ok", m: "Hecho." }); refrescar(); }
     catch (err) { setSt({ k: "error", m: msg(err) }); }
   };
@@ -312,7 +484,7 @@ export function MisEquiposPanel() {
   const eqs = q.data?.equipos || [];
   return (
     <div className="grid gap-6" data-testid="mis-equipos">
-      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="tus equipos" /> : eqs.length === 0 ? (
+      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="tus equipos" onRetry={() => q.refetch()} /> : eqs.length === 0 ? (
         <Empty code="equipos · 0" title="Todavía no tienes equipo" text="Crea uno y comparte el código con tus compañeros, o únete con el código que te pase tu capitán. Puedes tener un equipo de VALORANT y otro de CS2." />
       ) : eqs.map((e) => <TarjetaMiEquipo key={e.slug} e={e} refrescar={refrescar} />)}
       <div className="grid gap-6 md:grid-cols-2">
@@ -387,7 +559,7 @@ export function MisInscripciones() {
   const ins = q.data?.inscripciones || [];
   return (
     <div className="wrap" data-testid="mis-inscripciones">
-      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="tus inscripciones" /> : ins.length === 0 ? (
+      {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="tus inscripciones" onRetry={() => q.refetch()} /> : ins.length === 0 ? (
         <Empty code="torneos · 0" title="No tienes inscripciones" text="Tus inscripciones y su estado (pendiente, confirmada o rechazada) aparecerán aquí." action={<Link href="/torneos/competir" className="link-arrow">Buscar torneos →</Link>} />
       ) : (
         <div className="panel">
@@ -410,7 +582,7 @@ export function LogrosJuego({ compacto = false }: { compacto?: boolean }) {
   const { status } = useAuth();
   const q = useApi<{ conseguidos: number; total: number; logros: Logro[] }>(status === "autenticado" ? "/int/logros" : null, { auth: true });
   if (q.isLoading) return <Skel n={2} />;
-  if (q.error) return <ErrorBox error={q.error} what="tus logros" />;
+  if (q.error) return <ErrorBox error={q.error} what="tus logros" onRetry={() => q.refetch()} />;
   if (!q.data) return null;
   const ls = compacto ? q.data.logros.filter((l) => l.conseguido).slice(0, 8) : q.data.logros;
   return (
@@ -467,7 +639,7 @@ export function EventosLista() {
     <>
       <PageHead eyebrow="Comunidad" title="Eventos" lead="Noches de comunidad, scrims abiertas, directos especiales y actividades de VANTS. Las horas se muestran en tu zona horaria." />
       <div className="wrap">
-        {q.isLoading ? <Skel n={3} /> : q.error ? <ErrorBox error={q.error} what="los eventos" /> : ev.length === 0 ? (
+        {q.isLoading ? <Skel n={3} /> : q.error ? <ErrorBox error={q.error} what="los eventos" onRetry={() => q.refetch()} /> : ev.length === 0 ? (
           <Empty code="eventos · 0" title="No hay eventos programados" text="Cuando la organización publique un evento aparecerá aquí y recibirás un aviso en la campana." action={<Link href="/noticias" className="link-arrow">Ver anuncios →</Link>} />
         ) : <div className="panel">{ev.map((e) => <FilaEvento key={e.id} e={e} />)}</div>}
       </div>
@@ -625,8 +797,12 @@ export function Publicar() {
   const [tab, setTab] = useState("torneos");
   const [editar, setEditar] = useState<typeof TORNEO_VACIO | null>(null);
   const refrescar = () => { qc.invalidateQueries({ queryKey: ["/int/admin/resumen"] }); qc.invalidateQueries({ queryKey: ["/int/eventos"] }); };
+  const { confirm } = useFeedback();
   const { aviso, enviar } = useEnvio(refrescar);
-  const borrar = (tipo: string, id: string, nombre: string) => { if (window.confirm("¿Borrar «" + nombre + "»? No se puede deshacer.")) enviar("/int/admin/borrar", { tipo, id }, "Borrado."); };
+  const borrar = async (tipo: string, id: string, nombre: string) => {
+    const ok = await confirm({ title: `Borrar ${tipo}`, description: `¿Borrar «${nombre}»? Esta acción no se puede deshacer.`, confirmLabel: "Borrar", danger: true });
+    if (ok) enviar("/int/admin/borrar", { tipo, id }, "Borrado.");
+  };
   const editarTorneo = async (slug: string) => {
     try {
       const t = (await api<{ data: any }>("/api/tournaments/" + slug)).data;
@@ -658,7 +834,7 @@ export function Publicar() {
                         {t.estado === "pendiente" ? (
                           <span className="flex gap-2">
                             <button className="btn btn-sm btn-rojo" data-testid={"btn-aprobar-" + t.slug} onClick={() => enviar("/int/admin/torneo", { accion: "publicar", slug: t.slug, aprobar: true }, "Torneo aprobado y publicado.")}>Aprobar</button>
-                            <button className="btn btn-sm btn-ghost" onClick={() => { if (window.confirm("¿Rechazar «" + t.nombre + "»? Se borrará y se le notificará al creador.")) enviar("/int/admin/torneo", { accion: "publicar", slug: t.slug, aprobar: false }, "Torneo rechazado."); }}>Rechazar</button>
+                            <button className="btn btn-sm btn-ghost" onClick={async () => { const ok = await confirm({ title: "Rechazar torneo", description: `¿Rechazar «${t.nombre}»? Se borrará y se le notificará al creador.`, confirmLabel: "Rechazar", danger: true }); if (ok) enviar("/int/admin/torneo", { accion: "publicar", slug: t.slug, aprobar: false }, "Torneo rechazado."); }}>Rechazar</button>
                           </span>
                         ) : (
                           <span className="flex gap-2"><button className="btn btn-sm" onClick={() => editarTorneo(t.slug)}>Editar</button><button className="btn btn-sm btn-ghost" onClick={() => borrar("torneo", t.slug, t.nombre)}>Borrar</button></span>

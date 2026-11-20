@@ -4,19 +4,22 @@
  *   GET /int/u/<pid>          → perfil principal de la cuenta (ranking, sala, roster)
  *   GET /int/roster-oficial   → equipo VANTS; el dueño lo edita con POST /int/roster-oficial/*
  */
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useParams } from "wouter";
 import { PanelFortnite, type StatsFortnite } from "@/components/Fortnite";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api, pub } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
+import { useFeedback } from "@/components/FeedbackProvider";
 import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
 import { FotoEquipo, useRol, mensajeError } from "./Vants";
 import { fecha } from "@/lib/format";
 import { FilaInsignias, Sello3D, SelloAvatar, useCatalogoInsignias, Insignia3D } from "@/components/Insignia3D";
 import { JUEGOS, nombreJuego, opcionesJuegos } from "@/lib/juegos";
+import { computeAchievementPercent } from "@/lib/competitive";
+import { normalizeText } from "@/lib/discovery";
 
 type JugadorLista = { pid: string; nick: string; avatar: string | null; fundador: boolean; xp: number; nivel: number | null; elo: number | null; sello?: string | null };
 type Perfil = {
@@ -58,22 +61,58 @@ function Avatar({ src, nombre, size }: { src: string | null; nombre: string; siz
 /* ---------------- Sala → Cuentas registradas ---------------- */
 export function CuentasRegistradas() {
   const q = useApi<{ jugadores: JugadorLista[] }>("/int/jugadores");
+  const [busqueda, setBusqueda] = useState("");
   const xs = q.data?.jugadores || [];
+  const visibles = useMemo(() => {
+    const query = normalizeText(busqueda);
+    if (!query) return xs;
+    return xs.filter((c) => {
+      const hay = normalizeText([c.nick, c.elo != null ? String(c.elo) : "", c.fundador ? "fundador" : "jugador"].join(" "));
+      return hay.includes(query);
+    });
+  }, [xs, busqueda]);
+
   if (q.isLoading) return <Skel n={2} />;
-  if (q.error) return <ErrorBox error={q.error} what="las cuentas" />;
+  if (q.error) return <ErrorBox error={q.error} what="las cuentas" onRetry={() => q.refetch()} />;
   if (!xs.length) return <Empty code="cuentas · 0" title="Sin cuentas públicas" />;
   return (
-    <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4" data-testid="cuentas-registradas">
-      {xs.map((c) => (
-        <Link key={c.pid} href={"/u/" + c.pid} className="p-4 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"cuenta-" + c.pid}>
-          <Avatar src={c.avatar} nombre={c.nick} size={40} />
-          <div className="min-w-0 grow">
-            <div className="d-3 truncate flex items-center gap-2">{c.nick}<Sello3D s={c.sello} size={26} /></div>
-            <div className="small muted">{c.fundador ? "Fundador" : "Jugador"}{c.elo != null ? " · " + c.elo + " ELO" : ""}</div>
-          </div>
-          {c.nivel ? <NivelFaceit n={c.nivel} size={26} /> : null}
-        </Link>
-      ))}
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <input
+          type="search"
+          className="input h-10 w-full sm:w-72"
+          placeholder="Buscar cuenta por nick o ELO…"
+          aria-label="Buscar cuenta registrada"
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          data-testid="input-buscar-cuenta"
+        />
+        <span className="small muted num">
+          {visibles.length === xs.length
+            ? `${xs.length} ${xs.length === 1 ? "cuenta" : "cuentas"}`
+            : `${visibles.length} de ${xs.length} ${xs.length === 1 ? "cuenta" : "cuentas"}`}
+        </span>
+      </div>
+      {visibles.length === 0 ? (
+        <Empty
+          code="cuentas · filtro"
+          title="Ninguna cuenta coincide con tu búsqueda"
+          action={<button type="button" className="btn btn-sm" onClick={() => setBusqueda("")}>Limpiar búsqueda</button>}
+        />
+      ) : (
+        <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4" data-testid="cuentas-registradas">
+          {visibles.map((c) => (
+            <Link key={c.pid} href={"/u/" + c.pid} className="p-4 flex items-center gap-3 hover:bg-[var(--grafito-2)] transition-colors" data-testid={"cuenta-" + c.pid}>
+              <Avatar src={c.avatar} nombre={c.nick} size={40} />
+              <div className="min-w-0 grow">
+                <div className="d-3 truncate flex items-center gap-2">{c.nick}<Sello3D s={c.sello} size={26} /></div>
+                <div className="small muted">{c.fundador ? "Fundador" : "Jugador"}{c.elo != null ? " · " + c.elo + " ELO" : ""}</div>
+              </div>
+              {c.nivel ? <NivelFaceit n={c.nivel} size={26} /> : null}
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -88,30 +127,72 @@ const RED: Record<string, { l: string; url?: (h: string) => string }> = {
 
 export function PerfilPublicoPagina() {
   const { pid } = useParams<{ pid: string }>();
+  const { toast } = useFeedback();
   const q = useApi<{ perfil: Perfil }>("/int/u/" + pid);
   const cat = useCatalogoInsignias();
+  const [bannerError, setBannerError] = useState(false);
+  const perfilData = q.data?.perfil;
+
+  useEffect(() => {
+    setBannerError(false);
+  }, [perfilData?.banner, pid]);
+
+  useEffect(() => {
+    if (!perfilData) return;
+    const title = `${perfilData.nick} — Perfil VANTS GAMES`;
+    document.title = title;
+    const og = document.querySelector('meta[property="og:title"]');
+    if (og) og.setAttribute("content", title);
+    const tw = document.querySelector('meta[name="twitter:title"]');
+    if (tw) tw.setAttribute("content", title);
+  }, [perfilData]);
+
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
-  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · jugador" title="Este jugador no existe" action={<Link href="/ranking" className="link-arrow">Ver ranking →</Link>} /> : <ErrorBox error={q.error} what="el perfil" />}</div>;
-  const p = q.data!.perfil;
+  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · jugador" title="Este jugador no existe" action={<Link href="/ranking" className="link-arrow">Ver ranking →</Link>} /> : <ErrorBox error={q.error} what="el perfil" onRetry={() => q.refetch()} />}</div>;
+  const p = perfilData!;
   const f = p.faceit, v = p.valorant;
   const minis = (p.insignias || []).filter((c) => c !== "MEMBER").slice(0, 6);
   const redes = Object.entries(p.redes || {}).filter(([, val]) => !!val);
+  const logrosPct = computeAchievementPercent(p.logros.total, 1000);
+  const winrateClamped = f?.winrate != null ? Math.max(0, Math.min(100, f.winrate)) : null;
+
+  const compartirPerfil = async () => {
+    const url = typeof window !== "undefined" ? window.location.href : "";
+    try {
+      if (navigator.clipboard && url) {
+        await navigator.clipboard.writeText(url);
+        toast({ kind: "ok", title: "Enlace del perfil copiado", description: `Ya puedes compartir la ficha de ${p.nick}.` });
+      } else {
+        toast({ kind: "info", title: "Copia la dirección desde tu navegador", description: url });
+      }
+    } catch {
+      toast({ kind: "info", title: "Enlace listo para compartir", description: url });
+    }
+  };
+
   return (
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
-        {/* Banner del jugador (o retícula técnica si no configuró uno) */}
+        {/* Banner del jugador (o retícula técnica si no configuró uno o falla la carga) */}
         <div className="relative overflow-hidden" style={{ height: 176 }}>
-          {p.banner ? (
-            <img src={p.banner} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+          {p.banner && !bannerError ? (
+            <img
+              src={p.banner}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setBannerError(true)}
+            />
           ) : <div className="hero-fondo absolute inset-0" aria-hidden="true" />}
           <div className="absolute inset-0" style={{ background: "linear-gradient(0deg, var(--grafito-1) 0%, rgba(17,17,19,.55) 55%, rgba(17,17,19,.15) 100%)" }} />
         </div>
-        <div className="wrap pb-10 flex flex-wrap items-end gap-6" style={{ marginTop: -56 }}>
+        <div className="wrap relative z-10 pb-10 flex flex-wrap items-end gap-6" style={{ marginTop: -56 }}>
           <span className="relative inline-block shrink-0" style={{ border: "3px solid var(--grafito-1)" }}>
             <Avatar src={p.avatar} nombre={p.nick} size={112} />
             <SelloAvatar s={p.sello} size={40} />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 grow">
             <Link href="/ranking" className="link-arrow mb-3 w-fit" style={{ display: "flex" }}>← Ranking</Link>
             <div className="eyebrow mb-2">{p.fundador ? "Fundador de VANTS" : "Jugador VANTS"}</div>
             <h1 className="d-1 flex flex-wrap items-center gap-3" data-testid="perfil-publico-nick">
@@ -136,7 +217,6 @@ export function PerfilPublicoPagina() {
               <div className="flex flex-wrap gap-2 mt-3" data-testid="perfil-redes">
                 {redes.map(([k, val]) => {
                   const u = urlRed(k, val);
-                  const lbl = RED[k]?.l || k;
                   const contenido = <><IconoMarca plataforma={k} size={16} /><span>{val}</span></>;
                   return u
                     ? <a key={k} href={u} target="_blank" rel="noopener noreferrer" className="tag hover:text-[var(--rojo)]" style={{ gap: 7, height: 26, paddingLeft: 10, paddingRight: 10 }}>{contenido}</a>
@@ -144,6 +224,11 @@ export function PerfilPublicoPagina() {
                 })}
               </div>
             )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" className="btn btn-sm" onClick={compartirPerfil} data-testid="button-compartir-perfil">
+              Compartir perfil
+            </button>
           </div>
         </div>
       </header>
@@ -158,7 +243,17 @@ export function PerfilPublicoPagina() {
                 <div><div className="muted text-xs">Partidas</div><div className="num d-3">{f.partidas ?? "—"}</div></div>
                 <div><div className="muted text-xs">K/D</div><div className="num d-3">{f.kd != null ? f.kd.toFixed(2) : "—"}</div></div>
               </div>
-              {f.winrate != null && <div className="small muted">{f.winrate} % de victorias</div>}
+              {winrateClamped != null && (
+                <div className="grid gap-1.5 pt-2 border-t" style={{ borderColor: "var(--linea-suave)" }} data-testid="perfil-winrate-bar">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="muted">Victorias</span>
+                    <span className="num font-semibold" style={{ color: winrateClamped >= 50 ? "var(--ok)" : "var(--blanco)" }}>{winrateClamped}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden" style={{ background: "var(--grafito-2)" }} aria-hidden="true">
+                    <div className="h-full transition-all" style={{ width: `${winrateClamped}%`, background: winrateClamped >= 50 ? "var(--ok)" : "var(--rojo)" }} />
+                  </div>
+                </div>
+              )}
             </>
           ) : <p className="small muted">Sin FACEIT vinculado.</p>}
         </div>
@@ -173,7 +268,13 @@ export function PerfilPublicoPagina() {
         </div>
         <div className="panel panel-pad grid gap-3 content-start" data-testid="perfil-publico-logros">
           <div className="eyebrow">Logros</div>
-          <div className="d-1 num">{p.logros.total}</div>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="d-1 num">{p.logros.total}</div>
+            <span className="small muted num">{logrosPct}%</span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden" style={{ background: "var(--grafito-2)" }} aria-hidden="true" data-testid="perfil-logros-bar">
+            <div className="h-full" style={{ width: `${logrosPct}%`, background: "var(--rojo)" }} />
+          </div>
           <div className="small muted">{p.logros.faceit} de FACEIT · {p.logros.valorant} de VALORANT</div>
         </div>
         {p.fortnite && <div className="md:col-span-3"><PanelFortnite c={{ vinculada: true, ...p.fortnite }} /></div>}
@@ -308,6 +409,7 @@ function EditorJugador({ inicial, onOk, onCancelar }: { inicial?: Roster["jugado
 }
 
 export function RosterOficialPagina() {
+  const { confirm, toast } = useFeedback();
   const qc = useQueryClient();
   const q = useApi<Roster>("/int/roster-oficial");
   const rol = useRol();
@@ -317,12 +419,13 @@ export function RosterOficialPagina() {
   const [aviso, setAviso] = useState<{ k: "ok" | "error"; m: string } | null>(null);
   const refrescar = () => { qc.invalidateQueries({ queryKey: ["/int/roster-oficial", false] }); qc.invalidateQueries({ queryKey: ["/api/teams/vants", false] }); };
   const quitar = async (id: string) => {
-    if (!window.confirm("¿Quitar a este jugador del roster oficial?")) return;
-    try { await api("/int/roster-oficial/quitar", { method: "POST", auth: true, body: { id } }); refrescar(); }
-    catch (e) { window.alert(mensajeError(e)); }
+    const ok = await confirm({ title: "Quitar del roster oficial", description: "¿Quitar a este jugador del roster oficial de VANTS?", confirmLabel: "Quitar jugador", danger: true });
+    if (!ok) return;
+    try { await api("/int/roster-oficial/quitar", { method: "POST", auth: true, body: { id } }); refrescar(); toast({ kind: "ok", title: "Jugador quitado del roster" }); }
+    catch (e) { toast({ kind: "error", title: "No se pudo quitar del roster", description: mensajeError(e) }); }
   };
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
-  if (q.error) return <div className="wrap py-16"><ErrorBox error={q.error} what="el roster oficial" /></div>;
+  if (q.error) return <div className="wrap py-16"><ErrorBox error={q.error} what="el roster oficial" onRetry={() => q.refetch()} /></div>;
   const r = q.data!;
   const e = r.equipo;
   const porJuego = JUEGOS.map((d) => ({ g: d.slug, xs: r.jugadores.filter((j) => j.juego === d.slug) })).filter((x) => x.xs.length);
@@ -383,7 +486,7 @@ export function EquiposFaceitCircuito() {
   const q = useApi<{ equipos: EquipoFc[] }>("/int/equipos-faceit");
   const xs = q.data?.equipos || [];
   if (q.isLoading) return <Skel n={2} />;
-  if (q.error) return <ErrorBox error={q.error} what="los equipos de FACEIT" />;
+  if (q.error) return <ErrorBox error={q.error} what="los equipos de FACEIT" onRetry={() => q.refetch()} />;
   if (!xs.length) return <Empty code="faceit · 0" title="Ningún jugador VANTS tiene equipo en FACEIT" text="Vincula tu equipo en Mi perfil → Mis equipos." />;
   return (
     <div className="grid gap-4 lg:grid-cols-2" data-testid="equipos-faceit">

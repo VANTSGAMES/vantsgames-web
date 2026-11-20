@@ -16,6 +16,7 @@ import { useApi } from "@/lib/useApi";
 import { opcionesJuegos } from "@/lib/juegos";
 import { api, apiForm } from "@/lib/api";
 import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
+import { useFeedback } from "@/components/FeedbackProvider";
 import { hace } from "@/lib/format";
 import { useRol } from "./Vants";
 
@@ -121,12 +122,18 @@ export function TarjetaClip({ c, onBorrar }: { c: Clip; onBorrar?: (c: Clip) => 
       <div className="relative w-full aspect-video bg-[var(--grafito)] overflow-hidden">
         {ver && c.video ? <VideoClip src={c.video} poster={c.miniatura} /> : ver && c.embed ? (
           <iframe src={c.embed} title={c.titulo || "Clip"} className="absolute inset-0 w-full h-full" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />
-        ) : (
-          <button type="button" className="absolute inset-0 w-full h-full grid place-items-center" onClick={() => (reproducible ? setVer(true) : window.open(c.url, "_blank", "noopener"))} aria-label={"Reproducir " + (c.titulo || "clip")}>
+        ) : reproducible ? (
+          <button type="button" className="absolute inset-0 w-full h-full grid place-items-center" onClick={() => setVer(true)} aria-label={"Reproducir " + (c.titulo || "clip")}>
             {c.miniatura ? <img src={c.miniatura} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <span className="absolute inset-0" style={{ background: "linear-gradient(135deg, var(--grafito-2), var(--grafito-3))" }} />}
             <span className="relative" style={{ width: 54, height: 54, background: "var(--rojo)", clipPath: "polygon(0 0, 100% 50%, 0 100%)" }} aria-hidden />
             {c.duracion ? <span className="absolute bottom-2 right-2 num text-xs px-1.5 py-0.5" style={{ background: "rgba(0,0,0,.7)" }}>{Math.round(c.duracion)}s</span> : null}
           </button>
+        ) : (
+          <a href={c.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 w-full h-full grid place-items-center" aria-label={"Abrir " + (c.titulo || "clip")}>
+            {c.miniatura ? <img src={c.miniatura} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" /> : <span className="absolute inset-0" style={{ background: "linear-gradient(135deg, var(--grafito-2), var(--grafito-3))" }} />}
+            <span className="relative" style={{ width: 54, height: 54, background: "var(--rojo)", clipPath: "polygon(0 0, 100% 50%, 0 100%)" }} aria-hidden />
+            {c.duracion ? <span className="absolute bottom-2 right-2 num text-xs px-1.5 py-0.5" style={{ background: "rgba(0,0,0,.7)" }}>{Math.round(c.duracion)}s</span> : null}
+          </a>
         )}
       </div>
       <figcaption className="p-4 grid gap-1.5">
@@ -285,17 +292,20 @@ function Rejilla({ xs, onBorrar }: { xs: Clip[]; onBorrar?: (c: Clip) => void })
 }
 
 export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean }) {
+  const { confirm, toast } = useFeedback();
   const qc = useQueryClient();
   const q = useApi<Mios>("/int/clips/mios", { auth: true });
   const kk = useClipsKick(q.data?.canal_kick);
   const [filtro, setFiltro] = useState<"todos" | "valorant" | "cs2">("todos");
   const borrar = async (c: Clip) => {
-    if (!window.confirm("¿Quitar este clip de tu biblioteca?")) return;
+    const ok = await confirm({ title: "Quitar clip de tu biblioteca", description: `¿Quitar «${c.titulo || "este clip"}» de tu biblioteca?`, confirmLabel: "Quitar clip", danger: true });
+    if (!ok) return;
     try {
       if (c.origen === "subido" && !c.kv) await api("/api/clips/featured?id=" + encodeURIComponent(c.id), { method: "DELETE", auth: true });
       else await api("/int/clips/borrar", { method: "POST", auth: true, body: { id: c.id } });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
-    } catch (e) { window.alert(mensaje(e)); }
+      toast({ kind: "ok", title: "Clip quitado de tu biblioteca" });
+    } catch (e) { toast({ kind: "error", title: "No se pudo quitar el clip", description: mensaje(e) }); }
   };
   const f = (xs: Clip[] | undefined) => (filtro === "todos" ? xs || [] : (xs || []).filter((c) => c.juego === filtro));
   const enlaces = new Set((q.data?.clips || []).map((c) => c.url));

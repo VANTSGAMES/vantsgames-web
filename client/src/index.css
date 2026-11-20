@@ -216,6 +216,7 @@ button { font: inherit; color: inherit; }
 
 /* Titular del hero: cada palabra asciende con leve inclinación */
 .palabra { display: inline-block; animation: palabra var(--t-base) cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: var(--d, 0ms); }
+.d-hero .palabra, .palabra.block { display: block; }
 @keyframes palabra { from { opacity: 0; transform: translateY(0.35em) skewY(1.5deg); } to { opacity: 1; transform: none; } }
 
 /* Cinta marquee infinita: la pista lleva el contenido duplicado */

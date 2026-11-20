@@ -328,7 +328,7 @@ function Cuentas() {
           return (
             <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
               <div className="flex items-center gap-3">
-                {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : p.logo ? <img src={pub(p.logo)} alt="" width={32} height={32} /> : <Initials name={p.nombre} size={32} />}
+                {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : <img src={pub(p.logo)} alt="" width={32} height={32} />}
                 <span className="d-3">{p.nombre}</span>
                 <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
               </div>

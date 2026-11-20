@@ -1,5 +1,5 @@
-import { useMemo, useState, type FormEvent } from "react";
-import { Link, useParams } from "wouter";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Link, useLocation, useParams, useSearch } from "wouter";
 import { useApi } from "@/lib/useApi";
 import { api, assetUrl, type Paged, type Tournament, type Match } from "@/lib/api";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
@@ -8,14 +8,18 @@ import { TournamentRow, MatchRow } from "@/components/domain";
 import { dinero, fecha, hora } from "@/lib/format";
 import { useMisEquipos, MisInscripciones } from "./Vants";
 import { filtrosJuegos } from "@/lib/juegos";
+import { normalizeJuegoSlug, parseQueryParam } from "@/lib/urlFilters";
+import { filterAndSortTournaments, normalizeText, type TorneoOrden } from "@/lib/discovery";
+import { classifyBracketStatus, filterBracketMatches, type BracketStatusFilter } from "@/lib/competitive";
 import { useMembresia } from "@/lib/useMembresia";
+import { useFeedback } from "@/components/FeedbackProvider";
 import { useQueryClient } from "@tanstack/react-query";
 
 const JUEGOS = filtrosJuegos();
 
 function GameFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <div className="flex gap-1" role="group" aria-label="Filtrar por juego">
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por juego">
       {JUEGOS.map((j) => (
         <button key={j.v} className={"btn btn-sm " + (value === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={value === j.v} onClick={() => onChange(j.v)} data-testid={"filter-juego-" + (j.v || "todos")}>{j.l}</button>
       ))}
@@ -40,11 +44,62 @@ function Pager({ pag, total, por, onPage }: { pag: number; total: number; por: n
 const TABS_T = [{ v: "upcoming", l: "Próximos" }, { v: "ongoing", l: "En curso" }, { v: "archive", l: "Archivo" }];
 
 export function TorneosLista({ competir = false }: { competir?: boolean }) {
+  const [location] = useLocation();
+  const searchStr = useSearch();
+  const readJuegoFromUrl = () => normalizeJuegoSlug(parseQueryParam("juego", searchStr || window.location.search, window.location.hash));
   const [estado, setEstado] = useState(competir ? "upcoming" : "upcoming");
-  const [juego, setJuego] = useState("");
+  const [juego, setJuego] = useState<string>(readJuegoFromUrl);
+  const [busqueda, setBusqueda] = useState("");
+  const [orden, setOrden] = useState<TorneoOrden>("fecha");
   const [pag, setPag] = useState(1);
+
+  useEffect(() => {
+    const sync = () => {
+      const fromUrl = readJuegoFromUrl();
+      setJuego(fromUrl);
+      setPag(1);
+    };
+    sync();
+    window.addEventListener("hashchange", sync);
+    window.addEventListener("popstate", sync);
+    return () => {
+      window.removeEventListener("hashchange", sync);
+      window.removeEventListener("popstate", sync);
+    };
+  }, [location, searchStr]);
+
+  const handleJuegoChange = (nextJuego: string) => {
+    const clean = normalizeJuegoSlug(nextJuego);
+    setJuego(clean);
+    setPag(1);
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (clean) sp.set("juego", clean);
+      else sp.delete("juego");
+      const qs = sp.toString();
+      const baseHash = window.location.hash.split("?")[0];
+      const nextUrl = window.location.pathname + (qs ? "?" + qs : "") + baseHash;
+      window.history.replaceState(null, "", nextUrl);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (typeof window !== "undefined" && window.location.hash && window.location.search.includes("juego=")) {
+        const sp = new URLSearchParams(window.location.search);
+        sp.delete("juego");
+        const qs = sp.toString();
+        window.history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : "") + window.location.hash);
+      }
+    };
+  }, []);
+
   const q = useApi<{ data: Paged<Tournament> }>(`/api/tournaments?estado=${estado}&pag=${pag}&porPagina=12${juego ? "&juego=" + juego : ""}`);
   const d = q.data?.data;
+  const itemsVisibles = useMemo(
+    () => filterAndSortTournaments(d?.items || [], { query: busqueda, sort: orden }),
+    [d?.items, busqueda, orden],
+  );
   return (
     <>
       <PageHead
@@ -53,21 +108,48 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
         lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de los once juegos del circuito publicados por la organización de VANTS y por la comunidad con plan."}
         actions={<Link href="/torneos/crear" className="btn" data-testid="cta-crear-torneo">Crear mi torneo</Link>}
       />
-      <div className="wrap">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div className="wrap grid gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           {!competir ? (
             <div className="tabs" role="tablist">
               {TABS_T.map((t) => <button key={t.v} role="tab" className="tab" aria-selected={estado === t.v} onClick={() => { setEstado(t.v); setPag(1); }} data-testid={"tab-" + t.v}>{t.l}</button>)}
             </div>
           ) : <span />}
-          <GameFilter value={juego} onChange={(v) => { setJuego(v); setPag(1); }} />
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <input
+              type="search"
+              className="input h-10 w-full sm:w-64"
+              placeholder="Buscar torneo, región o formato"
+              aria-label="Buscar torneo"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              data-testid="input-buscar-torneo"
+            />
+            <select
+              className="input h-10 w-full sm:w-44"
+              aria-label="Ordenar torneos"
+              value={orden}
+              onChange={(e) => setOrden(e.target.value as TorneoOrden)}
+              data-testid="select-orden-torneo"
+            >
+              <option value="fecha">Ordenar: Próximos</option>
+              <option value="premio">Ordenar: Mayor premio</option>
+              <option value="plazas">Ordenar: Más plazas</option>
+            </select>
+          </div>
         </div>
+        <GameFilter value={juego} onChange={handleJuegoChange} />
         <div className="panel">
-          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los torneos" /> : !d || d.items.length === 0 ? (
-            <Empty code={"torneos · " + estado + (juego ? " · " + juego : "")} title={competir ? "No hay inscripciones abiertas" : "No hay torneos en esta categoría"} text="Los torneos los publica la organización desde el panel interno. Vuelve más tarde o sigue los anuncios en Comunidad." action={<Link href="/noticias" className="link-arrow">Ver anuncios <span aria-hidden>→</span></Link>} />
+          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los torneos" onRetry={() => q.refetch()} /> : !d || itemsVisibles.length === 0 ? (
+            <Empty
+              code={"torneos · " + estado + (juego ? " · " + juego : "")}
+              title={busqueda ? "Ningún torneo coincide con tu búsqueda" : competir ? "No hay inscripciones abiertas" : "No hay torneos en esta categoría"}
+              text={busqueda ? "Prueba con otro término o limpia el filtro de juego." : "Los torneos los publica la organización desde el panel interno. Vuelve más tarde o sigue los anuncios en Comunidad."}
+              action={busqueda ? <button type="button" className="btn btn-sm" onClick={() => setBusqueda("")}>Limpiar búsqueda</button> : <Link href="/noticias" className="link-arrow">Ver anuncios <span aria-hidden>→</span></Link>}
+            />
           ) : (
             <>
-              {d.items.map((t) => <TournamentRow key={t.slug} t={t} />)}
+              {itemsVisibles.map((t) => <TournamentRow key={t.slug} t={t} />)}
               <Pager pag={d.pag} total={d.total} por={d.porPagina || 12} onPage={setPag} />
             </>
           )}
@@ -80,44 +162,184 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
 /* ---------------- Bracket ---------------- */
 interface Llave { ronda: string; slot: number; team_a: string | null; team_b: string | null; score_a: number | null; score_b: number | null; estado: string | null; ganador: string | null }
 
+const BRACKET_STATUS_FILTERS: { v: BracketStatusFilter; l: string }[] = [
+  { v: "todos", l: "Todos" },
+  { v: "live", l: "En vivo" },
+  { v: "finished", l: "Finalizados" },
+  { v: "pending", l: "Pendientes" },
+];
+
 export function Bracket({ torneo }: { torneo: string }) {
   const q = useApi<{ equipos: any[]; bracket: Llave[] }>("/api/torneos/bracket?torneo=" + encodeURIComponent(torneo));
+  const [teamQuery, setTeamQuery] = useState("");
+  const [roundFilter, setRoundFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<BracketStatusFilter>("todos");
+  const [compact, setCompact] = useState(false);
+
+  const allMatches = q.data?.bracket || [];
+  const roundNames = useMemo(() => {
+    const seen = new Set<string>();
+    for (const l of allMatches) seen.add(String(l.ronda));
+    return Array.from(seen);
+  }, [allMatches]);
+
   const rondas = useMemo(() => {
+    const filtered = filterBracketMatches(allMatches, {
+      round: roundFilter,
+      status: statusFilter,
+      teamQuery,
+    });
     const m = new Map<string, Llave[]>();
-    for (const l of q.data?.bracket || []) {
+    for (const l of filtered) {
       const k = String(l.ronda);
       if (!m.has(k)) m.set(k, []);
       m.get(k)!.push(l);
     }
     m.forEach((v) => v.sort((a, b) => (a.slot || 0) - (b.slot || 0)));
     return Array.from(m.entries());
-  }, [q.data]);
+  }, [allMatches, roundFilter, statusFilter, teamQuery]);
+
   if (q.isLoading) return <Skel h={80} n={2} />;
-  if (q.error && q.error.code !== "sin_datos") return <ErrorBox error={q.error} what="el bracket" />;
-  if (rondas.length === 0)
+  if (q.error && q.error.code !== "sin_datos") return <ErrorBox error={q.error} what="el bracket" onRetry={() => q.refetch()} />;
+  if (allMatches.length === 0)
     return <Empty code="bracket · sin sembrar" title="El bracket aún no se ha generado" text="Se genera en el servidor cuando cierran las inscripciones y se confirman los equipos." />;
+
+  const normalizedQuery = normalizeText(teamQuery);
+  const hasFilters = Boolean(normalizedQuery || roundFilter || statusFilter !== "todos");
+
   return (
-    <div className="overflow-x-auto pb-2" data-testid="bracket">
-      <div className="flex gap-6 min-w-max">
-        {rondas.map(([ronda, llaves]) => (
-          <div key={ronda} className="grid content-around gap-4" style={{ width: 230 }}>
-            <div className="eyebrow">{ronda}</div>
-            {llaves.map((l) => (
-              <div key={ronda + l.slot} className="panel" style={{ borderLeft: l.estado === "live" ? "2px solid var(--rojo)" : undefined }}>
-                {[{ n: l.team_a, s: l.score_a }, { n: l.team_b, s: l.score_b }].map((t, i) => {
-                  const win = l.ganador && t.n && l.ganador === t.n;
+    <div className="grid gap-4" data-testid="bracket-container">
+      <div className="panel panel-pad grid gap-3" style={{ background: "var(--grafito-1)" }}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <input
+            type="search"
+            className="input h-10 w-full sm:w-64"
+            placeholder="Buscar o resaltar equipo…"
+            aria-label="Buscar equipo en el bracket"
+            value={teamQuery}
+            onChange={(e) => setTeamQuery(e.target.value)}
+            data-testid="input-buscar-bracket"
+          />
+          <div className="flex flex-wrap items-center gap-1.5">
+            {BRACKET_STATUS_FILTERS.map((st) => (
+              <button
+                key={st.v}
+                type="button"
+                className={"btn btn-sm " + (statusFilter === st.v ? "btn-rojo" : "btn-ghost")}
+                aria-pressed={statusFilter === st.v}
+                onClick={() => setStatusFilter(st.v)}
+                data-testid={"filter-bracket-status-" + st.v}
+              >
+                {st.l}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              aria-pressed={compact}
+              onClick={() => setCompact((c) => !c)}
+              data-testid="button-bracket-compact"
+            >
+              {compact ? "Vista normal" : "Vista compacta"}
+            </button>
+          </div>
+        </div>
+        {roundNames.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filtrar por ronda">
+            <button
+              type="button"
+              className={"btn btn-sm " + (!roundFilter ? "btn-rojo" : "btn-ghost")}
+              aria-pressed={!roundFilter}
+              onClick={() => setRoundFilter("")}
+              data-testid="filter-bracket-round-all"
+            >
+              Todas las rondas
+            </button>
+            {roundNames.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className={"btn btn-sm " + (roundFilter === r ? "btn-rojo" : "btn-ghost")}
+                aria-pressed={roundFilter === r}
+                onClick={() => setRoundFilter(r)}
+                data-testid={"filter-bracket-round-" + r}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {rondas.length === 0 ? (
+        <Empty
+          code="bracket · filtro"
+          title="Ninguna llave coincide con los filtros"
+          text="Ajusta la ronda, el estado o el nombre del equipo buscado."
+          action={
+            hasFilters ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  setTeamQuery("");
+                  setRoundFilter("");
+                  setStatusFilter("todos");
+                }}
+              >
+                Limpiar filtros
+              </button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="overflow-x-auto pb-2" data-testid="bracket">
+          <div className="flex gap-5 min-w-max">
+            {rondas.map(([ronda, llaves]) => (
+              <div key={ronda} className={"grid content-around " + (compact ? "gap-2.5" : "gap-4")} style={{ width: compact ? 205 : 236 }}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow">{ronda}</span>
+                  <span className="text-[11px] muted num">{llaves.length}</span>
+                </div>
+                {llaves.map((l) => {
+                  const st = classifyBracketStatus(l);
+                  const highlighted =
+                    Boolean(normalizedQuery) &&
+                    normalizeText([l.team_a, l.team_b].filter(Boolean).join(" ")).includes(normalizedQuery);
                   return (
-                    <div key={i} className="flex justify-between gap-2 px-3 py-2" style={{ borderTop: i ? "1px solid var(--linea-suave)" : undefined, color: win ? "var(--blanco)" : t.n ? "var(--gris-1)" : "var(--gris-3)", fontWeight: win ? 700 : 500 }}>
-                      <span className="truncate">{t.n || "Por definir"}</span>
-                      <span className="num">{t.s ?? "–"}</span>
+                    <div
+                      key={ronda + l.slot}
+                      className="panel"
+                      style={{
+                        borderLeft: st === "live" ? "2px solid var(--rojo)" : undefined,
+                        boxShadow: highlighted ? "inset 0 0 0 1px var(--rojo)" : undefined,
+                      }}
+                    >
+                      {[{ n: l.team_a, s: l.score_a }, { n: l.team_b, s: l.score_b }].map((t, i) => {
+                        const win = l.ganador && t.n && l.ganador === t.n;
+                        return (
+                          <div
+                            key={i}
+                            className={"flex justify-between gap-2 " + (compact ? "px-2.5 py-1.5 text-sm" : "px-3 py-2")}
+                            style={{
+                              borderTop: i ? "1px solid var(--linea-suave)" : undefined,
+                              color: win ? "var(--blanco)" : t.n ? "var(--gris-1)" : "var(--gris-3)",
+                              fontWeight: win ? 700 : 500,
+                            }}
+                          >
+                            <span className="truncate">{t.n || "Por definir"}</span>
+                            <span className="num">{t.s ?? "–"}</span>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}
               </div>
             ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -153,7 +375,7 @@ function Inscripcion({ t }: { t: Tournament }) {
           <div className="check-circulo d-2" style={{ color: "var(--ok)" }} aria-hidden="true">✓</div>
           <span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span>
           <p className="d-3">Solicitud registrada</p>
-          <p className="small muted">La organización revisará la inscripción de <strong>{form.equipo}</strong>{form.tag ? <span className="num"> [{form.tag}]</span> : null} en <strong>{t.name}</strong>.</p>
+          <p className="small muted">La organización revisará la inscripción de <strong>{form.equipo}</strong>{form.tag ? <span className="num"> [{form.tag}]</span> : null} en <strong>{t.nombre}</strong>.</p>
           <p className="small muted">Recibirás un correo de confirmación y el estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link>.</p>
         </div>
         {mem.sinPlan && <UpsellPlan motivo="inscripcion" />}
@@ -182,7 +404,7 @@ function Inscripcion({ t }: { t: Tournament }) {
     <form onSubmit={submit} className="grid gap-4" data-testid="form-inscripcion">
       <div className="flex flex-wrap gap-2">
         <span className="tag">{t.game?.nombre || ""}</span>
-        {t.format ? <span className="tag">{t.format}</span> : null}
+        {t.formato ? <span className="tag">{t.formato}</span> : null}
         {t.prize ? <span className="tag tag-rojo">{dinero(t.prize.value, t.prize.currency)}</span> : null}
       </div>
       {delJuego.length > 0 ? (
@@ -223,12 +445,66 @@ export function UpsellPlan({ motivo }: { motivo: "inscripcion" | "ranked" | "cli
   );
 }
 
+function GuardarTorneoBtn({ t }: { t: Tournament }) {
+  const { toast } = useFeedback();
+  const [saving, setSaving] = useState(false);
+  const [savedId, setSavedId] = useState<number | null>(null);
+
+  const toggleBookmark = async () => {
+    setSaving(true);
+    try {
+      const ws = await import("@/lib/googleWorkspace");
+      if (!ws.firebaseAuth.currentUser) {
+        toast({
+          kind: "info",
+          title: "Conecta Google en Centro Workspace",
+          description: "Inicia sesión con Google en /workspace para guardar torneos en tu seguimiento Pro.",
+        });
+        return;
+      }
+      if (savedId) {
+        await ws.proApi(`/api/pro/bookmarks/${savedId}`, { method: "DELETE" });
+        setSavedId(null);
+        toast({ kind: "ok", title: "Torneo quitado de guardados" });
+      } else {
+        const res = await ws.proApi<{ bookmark: { id: number } }>("/api/pro/bookmarks", {
+          method: "POST",
+          body: { tournamentSlug: t.slug, tournamentName: t.nombre, gameSlug: t.game?.slug || null },
+        });
+        setSavedId(res.bookmark.id);
+        toast({ kind: "ok", title: "Torneo guardado en tu Workspace Pro" });
+      }
+    } catch (err: any) {
+      toast({ kind: "error", title: "No se pudo actualizar guardado", description: err?.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2 mt-4">
+      <button
+        type="button"
+        className={"btn btn-sm " + (savedId ? "btn-rojo" : "")}
+        disabled={saving}
+        onClick={toggleBookmark}
+        data-testid="button-guardar-torneo"
+      >
+        {saving ? "Guardando…" : savedId ? "Guardado en Workspace" : "Guardar torneo"}
+      </button>
+      <Link href="/workspace" className="btn btn-sm btn-ghost">
+        Organizar en Workspace
+      </Link>
+    </div>
+  );
+}
+
 export function TorneoDetalle() {
   const { slug } = useParams<{ slug: string }>();
   const q = useApi<{ data: Tournament }>("/api/tournaments/" + slug);
   const [tab, setTab] = useState("resumen");
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
-  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · torneo" title="Este torneo no existe o fue retirado" action={<Link href="/torneos" className="link-arrow">Volver a torneos →</Link>} /> : <ErrorBox error={q.error} what="el torneo" />}</div>;
+  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · torneo" title="Este torneo no existe o fue retirado" action={<Link href="/torneos" className="link-arrow">Volver a torneos →</Link>} /> : <ErrorBox error={q.error} what="el torneo" onRetry={() => q.refetch()} />}</div>;
   const t = q.data!.data;
   const premio = t.prize ? dinero(t.prize.value, t.prize.currency) : null;
   return (
@@ -240,6 +516,7 @@ export function TorneoDetalle() {
             <div className="flex flex-wrap gap-1.5 mb-4"><GameTag g={t.game} />{t.major && <span className="tag tag-rojo">Major</span>}{t.region && <span className="tag">{t.region}</span>}{t.is_demo && <span className="tag tag-aviso">Demo</span>}</div>
             <h1 className="d-1">{t.nombre}</h1>
             {t.descripcion && <p className="lead mt-4">{t.descripcion}</p>}
+            <GuardarTorneoBtn t={t} />
           </div>
           {t.logo_url && <img src={assetUrl(t.logo_url)!} alt="" width={120} height={120} className="chamfer" />}
         </div>
@@ -309,7 +586,7 @@ export function Agenda({ modo }: { modo: "agenda" | "resultados" }) {
           <GameFilter value={juego} onChange={(v) => { setJuego(v); setPag(1); }} />
         </div>
         <div className="panel">
-          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los partidos" /> : !d || d.items.length === 0 ? (
+          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los partidos" onRetry={() => q.refetch()} /> : !d || d.items.length === 0 ? (
             <Empty code={"partidos · " + estado} title={estado === "live" ? "No hay partidos en directo" : estado === "upcoming" ? "No hay partidos programados" : "Todavía no hay resultados"} text="Los partidos se crean al generarse el bracket de cada torneo." />
           ) : (<>{d.items.map((m, i) => <MatchRow key={i} m={m} />)}<Pager pag={d.pag} total={d.total} por={d.porPagina || 20} onPage={setPag} /></>)}
         </div>
@@ -336,7 +613,7 @@ export function BracketPrincipal() {
     <>
       <PageHead eyebrow="Bracket principal" title={t ? t.nombre : "Bracket principal"} lead="El cuadro del torneo principal en curso. Los resultados los registra la organización." actions={t ? <Link href={"/torneos/" + t.slug} className="btn btn-sm">Ficha del torneo</Link> : undefined} />
       <div className="wrap">
-        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el torneo principal" /> : !t ? (
+        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el torneo principal" onRetry={() => q.refetch()} /> : !t ? (
           <Empty code="bracket · sin torneo en curso" title="No hay un torneo en curso" text="El bracket principal aparece cuando hay un torneo en marcha." action={<Link href="/torneos" className="link-arrow">Ver próximos torneos →</Link>} />
         ) : <Bracket torneo={t.slug} />}
       </div>
@@ -351,7 +628,7 @@ export function Ligas() {
       <PageHead eyebrow="Ligas y temporadas" title="Ligas y temporadas" lead="Temporadas del circuito VANTS y su histórico de torneos." />
       <Section title="Torneos de temporadas anteriores">
         <div className="panel">
-          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el archivo" /> : (q.data?.data.items || []).length === 0 ? (
+          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el archivo" onRetry={() => q.refetch()} /> : (q.data?.data.items || []).length === 0 ? (
             <Empty code="ligas · 0" title="Todavía no hay temporadas cerradas" text="Al terminar la primera temporada su clasificación y torneos quedarán archivados aquí." />
           ) : q.data!.data.items.map((t) => <TournamentRow key={t.slug} t={t} />)}
         </div>

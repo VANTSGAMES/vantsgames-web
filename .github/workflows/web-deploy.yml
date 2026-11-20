@@ -45,6 +45,7 @@ jobs:
           VITE_ASSET_ORIGIN: ""
           VITE_FN_ORIGIN: https://vants-functions.vants.workers.dev
           VITE_AUTH0_CLIENT_ID: totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo
+          VITE_SITE_URL: https://vants.cc
         run: npx vite build --base=/ --outDir ../dist-web --emptyOutDir
 
       - name: Código y configuración actuales del Worker vants

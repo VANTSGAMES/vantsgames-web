@@ -7,6 +7,8 @@ import { Wordmark } from "./ui-vants";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api } from "@/lib/api";
+import { CommandPalette } from "./CommandPalette";
+import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
 
 type Notif = { id: number; tipo: string; titulo: string; cuerpo: string | null; url: string | null; creada: string; leida: boolean };
 
@@ -127,7 +129,7 @@ function AccountButton() {
   );
 }
 
-function MobileNav({ path }: { path: string }) {
+function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => void }) {
   const [open, setOpen] = useState(false);
   const { status } = useAuth();
   useEffect(() => setOpen(false), [path]);
@@ -140,6 +142,16 @@ function MobileNav({ path }: { path: string }) {
       {open && (
         <nav id="menu-movil" className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto lg:hidden" style={{ background: "var(--negro)" }} aria-label="Menú principal">
           <div className="wrap py-6 grid gap-6">
+            <button
+              type="button"
+              className="btn btn-sm w-full justify-between"
+              onClick={() => { setOpen(false); onOpenSearch(); }}
+              data-testid="button-mobile-search"
+            >
+              <span>Buscar secciones y juegos…</span>
+              <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>⌘K</span>
+            </button>
+            <PWAInstallButton compact />
             <Link href="/" className="d-2">Inicio</Link>
             {NAV.map((g) => (
               <div key={g.base}>
@@ -164,7 +176,7 @@ function MobileNav({ path }: { path: string }) {
   );
 }
 
-export function Header() {
+export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
   const [path] = useLocation();
   return (
     <header className="hdr">
@@ -176,8 +188,23 @@ export function Header() {
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost flex items-center gap-2"
+            onClick={onOpenSearch}
+            aria-label="Abrir buscador rápido (Ctrl+K)"
+            data-testid="button-open-search"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <span className="hidden md:inline">Buscar</span>
+            <kbd className="hidden xl:inline text-[10px] px-1.5 py-0.5 border" style={{ borderColor: "var(--linea)", color: "var(--gris-2)", fontFamily: "var(--f-mono)" }}>⌘K</kbd>
+          </button>
+          <span className="hidden sm:inline-flex"><PWAInstallButton /></span>
           <AccountButton />
-          <MobileNav path={path} />
+          <MobileNav path={path} onOpenSearch={onOpenSearch} />
         </div>
       </div>
     </header>
@@ -192,6 +219,7 @@ export function Footer() {
           <Wordmark />
           <p className="d-3" style={{ letterSpacing: "0.12em" }}>Compete. Connect. <span style={{ color: "var(--rojo)" }}>Dominate.</span></p>
           <p className="muted small" style={{ maxWidth: "38ch" }}>Torneos, rankings, clips y comunidad de once juegos competitivos, desde Venezuela para Latinoamérica.</p>
+          <a href="mailto:contacto@vants.cc" className="muted small hover:text-white">Contacto: contacto@vants.cc</a>
         </div>
         {[NAV[1], NAV[0], NAV[3], NAV[4]].map((g) => (
           <div key={g.base}>
@@ -217,12 +245,15 @@ export function Footer() {
 
 export function Shell({ children }: { children: ReactNode }) {
   const [path] = useLocation();
+  const [searchOpen, setSearchOpen] = useState(false);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [path]);
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header onOpenSearch={() => setSearchOpen(true)} />
       <main id="contenido" className="flex-1">{children}</main>
       <Footer />
+      <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <OfflineIndicator />
     </div>
   );
 }

@@ -61,13 +61,31 @@ export function Empty({ code, title, text, action }: { code: string; title: stri
   );
 }
 
-export function ErrorBox({ error, what }: { error: any; what: string }) {
+export function ErrorBox({ error, what, onRetry }: { error: any; what: string; onRetry?: () => void }) {
   const code = (error && error.code) || "error";
   return (
     <div className="empty" role="alert" style={{ borderColor: "rgba(255,13,46,.35)" }} data-testid="state-error">
       <span className="empty-code" style={{ color: "#ff5468" }}>{code}</span>
       <p className="d-3">No se pudo cargar {what}</p>
-      <p className="muted small">El servicio respondió con un error. Se volverá a intentar al recargar la página.</p>
+      <p className="muted small">El servicio respondió con un error temporal. Puedes volver a intentarlo ahora mismo.</p>
+      <button
+        type="button"
+        className="btn btn-sm mt-2"
+        onClick={() => (onRetry ? onRetry() : window.location.reload())}
+        data-testid="button-retry-error"
+      >
+        Reintentar
+      </button>
+    </div>
+  );
+}
+
+export function PageLoader() {
+  return (
+    <div className="wrap py-16 grid gap-4" aria-busy="true" aria-label="Cargando sección">
+      <div className="sk" style={{ height: 28, width: "28%" }} />
+      <div className="sk" style={{ height: 52, width: "62%" }} />
+      <div className="sk mt-4" style={{ height: 180 }} />
     </div>
   );
 }

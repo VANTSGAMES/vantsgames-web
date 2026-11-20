@@ -7,36 +7,18 @@ import { Insignia3D, DetalleInsignia, FilaInsignias, useCatalogoInsignias, rarez
 
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate } from "@/components/ui-vants";
+import { PLANES, PLAN_COMPARISON, type PlanDef } from "@/lib/planes";
+import { computeAnnualSavingsPercent } from "@/lib/discovery";
 
-/** Planes del catálogo live de Stripe (vants-functions/stripe-checkout). El alta la confirma el webhook. */
-export const PLANES = [
-  {
-    id: "pro", kicker: "Competitivo", nombre: "VANTS PRO", precio: "4,99 € / mes · 39,99 € / año",
-    lema: "Todo lo competitivo desbloqueado para subir de rango.",
-    beneficios: ["Insignia PRO en tu ficha", "Sello PRO junto a tu nick", "Cola prioritaria en VANTS Ranked", "Inscripciones sin fee en torneos abiertos", "Marcos y tarjetas premium"],
-    checkout: [{ period: "mo", label: "Mensual · 4,99 €" }, { period: "yr", label: "Anual · 39,99 €" }],
-  },
-  {
-    id: "creator", kicker: "Creadores", nombre: "VANTS CREATOR", precio: "9,99 € / mes · 79,99 € / año",
-    lema: "Para quienes muestran la arena: clips, streams y comunidad.",
-    beneficios: ["Insignia y sello CREATOR", "Canal de clips verificado", "Destacado en la sala de jugadores", "Soporte directo con el equipo", "Kit de overlays de marca"],
-    checkout: [{ period: "mo", label: "Mensual · 9,99 €" }, { period: "yr", label: "Anual · 79,99 €" }],
-  },
-  {
-    id: "pase", kicker: "Temporada", nombre: "PASE S4", precio: "7,99 € · pago único",
-    lema: "Un solo pago para toda la temporada S4 (180 días).",
-    beneficios: ["Insignia PLUS en tu ficha", "Sello PRO junto a tu nick", "Inscripciones sin fee en torneos abiertos"],
-    checkout: [{ period: "one_time", label: "Comprar pase · 7,99 €" }],
-  },
-  {
-    id: "socio", kicker: "Invitación", nombre: "SOCIO VANTS", precio: "Solo por invitación",
-    lema: "El programa de socios de la marca.",
-    beneficios: ["Insignia SOCIO VANTS", "Voto en decisiones del circuito", "Acceso al Discord privado", "Descuentos en la tienda oficial"],
-    checkout: null,
-  },
-] as const;
+export { PLANES };
 
-function CheckoutButtons({ plan }: { plan: (typeof PLANES)[number] }) {
+type BillingCycle = "mo" | "yr";
+
+function formatEur(n: number) {
+  return n.toFixed(2).replace(".", ",") + " €";
+}
+
+function CheckoutButtons({ plan, billing }: { plan: PlanDef; billing: BillingCycle }) {
   const { status, login } = useAuth();
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -67,38 +49,153 @@ function CheckoutButtons({ plan }: { plan: (typeof PLANES)[number] }) {
   };
   return (
     <div className="grid gap-2">
-      {plan.checkout.map((c, i) => (
-        <button key={c.period} className={"btn w-full " + (i === 0 ? "btn-rojo" : "")} disabled={!!busy} onClick={() => go(c.period)} data-testid={"button-checkout-" + plan.id + "-" + c.period}>
-          {busy === c.period ? "Abriendo Stripe…" : c.label}
-        </button>
-      ))}
+      {plan.checkout.map((c) => {
+        const primary = c.period === "one_time" || c.period === billing;
+        return (
+          <button
+            key={c.period}
+            className={"btn w-full " + (primary ? "btn-rojo" : "")}
+            disabled={!!busy}
+            onClick={() => go(c.period)}
+            data-testid={"button-checkout-" + plan.id + "-" + c.period}
+          >
+            {busy === c.period ? "Abriendo Stripe…" : c.label}
+          </button>
+        );
+      })}
       {err && <p className="small" style={{ color: "#ff5468" }} role="alert">{err}</p>}
     </div>
   );
 }
 
 export default function Membresias() {
+  const [billing, setBilling] = useState<BillingCycle>("yr");
+  const ahorroPro = computeAnnualSavingsPercent(4.99, 39.99);
+
+  const precioVisible = (p: PlanDef) => {
+    if (p.monthlyPrice && p.annualPrice) {
+      if (billing === "yr") {
+        const equivMes = p.annualPrice / 12;
+        return (
+          <div className="mt-2">
+            <div className="d-2 num" style={{ color: "var(--blanco)" }}>
+              {formatEur(p.annualPrice)} <span className="small muted font-normal">/ año</span>
+            </div>
+            <div className="text-xs muted num mt-0.5">
+              Equivale a {formatEur(equivMes)} / mes · Ahorras {computeAnnualSavingsPercent(p.monthlyPrice, p.annualPrice)}%
+            </div>
+          </div>
+        );
+      }
+      return (
+        <div className="mt-2">
+          <div className="d-2 num" style={{ color: "var(--blanco)" }}>
+            {formatEur(p.monthlyPrice)} <span className="small muted font-normal">/ mes</span>
+          </div>
+          <div className="text-xs muted num mt-0.5">Facturación mensual · Cancela cuando quieras</div>
+        </div>
+      );
+    }
+    return <div className="d-3 num mt-2" style={{ color: "var(--gris-1)" }}>{p.precio}</div>;
+  };
+
   return (
     <>
-      <PageHead eyebrow="Membresías" title={<>Elige cómo <span style={{ color: "var(--rojo)" }}>competir</span></>} lead="Pagos procesados por Stripe con impuestos incluidos. El plan se activa cuando Stripe confirma el pago al servidor; la web nunca da de alta un plan por su cuenta." />
-      <div className="wrap">
-        <div className="grid-auto grid md:grid-cols-2 xl:grid-cols-4">
-          {PLANES.map((p) => (
-            <article key={p.id} className="p-6 flex flex-col gap-5" data-testid={"plan-" + p.id} style={p.id === "pro" ? { boxShadow: "inset 0 2px 0 var(--rojo)" } : undefined}>
-              <div>
-                <div className="eyebrow mb-3">{p.kicker}</div>
-                <h2 className="d-2">{p.nombre}</h2>
-                <div className="num mt-2" style={{ color: "var(--gris-1)" }}>{p.precio}</div>
-                <p className="muted small mt-3">{p.lema}</p>
-              </div>
-              <ul className="grid gap-2 small flex-1">
-                {p.beneficios.map((b) => <li key={b} className="flex gap-2"><span style={{ color: "var(--rojo)" }} aria-hidden>▸</span>{b}</li>)}
-              </ul>
-              <CheckoutButtons plan={p} />
-            </article>
-          ))}
+      <PageHead
+        eyebrow="Membresías"
+        title={<>Elige cómo <span style={{ color: "var(--rojo)" }}>competir</span></>}
+        lead="Pagos procesados por Stripe con impuestos incluidos. El plan se activa cuando Stripe confirma el pago al servidor; la web nunca da de alta un plan por su cuenta."
+        actions={
+          <div
+            className="inline-flex border p-1 gap-1"
+            style={{ borderColor: "var(--linea)", background: "var(--grafito-1)" }}
+            role="group"
+            aria-label="Ciclo de facturación"
+            data-testid="billing-toggle"
+          >
+            <button
+              type="button"
+              className="px-4 h-9 text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors"
+              style={{
+                fontFamily: "var(--f-display)",
+                background: billing === "mo" ? "var(--rojo)" : "transparent",
+                color: billing === "mo" ? "#fff" : "var(--gris-2)",
+              }}
+              aria-pressed={billing === "mo"}
+              onClick={() => setBilling("mo")}
+              data-testid="billing-toggle-mo"
+            >
+              Mensual
+            </button>
+            <button
+              type="button"
+              className="px-4 h-9 text-sm font-bold uppercase tracking-wider cursor-pointer transition-colors"
+              style={{
+                fontFamily: "var(--f-display)",
+                background: billing === "yr" ? "var(--rojo)" : "transparent",
+                color: billing === "yr" ? "#fff" : "var(--gris-2)",
+              }}
+              aria-pressed={billing === "yr"}
+              onClick={() => setBilling("yr")}
+              data-testid="billing-toggle-yr"
+            >
+              Anual · -{ahorroPro}%
+            </button>
+          </div>
+        }
+      />
+      <div className="wrap grid gap-10">
+        <div>
+          <div className="grid-auto grid md:grid-cols-2 xl:grid-cols-4">
+            {PLANES.map((p) => (
+              <article key={p.id} className="p-6 flex flex-col gap-5" data-testid={"plan-" + p.id} style={p.id === "pro" ? { boxShadow: "inset 0 2px 0 var(--rojo)" } : undefined}>
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <span className="eyebrow">{p.kicker}</span>
+                    {p.id === "pro" && <span className="tag tag-rojo">Más elegido</span>}
+                  </div>
+                  <h2 className="d-2">{p.nombre}</h2>
+                  {precioVisible(p)}
+                  <p className="muted small mt-3">{p.lema}</p>
+                </div>
+                <ul className="grid gap-2 small flex-1">
+                  {p.beneficios.map((b) => <li key={b} className="flex gap-2"><span style={{ color: "var(--rojo)" }} aria-hidden>▸</span>{b}</li>)}
+                </ul>
+                <CheckoutButtons plan={p} billing={billing} />
+              </article>
+            ))}
+          </div>
+          <p className="small muted mt-4">¿Ya tienes un plan? Consulta su estado en <Link href="/perfil/membresia" className="underline">Mi membresía</Link>.</p>
         </div>
-        <p className="small muted mt-4">¿Ya tienes un plan? Consulta su estado en <Link href="/perfil/membresia" className="underline">Mi membresía</Link>.</p>
+
+        <section aria-labelledby="comparativa-planes-t" data-testid="plan-comparison-table">
+          <div className="eyebrow mb-2">Comparativa directa</div>
+          <h2 id="comparativa-planes-t" className="d-2 mb-5">Qué desbloquea cada plan</h2>
+          <div className="panel overflow-x-auto">
+            <table className="w-full text-left border-collapse small">
+              <thead>
+                <tr className="border-b" style={{ borderColor: "var(--linea)", background: "var(--grafito-2)" }}>
+                  <th className="p-4 font-semibold" style={{ minWidth: 220 }}>Ventaja competitiva</th>
+                  <th className="p-4 font-semibold">Gratis</th>
+                  <th className="p-4 font-semibold" style={{ color: "var(--rojo)" }}>VANTS PRO</th>
+                  <th className="p-4 font-semibold">VANTS CREATOR</th>
+                  <th className="p-4 font-semibold">PASE S4</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PLAN_COMPARISON.map((row) => (
+                  <tr key={row.feature} className="border-b last:border-b-0" style={{ borderColor: "var(--linea-suave)" }}>
+                    <td className="p-4 font-medium">{row.feature}</td>
+                    <td className="p-4 muted">{row.gratis}</td>
+                    <td className="p-4 font-semibold" style={{ color: row.pro === "—" ? "var(--gris-3)" : "var(--blanco)" }}>{row.pro}</td>
+                    <td className="p-4" style={{ color: row.creator === "—" ? "var(--gris-3)" : "var(--blanco)" }}>{row.creator}</td>
+                    <td className="p-4" style={{ color: row.pase === "—" ? "var(--gris-3)" : "var(--gris-1)" }}>{row.pase}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
       <BadgeGrid />
     </>

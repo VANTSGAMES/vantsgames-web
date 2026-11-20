@@ -61,7 +61,7 @@ function Recientes({ filtro }: { filtro?: string }) {
   };
   if (filtro && CLAVES[filtro]) v = v.filter((x) => CLAVES[filtro].test(x.titulo));
   if (q.isLoading) return <Skel h={160} n={1} />;
-  if (q.error) return <ErrorBox error={q.error} what="los clips" />;
+  if (q.error) return <ErrorBox error={q.error} what="los clips" onRetry={() => q.refetch()} />;
   if (v.length === 0) return <Empty code={"clips · " + (filtro || "0")} title={filtro ? "No hay clips de " + gameLabel(filtro) + " todavía" : "Todavía no hay clips"} />;
   return (
     <>
@@ -85,7 +85,7 @@ export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }
         {vista === "recientes" && <><ClipsComunidad /><Recientes /></>}
         {vista === "juego" && (
           <>
-            <div className="flex gap-1 mb-6" role="group" aria-label="Juego">{JUEGOS.map((j) => <button key={j.slug} className={"btn btn-sm " + (juego === j.slug ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.slug} onClick={() => setJuego(j.slug)}>{j.label}</button>)}</div>
+            <div className="flex flex-wrap gap-1.5 mb-6" role="group" aria-label="Juego">{JUEGOS.map((j) => <button key={j.slug} className={"btn btn-sm " + (juego === j.slug ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.slug} onClick={() => setJuego(j.slug)}>{j.label}</button>)}</div>
             <ClipsComunidad juego={juego} />
             <Recientes filtro={juego} />
           </>
@@ -187,8 +187,8 @@ export function EnVivo() {
       <PageHead eyebrow="Twitch en vivo" title={<>En <span style={{ color: "var(--rojo)" }}>directo</span></>} lead="Solo canales registrados en VANTS emitiendo VALORANT o Counter-Strike. Las categorías de Twitch no son torneos de VANTS." />
       <div className="wrap">
         <DirectosVants />
-        <div className="flex gap-1 mb-6" role="group" aria-label="Categoría de Twitch">{[["", "Todas"], ["VALORANT", "VALORANT"], ["Counter-Strike", "Counter-Strike"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)} data-testid={"filter-twitch-" + (v || "todas")}>{l}</button>)}</div>
-        {q.isLoading ? <Skel h={160} n={1} /> : q.error ? <ErrorBox error={q.error} what="los directos" /> : (q.data?.streams || []).length === 0 ? (
+        <div className="flex flex-wrap gap-1.5 mb-6" role="group" aria-label="Categoría de Twitch">{[["", "Todas"], ["VALORANT", "VALORANT"], ["Counter-Strike", "Counter-Strike"]].map(([v, l]) => <button key={v} className={"btn btn-sm " + (juego === v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === v} onClick={() => setJuego(v)} data-testid={"filter-twitch-" + (v || "todas")}>{l}</button>)}</div>
+        {q.isLoading ? <Skel h={160} n={1} /> : q.error ? <ErrorBox error={q.error} what="los directos" onRetry={() => q.refetch()} /> : (q.data?.streams || []).length === 0 ? (
           <Empty code={"twitch · " + (q.data?.total_canales ?? 0) + " canales registrados"} title="Ningún canal está en directo ahora" text="La lista se actualiza cada minuto con datos de Twitch. Vincula tu canal desde tu perfil para aparecer aquí cuando emitas." action={<Link href="/creadores" className="link-arrow">Ver creadores →</Link>} />
         ) : <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{q.data!.streams.map((s) => <StreamTile key={s.canal} s={s} />)}</div>}
       </div>

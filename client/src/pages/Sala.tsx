@@ -4,6 +4,7 @@ import { Link, useParams } from "wouter";
 import { useQueries } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { filtrosJuegos } from "@/lib/juegos";
+import { filterTeams } from "@/lib/discovery";
 import { api, assetUrl, type Team, type PtPlayer, type AccountPlayer, type Paged } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
 import { TeamTile, PlayerTile, MatchRow } from "@/components/domain";
@@ -34,11 +35,11 @@ export function SalaJugadores() {
       <div className="wrap grid gap-4">
         <div className="flex flex-wrap gap-3 items-center justify-between">
           <input className="input w-full sm:w-80" placeholder="Buscar jugador" aria-label="Buscar jugador" value={q} onChange={(e) => setQ(e.target.value)} data-testid="input-buscar-jugador" />
-          <div className="flex gap-1" role="group" aria-label="Juego">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Juego">
             {filtrosJuegos().map((j) => <button key={j.v} className={"btn btn-sm " + (juego === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.v} onClick={() => setJuego(j.v)}>{j.l}</button>)}
           </div>
         </div>
-        {teams.isLoading || loading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los jugadores" /> : vis.length === 0 ? (
+        {teams.isLoading || loading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los jugadores" onRetry={() => teams.refetch()} /> : vis.length === 0 ? (
           <Empty code="jugadores · 0" title={q || juego ? "Ningún jugador coincide con el filtro" : "Todavía no hay jugadores en plantillas"} />
         ) : (
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-3">{vis.map((p) => <PlayerTile key={p.slug} p={p} />)}</div>
@@ -54,16 +55,27 @@ export function SalaJugadores() {
 export function Equipos() {
   const q = useApi<{ data: Team[] }>("/api/teams");
   const [juego, setJuego] = useState("");
-  const vis = (q.data?.data || []).filter((t) => !juego || t.game === juego);
+  const [busqueda, setBusqueda] = useState("");
+  const vis = useMemo(() => filterTeams(q.data?.data || [], { juego, query: busqueda }), [q.data, juego, busqueda]);
   return (
     <>
       <PageHead eyebrow="Circuito" title="Equipos del circuito" lead="Equipos registrados en VANTS con su plantilla y sus partidas. Crea el tuyo e invita a tus compañeros con un código." />
       <div className="wrap grid gap-4">
-        <div className="flex gap-1" role="group" aria-label="Juego">
-          {filtrosJuegos().map((j) => <button key={j.v} className={"btn btn-sm " + (juego === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.v} onClick={() => setJuego(j.v)} data-testid={"filter-equipos-" + (j.v || "todos")}>{j.l}</button>)}
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <input
+            className="input w-full sm:w-80"
+            placeholder="Buscar equipo por nombre, tag o región"
+            aria-label="Buscar equipo"
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            data-testid="input-buscar-equipo"
+          />
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Juego">
+            {filtrosJuegos().map((j) => <button key={j.v} className={"btn btn-sm " + (juego === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.v} onClick={() => setJuego(j.v)} data-testid={"filter-equipos-" + (j.v || "todos")}>{j.l}</button>)}
+          </div>
         </div>
-        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los equipos" /> : vis.length === 0 ? (
-          <Empty code={"equipos · " + (juego || "todos")} title="No hay equipos en esta categoría" />
+        {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los equipos" onRetry={() => q.refetch()} /> : vis.length === 0 ? (
+          <Empty code={"equipos · " + (juego || "todos")} title={busqueda ? "Ningún equipo coincide con la búsqueda" : "No hay equipos en esta categoría"} />
         ) : <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-3">{vis.map((t) => <TeamTile key={t.slug} t={t} />)}</div>}
       </div>
       {juego !== "valorant" && <Section title="Equipos en FACEIT" eyebrow="CS2 · plantillas"><EquiposFaceitCircuito /></Section>}
