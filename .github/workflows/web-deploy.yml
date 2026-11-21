@@ -81,11 +81,14 @@ jobs:
           jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
           echo "bindings: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
-      - name: Parche CSP del worker (beacon de Cloudflare Web Analytics)
-        # El worker LIVE define la CSP del sitio. El beacon que Cloudflare inyecta
-        # (static.cloudflareinsights.com) no está en script-src y el navegador lo
-        # bloquea. Este paso lo añade de forma idempotente; si la línea cambia en
-        # el futuro, falla ruidosamente en vez de desplegar sin el arreglo.
+      - name: Parche CSP del worker (beacon + bloqueo de consentimiento de terceros)
+        # El worker LIVE define la CSP del sitio. Dos ajustes idempotentes:
+        # 1) script-src += https://static.cloudflareinsights.com (beacon de Web Analytics,
+        #    si no el navegador lo bloquea).
+        # 2) frame-src 'self' https: -> lista cerrada (Twitch/Kick/YouTube). El GTM roto
+        #    de Zaraz abre un iframe de consentimiento de Google (fondo blanco) que
+        #    tapa la web en móvil; con lista cerrada no puede cargarse.
+        # Si la línea base cambia en el futuro, falla ruidosamente.
         working-directory: vants
         run: |
           set -euo pipefail
@@ -93,15 +96,20 @@ jobs:
             const fs=require("fs");
             const f="src/worker.js";
             let c=fs.readFileSync(f,"utf8");
-            const DE="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com;";
-            const A ="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com;";
-            if (c.includes(A)) { console.log("CSP ya incluye el beacon de Web Analytics"); process.exit(0); }
-            if (!c.includes(DE)) { console.error("CSP esperada no encontrada en el worker LIVE; revisar el parche"); process.exit(1); }
-            c=c.replace(DE,A);
+            const DE1="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com;";
+            const A1 ="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com;";
+            const DE2="frame-src \u0027self\u0027 https:;";
+            const A2 ="frame-src \u0027self\u0027 https://*.twitch.tv https://kick.com https://*.kick.com https://www.youtube.com https://www.youtube-nocookie.com;";
+            if (c.includes(A1)) { console.log("CSP: beacon ya incluido"); }
+            else if (!c.includes(DE1)) { console.error("CSP script-src esperada no encontrada en el worker LIVE"); process.exit(1); }
+            else { c=c.replace(DE1,A1); console.log("CSP: + beacon de Web Analytics"); }
+            if (c.includes(A2)) { console.log("CSP: frame-src ya restringida"); }
+            else if (!c.includes(DE2)) { console.error("CSP frame-src esperada no encontrada en el worker LIVE"); process.exit(1); }
+            else { c=c.replace(DE2,A2); console.log("CSP: frame-src restringida (bloquea consentimiento de terceros)"); }
             fs.writeFileSync(f,c);
-            console.log("CSP parcheada: + https://static.cloudflareinsights.com en script-src");
           '
           grep -c "static.cloudflareinsights.com" src/worker.js
+          grep -c "youtube-nocookie" src/worker.js
 
       - name: Prueba en seco
         working-directory: vants

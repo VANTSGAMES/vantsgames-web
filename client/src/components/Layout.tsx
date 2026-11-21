@@ -251,7 +251,7 @@ export function Footer() {
         ))}
       </div>
       <div className="wrap py-5 flex flex-wrap gap-x-6 gap-y-2 justify-between small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
-        <span>© {new Date().getFullYear()} VANTS GAMES. VALORANT, League of Legends y Wild Rift son marcas de Riot Games; Counter-Strike 2 es marca de Valve; Fortnite es marca de Epic Games; EA SPORTS FC es marca de EA; Super Smash Bros. es marca de Nintendo; Call of Duty es marca de Activision; Free Fire es marca de Garena; Mobile Legends es marca de Moonton y Clash Royale de Supercell.</span>
+        <span>© {new Date().getFullYear()} VANTS GAMES.</span>
         <span className="flex gap-4">
           <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
           <Link href="/terminos" className="hover:text-white">Términos</Link>
