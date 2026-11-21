@@ -36,6 +36,8 @@ for (const [dens, px] of Object.entries(densidades)) {
 for (const d of ["mipmap-anydpi-v26"]) rmSync(`${RES}/${d}`, { recursive: true, force: true });
 
 // Splash: sólido oscuro (styles.xml del template referencia @drawable/splash)
+mkdirSync(`${RES}/drawable`, { recursive: true });
+mkdirSync(`${RES}/drawable-land`, { recursive: true });
 await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } }).png().toFile(`${RES}/drawable/splash.png`);
 await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } }).png().toFile(`${RES}/drawable-land/splash.png`);
 
