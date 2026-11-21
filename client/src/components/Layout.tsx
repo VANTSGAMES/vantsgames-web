@@ -123,8 +123,8 @@ function AccountButton() {
   }
   return (
     <div className="flex items-center gap-2">
-      <button className="btn btn-sm btn-ghost hidden sm:inline-flex" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
-      <button className="btn btn-sm btn-rojo hidden sm:inline-flex" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
+      <button className="btn btn-sm btn-ghost cta-xs-off" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
+      <button className="btn btn-sm btn-rojo cta-xs-off" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
     </div>
   );
 }

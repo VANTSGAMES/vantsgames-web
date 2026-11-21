@@ -298,6 +298,13 @@ button { font: inherit; color: inherit; }
   font-size: 0.68rem; color: var(--gris-3);
 }
 
+/* En xs los CTA del header se esconden (duplicados en el menú móvil).
+   `hidden` de Tailwind pierde contra `.btn` (display:inline-flex) porque
+   .btn se declara después de las utilidades, hence el !important. */
+@media (max-width: 639px) {
+  .cta-xs-off { display: none !important; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .marquee-pista { animation: none; }
