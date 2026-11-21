@@ -1,9 +1,10 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Switch, Route, Router, Redirect } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./lib/auth";
+import { Privado } from "./components/MuroAcceso";
 import { Shell } from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FeedbackProvider } from "./components/FeedbackProvider";
@@ -58,6 +59,11 @@ const ANTIGUAS: [string, string][] = [
   ["/play", "/torneos/competir"], ["/historia", "/comunidad"], ["/guia", "/comunidad"], ["/descargar", "/"],
 ];
 
+/** Ruta envuelta en el muro de miembros: sin sesión se ve la vitrina, con sesión la sección. */
+function Priv({ seccion, children }: { seccion: string; children: ReactNode }) {
+  return <Privado seccion={seccion}>{children}</Privado>;
+}
+
 // En Cloudflare: URLs limpias (history). En la vista previa embebida: hash.
 const HASH = import.meta.env.VITE_ROUTER !== "history";
 
@@ -71,50 +77,50 @@ function Rutas() {
           <Route path="/privacidad">{() => <Legal doc="privacidad" />}</Route>
           <Route path="/terminos">{() => <Legal doc="terminos" />}</Route>
           {ANTIGUAS.map(([de, a]) => <Route key={de} path={de}>{() => <Redirect to={a} replace />}</Route>)}
-          <Route path="/:lang/tournaments/*?">{() => <TorneosLista />}</Route>
+          <Route path="/:lang/tournaments/*?">{() => <Priv seccion="Los torneos"><TorneosLista /></Priv>}</Route>
           <Route path={new RegExp("^/(?<p>.+)\\.html$")}>{(m: any) => <Redirect to={"/" + m.p} replace />}</Route>
-          <Route path="/sala" component={SalaJugadores} />
-          <Route path="/equipos" component={Equipos} />
-          <Route path="/equipos/:slug" component={EquipoDetalle} />
-          <Route path="/equipo-vants" component={EquipoVants} />
-          <Route path="/jugadores/:slug" component={JugadorDetalle} />
-          <Route path="/ranking" component={RankingVants} />
-          <Route path="/ranked" component={Ranked} />
-          <Route path="/torneos">{() => <TorneosLista />}</Route>
-          <Route path="/torneos/competir">{() => <TorneosLista competir />}</Route>
-          <Route path="/torneos/crear" component={CrearTorneo} />
-          <Route path="/torneos/:slug" component={TorneoDetalle} />
-          <Route path="/workspace" component={Workspace} />
-          <Route path="/arena-3d" component={Arena3D} />
-          <Route path="/agenda">{() => <Agenda modo="agenda" />}</Route>
-          <Route path="/resultados">{() => <Agenda modo="resultados" />}</Route>
-          <Route path="/mi-calendario" component={MiCalendario} />
-          <Route path="/bracket" component={BracketPrincipal} />
-          <Route path="/ligas" component={Ligas} />
-          <Route path="/clips">{() => <Clips vista="destacados" />}</Route>
-          <Route path="/clips/recientes">{() => <Clips vista="recientes" />}</Route>
-          <Route path="/clips/juego">{() => <Clips vista="juego" />}</Route>
-          <Route path="/clips/publicar">{() => <ClipsPrivado vista="publicar" />}</Route>
-          <Route path="/clips/biblioteca">{() => <ClipsPrivado vista="biblioteca" />}</Route>
-          <Route path="/comunidad" component={Comunidad} />
-          <Route path="/comunidad/lfg" component={BuscadorEquipo} />
-          <Route path="/comunidad/foro" component={ForoComunidad} />
-          <Route path="/comunidad/misiones" component={MisionesComunidad} />
-          <Route path="/comunidad/votaciones" component={VotacionesComunidad} />
-          <Route path="/noticias" component={Noticias} />
-          <Route path="/noticias/:slug" component={NoticiaDetalle} />
-          <Route path="/eventos" component={EventosLista} />
-          <Route path="/publicar" component={Publicar} />
-          <Route path="/en-vivo" component={EnVivo} />
-          <Route path="/creadores" component={Creadores} />
+          <Route path="/sala"><Priv seccion="La sala de jugadores"><SalaJugadores /></Priv></Route>
+          <Route path="/equipos"><Priv seccion="Los equipos del circuito"><Equipos /></Priv></Route>
+          <Route path="/equipos/:slug"><Priv seccion="Los equipos del circuito"><EquipoDetalle /></Priv></Route>
+          <Route path="/equipo-vants"><Priv seccion="El equipo VANTS"><EquipoVants /></Priv></Route>
+          <Route path="/jugadores/:slug"><Priv seccion="Las fichas de jugador"><JugadorDetalle /></Priv></Route>
+          <Route path="/ranking"><Priv seccion="El ranking global"><RankingVants /></Priv></Route>
+          <Route path="/ranked"><Priv seccion="VANTS Ranked"><Ranked /></Priv></Route>
+          <Route path="/torneos"><Priv seccion="Los torneos"><TorneosLista /></Priv></Route>
+          <Route path="/torneos/competir"><Priv seccion="Las inscripciones abiertas"><TorneosLista competir /></Priv></Route>
+          <Route path="/torneos/crear"><Priv seccion="La creación de torneos"><CrearTorneo /></Priv></Route>
+          <Route path="/torneos/:slug"><Priv seccion="Este torneo"><TorneoDetalle /></Priv></Route>
+          <Route path="/workspace"><Priv seccion="El Centro Workspace"><Workspace /></Priv></Route>
+          <Route path="/arena-3d"><Priv seccion="La Arena 3D"><Arena3D /></Priv></Route>
+          <Route path="/agenda"><Priv seccion="La agenda en vivo"><Agenda modo="agenda" /></Priv></Route>
+          <Route path="/resultados"><Priv seccion="Los resultados"><Agenda modo="resultados" /></Priv></Route>
+          <Route path="/mi-calendario"><Priv seccion="Tu calendario"><MiCalendario /></Priv></Route>
+          <Route path="/bracket"><Priv seccion="El bracket principal"><BracketPrincipal /></Priv></Route>
+          <Route path="/ligas"><Priv seccion="Las ligas y temporadas"><Ligas /></Priv></Route>
+          <Route path="/clips"><Priv seccion="Los clips"><Clips vista="destacados" /></Priv></Route>
+          <Route path="/clips/recientes"><Priv seccion="Los clips"><Clips vista="recientes" /></Priv></Route>
+          <Route path="/clips/juego"><Priv seccion="Los clips"><Clips vista="juego" /></Priv></Route>
+          <Route path="/clips/publicar"><Priv seccion="Publicar clips"><ClipsPrivado vista="publicar" /></Priv></Route>
+          <Route path="/clips/biblioteca"><Priv seccion="Tu biblioteca de clips"><ClipsPrivado vista="biblioteca" /></Priv></Route>
+          <Route path="/comunidad"><Priv seccion="La comunidad"><Comunidad /></Priv></Route>
+          <Route path="/comunidad/lfg"><Priv seccion="El buscador LFG"><BuscadorEquipo /></Priv></Route>
+          <Route path="/comunidad/foro"><Priv seccion="El foro"><ForoComunidad /></Priv></Route>
+          <Route path="/comunidad/misiones"><Priv seccion="Las misiones semanales"><MisionesComunidad /></Priv></Route>
+          <Route path="/comunidad/votaciones"><Priv seccion="Las votaciones"><VotacionesComunidad /></Priv></Route>
+          <Route path="/noticias"><Priv seccion="Las noticias"><Noticias /></Priv></Route>
+          <Route path="/noticias/:slug"><Priv seccion="Esta noticia"><NoticiaDetalle /></Priv></Route>
+          <Route path="/eventos"><Priv seccion="Los eventos"><EventosLista /></Priv></Route>
+          <Route path="/publicar"><Priv seccion="Publicar en VANTS"><Publicar /></Priv></Route>
+          <Route path="/en-vivo"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
+          <Route path="/creadores"><Priv seccion="Los creadores"><Creadores /></Priv></Route>
           <Route path="/membresias" component={Membresias} />
-          <Route path="/insignias" component={Insignias} />
-          <Route path="/logros" component={Logros} />
-          <Route path="/progreso" component={Progreso} />
-          <Route path="/tienda" component={Tienda} />
-          <Route path="/tienda/:cat" component={Tienda} />
-          <Route path="/perfil" component={Perfil} />
-          <Route path="/perfil/:sub" component={Perfil} />
+          <Route path="/insignias"><Priv seccion="Las insignias"><Insignias /></Priv></Route>
+          <Route path="/logros"><Priv seccion="Los logros"><Logros /></Priv></Route>
+          <Route path="/progreso"><Priv seccion="Tu progreso"><Progreso /></Priv></Route>
+          <Route path="/tienda"><Priv seccion="La tienda oficial"><Tienda /></Priv></Route>
+          <Route path="/tienda/:cat"><Priv seccion="La tienda oficial"><Tienda /></Priv></Route>
+          <Route path="/perfil"><Priv seccion="Tu perfil"><Perfil /></Priv></Route>
+          <Route path="/perfil/:sub"><Priv seccion="Tu perfil"><Perfil /></Priv></Route>
           <Route path="/entrar">{() => <Acceso modo="entrar" />}</Route>
           <Route path="/registro">{() => <Acceso modo="registro" />}</Route>
           <Route path="/recuperar">{() => <Acceso modo="recuperar" />}</Route>

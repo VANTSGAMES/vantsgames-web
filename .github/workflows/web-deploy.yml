@@ -81,6 +81,28 @@ jobs:
           jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
           echo "bindings: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
+      - name: Parche CSP del worker (beacon de Cloudflare Web Analytics)
+        # El worker LIVE define la CSP del sitio. El beacon que Cloudflare inyecta
+        # (static.cloudflareinsights.com) no está en script-src y el navegador lo
+        # bloquea. Este paso lo añade de forma idempotente; si la línea cambia en
+        # el futuro, falla ruidosamente en vez de desplegar sin el arreglo.
+        working-directory: vants
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs=require("fs");
+            const f="src/worker.js";
+            let c=fs.readFileSync(f,"utf8");
+            const DE="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com;";
+            const A ="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com;";
+            if (c.includes(A)) { console.log("CSP ya incluye el beacon de Web Analytics"); process.exit(0); }
+            if (!c.includes(DE)) { console.error("CSP esperada no encontrada en el worker LIVE; revisar el parche"); process.exit(1); }
+            c=c.replace(DE,A);
+            fs.writeFileSync(f,c);
+            console.log("CSP parcheada: + https://static.cloudflareinsights.com en script-src");
+          '
+          grep -c "static.cloudflareinsights.com" src/worker.js
+
       - name: Prueba en seco
         working-directory: vants
         env:

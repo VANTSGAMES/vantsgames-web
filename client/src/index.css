@@ -272,6 +272,32 @@ button { font: inherit; color: inherit; }
 .candado { animation: candado-tiembla 4s ease-in-out infinite; transform-origin: top center; }
 @keyframes candado-tiembla { 0%, 92%, 100% { transform: none; } 94% { transform: rotate(-6deg); } 96% { transform: rotate(5deg); } 98% { transform: rotate(-2deg); } }
 
+/* ---------- Muro de acceso de miembros ---------- */
+.muro-vitrina { position: relative; overflow: hidden; min-height: 320px; }
+.muro-preview {
+  padding: clamp(1.25rem, 2.5vw, 1.75rem);
+  display: grid; gap: 10px;
+  filter: blur(5px) saturate(0.55);
+  opacity: 0.5;
+  user-select: none; pointer-events: none;
+}
+.muro-velo {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, rgba(10, 10, 11, 0.25) 0%, rgba(10, 10, 11, 0.82) 100%);
+}
+.muro-lock { position: absolute; inset: 0; display: grid; place-items: center; z-index: 2; }
+.muro-lock svg { filter: drop-shadow(0 0 24px rgba(255, 13, 46, 0.55)); }
+.muro-num {
+  font-family: var(--f-mono); font-size: 0.7rem; letter-spacing: 0.14em;
+  color: var(--rojo); opacity: 0.9;
+}
+.muro-vitrina::after {
+  content: "MIEMBROS"; position: absolute; z-index: 2;
+  left: 50%; bottom: 14px; transform: translateX(-50%);
+  font-family: var(--f-display); font-weight: 800; letter-spacing: 0.32em;
+  font-size: 0.68rem; color: var(--gris-3);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .marquee-pista { animation: none; }

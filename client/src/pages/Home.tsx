@@ -6,6 +6,7 @@ type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string
 import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream, type Badge } from "@/lib/api";
 import { assetUrl } from "@/lib/api";
 import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
+import { useAuth } from "@/lib/auth";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
 import { fecha } from "@/lib/format";
 import { JUEGOS } from "@/lib/juegos";
@@ -18,6 +19,8 @@ import { NivelFaceit } from "./PerfilFaceit";
 function Hero() {
   const live = useApi<{ streams: Stream[] }>("/api/twitch/directos?limite=1", { refetchMs: 60_000 });
   const vivosInt = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
+  const { status, login } = useAuth();
+  const anonimo = status === "anonimo";
   const enVivo = Math.max(live.data?.streams?.length || 0, (vivosInt.data?.directos || []).filter((d) => d.en_vivo).length);
   const palabras: { t: string; rojo?: boolean }[] = [
     { t: "Compete." }, { t: "Connect." }, { t: "Dominate.", rojo: true },
@@ -39,9 +42,21 @@ function Hero() {
           Una plataforma para conectar jugadores, comunidades y oportunidades competitivas en Venezuela y Latinoamérica: torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
         </p>
         <div className="flex flex-wrap gap-3 mt-8 reveal anim-5">
-          <Link href="/torneos" className="btn btn-rojo" data-testid="hero-torneos">Ver torneos</Link>
-          <Link href="/torneos/crear" className="btn" data-testid="hero-crear">Crear mi torneo</Link>
-          <Link href="/sala" className="btn btn-ghost" data-testid="hero-sala">Entrar a la sala</Link>
+          {anonimo ? (
+            <>
+              <button type="button" className="btn btn-rojo" onClick={() => login({ signup: true })} data-testid="hero-signup">
+                Crear cuenta gratis <span aria-hidden="true">→</span>
+              </button>
+              <Link href="/torneos" className="btn" data-testid="hero-torneos">Ver torneos</Link>
+              <button type="button" className="btn btn-ghost" onClick={() => login()} data-testid="hero-login">Entrar</button>
+            </>
+          ) : (
+            <>
+              <Link href="/torneos" className="btn btn-rojo" data-testid="hero-torneos">Ver torneos</Link>
+              <Link href="/torneos/crear" className="btn" data-testid="hero-crear">Crear mi torneo</Link>
+              <Link href="/sala" className="btn btn-ghost" data-testid="hero-sala">Entrar a la sala</Link>
+            </>
+          )}
         </div>
         {enVivo > 0 && (
           <Link href="/en-vivo" className="inline-flex items-center gap-2 mt-8 tag tag-rojo reveal anim-6" data-testid="hero-live">
