@@ -96,7 +96,8 @@ function Marquee() {
 
 /* ---------- Bloque 3 · Contadores: solo métricas reales (nunca 0) ---------- */
 function useContador(fin: number, activo: boolean, ms = 1100) {
-  const [n, setN] = useState(0);
+  // Arranca en el valor final: nunca reposa en 0 mientras no sea visible.
+  const [n, setN] = useState(fin);
   const raf = useRef<number | null>(null);
   useEffect(() => {
     if (!activo || fin <= 0) return;
