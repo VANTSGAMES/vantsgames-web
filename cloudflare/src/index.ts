@@ -65,15 +65,11 @@ export default {
     }
 
     // 4) Pasarela WebSocket a la sala (los DO no reciben internet directo).
+    //    Se reenvía la petición ORIGINAL para conservar el handshake WS.
     const sala = url.pathname.match(/^\/sala\/([^/]+)\/ws$/);
     if (sala) {
-      const nick = url.searchParams.get("nick") || "anon";
       const stub = env.SALA_TORNEO.getByName(`torneo-${sala[1]}`);
-      return stub.fetch(
-        new Request(`https://sala.local/join?nick=${encodeURIComponent(nick)}`, {
-          headers: request.headers,
-        }),
-      );
+      return stub.fetch(request);
     }
 
     return new Response("No encontrado", { status: 404 });

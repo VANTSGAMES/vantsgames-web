@@ -50,8 +50,10 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== "/join" || request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-      return new Response("Se esperaba GET /join con Upgrade: websocket", { status: 426 });
+    // El worker reenvía la petición original, así que la ruta puede ser
+    // /join (directo) o la pasarela /sala/<id>/ws; lo que manda es el Upgrade.
+    if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("Se esperaba GET con Upgrade: websocket", { status: 426 });
     }
     if (this.ctx.getWebSockets().length >= 200) {
       return new Response("Sala llena", { status: 503 });
