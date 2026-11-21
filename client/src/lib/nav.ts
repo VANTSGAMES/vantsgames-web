@@ -1,56 +1,35 @@
 export interface NavLink { label: string; to: string; hint?: string; privado?: boolean }
 export interface NavGroup { label: string; base: string; links: NavLink[] }
 
+/**
+ * Navegación principal: 4 grupos desplegables + el enlace directo Empresas
+ * (ver Layout.tsx). La Tienda permanece fuera del menú hasta tener catálogo
+ * activo; páginas como foro, misiones o workspace siguen accesibles desde
+ * el buscador (⌘K), el perfil y enlaces internos.
+ */
 export const NAV: NavGroup[] = [
-  { label: "Sala", base: "/sala", links: [
-    { label: "Sala de jugadores", to: "/sala", hint: "Jugadores registrados en VANTS" },
-    { label: "Equipos del circuito", to: "/equipos", hint: "Plantillas y fichas" },
-    { label: "Equipo VANTS", to: "/equipo-vants", hint: "El roster oficial" },
-    { label: "Ranking global", to: "/ranking", hint: "Jugadores VANTS por ELO de FACEIT" },
-    { label: "VANTS Ranked", to: "/ranked", hint: "Competición por rango" },
-  ]},
-  { label: "Torneos", base: "/torneos", links: [
-    { label: "Competir", to: "/torneos/competir", hint: "Inscripciones abiertas" },
-    { label: "Crear mi torneo", to: "/torneos/crear", hint: "Torneos de comunidad · con plan VANTS" },
-    { label: "Descubrir torneos", to: "/torneos", hint: "Próximos, en curso y archivo" },
+  { label: "Competición", base: "/torneos", links: [
+    { label: "Torneos activos", to: "/torneos", hint: "Próximos, en curso y archivo" },
+    { label: "Crear mi torneo", to: "/crear-torneo", hint: "Torneos de comunidad · con plan VANTS" },
     { label: "Agenda en vivo", to: "/agenda", hint: "Partidos en directo y próximos" },
     { label: "Últimos resultados", to: "/resultados" },
-    { label: "Tu calendario", to: "/mi-calendario", privado: true },
-    { label: "Centro Workspace", to: "/workspace", hint: "Google Drive, Docs, Sheets, Calendar y Meet" },
-    { label: "Bracket principal", to: "/bracket" },
-    { label: "Ligas y temporadas", to: "/ligas" },
   ]},
-  { label: "Clips", base: "/clips", links: [
-    { label: "Clips destacados", to: "/clips" },
-    { label: "Clips recientes", to: "/clips/recientes" },
-    { label: "Por videojuego", to: "/clips/juego" },
-    { label: "Publicar clip", to: "/clips/publicar", privado: true },
-    { label: "Mi biblioteca", to: "/clips/biblioteca", privado: true },
+  { label: "Sala & Ranking", base: "/sala", links: [
+    { label: "Ranking global", to: "/ranking", hint: "Jugadores VANTS por ELO de FACEIT" },
+    { label: "VANTS Ranked", to: "/ranked", hint: "Competición por rango" },
+    { label: "Equipos del circuito", to: "/equipos", hint: "Plantillas y fichas" },
+    { label: "Sala de jugadores", to: "/sala", hint: "Jugadores registrados en VANTS" },
   ]},
   { label: "Comunidad", base: "/comunidad", links: [
-    { label: "Comunidad", to: "/comunidad" },
-    { label: "Buscador LFG / Scrims", to: "/comunidad/lfg", hint: "Busca equipo, jugadores o scrims en los 11 juegos" },
-    { label: "Muro / Foro por juego", to: "/comunidad/foro", hint: "Discusiones, guías, lineups, highlights y debates" },
-    { label: "Misiones Semanales", to: "/comunidad/misiones", hint: "Retos semanales, barra de XP e insignias de temporada" },
-    { label: "Votaciones y Pick'em", to: "/comunidad/votaciones", hint: "Encuestas de torneos, Clip/MVP y predicciones de finales" },
+    { label: "Clips destacados", to: "/clips" },
+    { label: "Directos Twitch & Kick", to: "/directos", hint: "Canales de la comunidad en vivo" },
     { label: "Noticias y anuncios", to: "/noticias" },
     { label: "Eventos", to: "/eventos" },
-    { label: "Arena 3D", to: "/arena-3d", hint: "Visor 3D interactivo del Trofeo VANTS" },
-    { label: "Twitch en vivo", to: "/en-vivo" },
-    { label: "Creadores destacados", to: "/creadores" },
   ]},
-  { label: "Membresías", base: "/membresias", links: [
-    { label: "Planes", to: "/membresias" },
-    { label: "Insignias", to: "/insignias" },
-    { label: "Logros", to: "/logros", privado: true },
-    { label: "Progreso", to: "/progreso", privado: true },
-  ]},
-  { label: "Tienda", base: "/tienda", links: [
-    { label: "Tienda oficial", to: "/tienda" },
-    { label: "Camisetas", to: "/tienda/camisetas" },
-    { label: "Hoodies", to: "/tienda/hoodies" },
-    { label: "Jerseys", to: "/tienda/jerseys" },
-    { label: "Accesorios", to: "/tienda/accesorios" },
+  { label: "Planes", base: "/membresias", links: [
+    { label: "Membresías PRO y CREATOR", to: "/membresias", hint: "Juega con ventaja" },
+    { label: "Pase de Temporada S4", to: "/pase-s4", hint: "7,99 € · 180 días" },
+    { label: "Insignias desbloqueables", to: "/insignias", hint: "Catálogo y 1000 logros" },
   ]},
 ];
 

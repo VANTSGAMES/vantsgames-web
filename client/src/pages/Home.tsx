@@ -3,28 +3,21 @@ import { Link } from "wouter";
 import { Insignia3D, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useApi } from "@/lib/useApi";
 type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string | null; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string; desde: string | null };
-import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream, type Badge } from "@/lib/api";
-import { assetUrl } from "@/lib/api";
+import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream } from "@/lib/api";
 import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
-import { useAuth } from "@/lib/auth";
+import { SeccionEmpresas, APP_APK } from "@/components/SeccionEmpresas";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
-import { fecha } from "@/lib/format";
 import { JUEGOS } from "@/lib/juegos";
 import { countGamesByPlatform, filterGamesByPlatform, type PlataformaFiltro } from "@/lib/discovery";
 import { PLANES } from "@/lib/planes";
+import { useAuth } from "@/lib/auth";
 import { useRanking, useEventos, FilaEvento } from "./Vants";
 import { NivelFaceit } from "./PerfilFaceit";
 
-/* ---------- Hero: titular palabra por palabra sobre retícula + glow CSS ---------- */
+/* ---------- Bloque 1 · Hero: titular + CTAs de bienvenida ---------- */
 function Hero() {
-  const live = useApi<{ streams: Stream[] }>("/api/twitch/directos?limite=1", { refetchMs: 60_000 });
-  const vivosInt = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
   const { status, login } = useAuth();
   const anonimo = status === "anonimo";
-  const enVivo = Math.max(live.data?.streams?.length || 0, (vivosInt.data?.directos || []).filter((d) => d.en_vivo).length);
-  const palabras: { t: string; rojo?: boolean }[] = [
-    { t: "Compete." }, { t: "Connect." }, { t: "Dominate.", rojo: true },
-  ];
   return (
     <section className="relative overflow-hidden border-b" style={{ borderColor: "var(--linea-suave)" }}>
       <div className="hero-fondo absolute inset-0" aria-hidden="true" />
@@ -32,39 +25,49 @@ function Hero() {
       <div className="wrap relative py-20 md:py-28 lg:py-36">
         <div className="eyebrow mb-6 reveal anim-1">ESPORTS · HECHO EN VENEZUELA</div>
         <h1 className="d-hero">
-          {palabras.map((p, i) => (
-            <span key={p.t} className="palabra block" style={{ "--d": `${80 + i * 120}ms`, color: p.rojo ? "var(--rojo)" : undefined } as CSSProperties}>
-              {p.t}
+          {["Compete.", "Connect.", "Dominate."].map((t, i) => (
+            <span key={t} className="palabra block" style={{ "--d": `${80 + i * 120}ms`, color: i === 2 ? "var(--rojo)" : undefined } as CSSProperties}>
+              {t}
             </span>
           ))}
         </h1>
-        <p className="lead mt-6 reveal anim-4">
-          Una plataforma para conectar jugadores, comunidades y oportunidades competitivas en Venezuela y Latinoamérica: torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
+        <p className="lead mt-6 reveal anim-4" style={{ maxWidth: "64ch" }}>
+          Una plataforma para conectar jugadores, comunidades y oportunidades competitivas en Venezuela y Latinoamérica:
+          torneos con bracket, rankings calculados en servidor, clips y la comunidad que juega cada noche.
         </p>
         <div className="flex flex-wrap gap-3 mt-8 reveal anim-5">
           {anonimo ? (
-            <>
-              <button type="button" className="btn btn-rojo" onClick={() => login({ signup: true })} data-testid="hero-signup">
-                Crear cuenta gratis <span aria-hidden="true">→</span>
-              </button>
-              <Link href="/torneos" className="btn" data-testid="hero-torneos">Ver torneos</Link>
-              <button type="button" className="btn btn-ghost" onClick={() => login()} data-testid="hero-login">Entrar</button>
-            </>
-          ) : (
-            <>
-              <Link href="/torneos" className="btn btn-rojo" data-testid="hero-torneos">Ver torneos</Link>
-              <Link href="/torneos/crear" className="btn" data-testid="hero-crear">Crear mi torneo</Link>
-              <Link href="/sala" className="btn btn-ghost" data-testid="hero-sala">Entrar a la sala</Link>
-            </>
-          )}
+            <button type="button" className="btn btn-rojo" data-testid="hero-signup" onClick={() => login({ signup: true, returnTo: "/perfil" })}>
+              Crear cuenta gratis <span aria-hidden="true">→</span>
+            </button>
+          ) : null}
+          <Link href="/torneos" className={"btn " + (anonimo ? "" : "btn-rojo")} data-testid="hero-torneos">Ver torneos</Link>
+          <a href={APP_APK} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="hero-apk">
+            Descargar App Android (v1.0.0) <span aria-hidden="true">↗</span>
+          </a>
         </div>
-        {enVivo > 0 && (
-          <Link href="/en-vivo" className="inline-flex items-center gap-2 mt-8 tag tag-rojo reveal anim-6" data-testid="hero-live">
-            <span className="dot-live" /> {enVivo} canal de VANTS en directo
-          </Link>
-        )}
       </div>
     </section>
+  );
+}
+
+/* ---------- Guía rápida: del registro a la final ---------- */
+function ComoFunciona() {
+  const pasos = [
+    { n: "01", t: "Crea tu cuenta gratis", d: "Configura tu perfil gamer y vincula Riot o FACEIT para registrar tus estadísticas reales." },
+    { n: "02", t: "Arma tu comunidad o equipo", d: "Crea tu squad o únete con un código de invitación y elige tus juegos favoritos." },
+    { n: "03", t: "Compite, organiza y domina", d: "Participa en brackets oficiales, crea tus propios torneos, escala el ranking y desbloquea insignias." },
+  ];
+  return (
+    <div className="grid gap-px md:grid-cols-3" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }} data-testid="home-pasos">
+      {pasos.map((p, i) => (
+        <div key={p.n} className="reveal flotar p-6 md:p-8" style={{ "--d": `${i * 90}ms`, background: "var(--grafito-1)" } as CSSProperties}>
+          <div className="num d-2" style={{ color: "var(--rojo)" }}>{p.n}</div>
+          <div className="d-3 mt-3">{p.t}</div>
+          <p className="muted small mt-2">{p.d}</p>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -91,7 +94,7 @@ function Marquee() {
   );
 }
 
-/* ---------- Contador animado: cuenta desde 0 hasta `fin` al entrar en pantalla ---------- */
+/* ---------- Bloque 3 · Contadores: solo métricas reales (nunca 0) ---------- */
 function useContador(fin: number, activo: boolean, ms = 1100) {
   const [n, setN] = useState(0);
   const raf = useRef<number | null>(null);
@@ -128,18 +131,7 @@ function Stat({ valor, sufijo, label, delay }: { valor: number; sufijo?: string;
   );
 }
 
-function Stats({ torneos, equipos }: { torneos: number; equipos: number }) {
-  return (
-    <div className="grid-auto grid grid-cols-2 md:grid-cols-4" data-testid="home-stats">
-      <Stat valor={Math.max(torneos, 0)} label="Torneos del circuito" delay="0ms" />
-      <Stat valor={Math.max(equipos, 0)} label="Equipos registrados" delay="80ms" />
-      <Stat valor={JUEGOS.length} label="Juegos competitivos" delay="160ms" />
-      <Stat valor={1000} sufijo="+" label="Logros desbloqueables" delay="240ms" />
-    </div>
-  );
-}
-
-/* ---------- Torneo destacado: próximo torneo con cuenta regresiva ---------- */
+/* ---------- Torneo destacado: cuenta regresiva del próximo torneo ---------- */
 function useCuentaRegresiva(cuando?: string | null) {
   const [restante, setRestante] = useState<{ d: number; h: number; m: number; s: number } | null>(null);
   useEffect(() => {
@@ -197,26 +189,6 @@ function TorneoDestacado({ t }: { t: Tournament }) {
   );
 }
 
-/* ---------- Cómo funciona: 3 pasos del embudo competitivo ---------- */
-function ComoFunciona() {
-  const pasos = [
-    { n: "01", t: "Crea tu cuenta", d: "Regístrate gratis, configura tu nick y vincula FACEIT o Riot para que tus estadísticas cuenten." },
-    { n: "02", t: "Arma tu equipo", d: "Crea tu equipo o únete con un código de invitación. Elige tu juego del circuito VANTS." },
-    { n: "03", t: "Compite y domina", d: "Inscríbete en torneos con bracket, sube en el ranking calculado en servidor y gana premios." },
-  ];
-  return (
-    <div className="grid gap-px md:grid-cols-3" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }} data-testid="home-pasos">
-      {pasos.map((p, i) => (
-        <div key={p.n} className="reveal flotar p-6 md:p-8" style={{ "--d": `${i * 90}ms`, background: "var(--grafito-1)" } as CSSProperties}>
-          <div className="num d-2" style={{ color: "var(--rojo)" }}>{p.n}</div>
-          <div className="d-3 mt-3">{p.t}</div>
-          <p className="muted small mt-2">{p.d}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function List<T>({ q, empty, render, what }: { q: { isLoading: boolean; error: any; data?: T[]; onRetry?: () => void }; empty: JSX.Element; render: (x: T, i: number) => JSX.Element; what: string }) {
   if (q.isLoading) return <Skel />;
   if (q.error) return <ErrorBox error={q.error} what={what} onRetry={q.onRetry} />;
@@ -224,12 +196,124 @@ function List<T>({ q, empty, render, what }: { q: { isLoading: boolean; error: a
   return <>{q.data.map(render)}</>;
 }
 
-const PLATAFORMAS: PlataformaFiltro[] = ["Todas", "PC", "Consola", "Móvil"];
+/* ---------- Bloque 2 · El Circuito: filtros con integrados destacados ---------- */
+type FiltroJuego = PlataformaFiltro | "Integrados";
+const FILTROS: FiltroJuego[] = ["Todas", "Integrados", "PC", "Consola", "Móvil"];
 
-export default function Home() {
-  const [plataforma, setPlataforma] = useState<PlataformaFiltro>("Todas");
-  const juegosVisibles = useMemo(() => filterGamesByPlatform(JUEGOS, plataforma), [plataforma]);
+function ElCircuito() {
+  const [filtro, setFiltro] = useState<FiltroJuego>("Todas");
   const conteoPlataformas = useMemo(() => countGamesByPlatform(JUEGOS), []);
+  const visibles = useMemo(() => {
+    if (filtro === "Integrados") return JUEGOS.filter((j) => j.integrado);
+    if (filtro === "Todas") return [...JUEGOS].sort((a, b) => Number(b.integrado || false) - Number(a.integrado || false));
+    return filterGamesByPlatform(JUEGOS, filtro).sort((a, b) => Number(b.integrado || false) - Number(a.integrado || false));
+  }, [filtro]);
+  const cuenta = (f: FiltroJuego) =>
+    f === "Integrados" ? JUEGOS.filter((j) => j.integrado).length : conteoPlataformas[f as PlataformaFiltro] ?? visibles.length;
+
+  return (
+    <Section id="juegos" eyebrow="El circuito" title={<>Los <span style={{ color: "var(--rojo)" }}>11 juegos</span> de VANTS</>}>
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+        <p className="muted" style={{ maxWidth: "66ch" }}>
+          Once títulos competitivos entre PC, consola y móvil. VALORANT y Counter-Strike 2 tienen estadísticas
+          integradas (FACEIT / Riot); el resto completa el circuito de torneos, equipos y clips.
+        </p>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar juegos" data-testid="home-platform-filter">
+          {FILTROS.map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={"btn btn-sm " + (filtro === f ? "btn-rojo" : "btn-ghost")}
+              aria-pressed={filtro === f}
+              onClick={() => setFiltro(f)}
+              data-testid={"juego-filter-" + f.toLowerCase()}
+            >
+              {f === "Integrados" ? "Integrados (Stats en vivo)" : f} <span className="num opacity-75">({cuenta(f)})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="grid-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4" data-testid="home-juegos">
+        {visibles.map((j, i) => (
+          <div
+            key={j.slug}
+            className="reveal panel juego-cover relative block min-h-[220px]"
+            style={{ "--d": `${Math.min(i * 40, 320)}ms` } as CSSProperties}
+            data-testid={"home-juego-" + j.slug}
+          >
+            {j.img && <img src={pub(j.img)} alt={j.nombre} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.62 }} loading="lazy" />}
+            <div className="absolute inset-0" style={{ background: "linear-gradient(0deg, rgba(10,10,11,.95) 8%, rgba(10,10,11,.25) 60%)" }} />
+            <Link href={"/torneos?juego=" + j.slug} className="absolute inset-0 z-10" aria-label={"Torneos de " + j.nombre} />
+            <div className="relative h-full flex flex-col justify-end p-4 pointer-events-none">
+              <div className="font-semibold leading-tight">{j.nombre}</div>
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <span className="tag">{j.plataforma}</span>
+                {j.integrado ? <span className="tag tag-rojo">Estadísticas integradas</span> : null}
+              </div>
+              <div className="flex gap-3 mt-2 text-xs pointer-events-auto">
+                <Link href={"/torneos?juego=" + j.slug} className="muted hover:text-white underline">Torneos</Link>
+                <Link href="/clips" className="muted hover:text-white underline">Clips</Link>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+/* ---------- Bloque 4 · Escalera de planes + insignias de fundadores ---------- */
+function EscaleraPlanes() {
+  const insignias = useCatalogoInsignias();
+  const gratuito = { id: "gratis", kicker: "Punto de partida", nombre: "Plan Gratuito", precio: "0 € · para siempre", lema: "Entra, compite y crece con la comunidad.", beneficios: ["Registro con verificación de correo", "Participación en comunidad y ranking", "Acceso a torneos abiertos"] };
+  const escalera = [gratuito, ...PLANES.filter((p) => p.checkout)];
+  return (
+    <Section id="membresias" eyebrow="Planes, niveles e insignias" title={<>Tu escalera en <span style={{ color: "var(--rojo)" }}>VANTS</span></>} more={{ to: "/membresias", label: "Comparar planes" }}>
+      <div className="grid-auto grid md:grid-cols-2 lg:grid-cols-4">
+        {escalera.map((p, i) => (
+          <Link
+            key={p.id}
+            href="/membresias"
+            className={"reveal flotar p-6 block" + (p.id === "pro" ? " brillo-borde" : "")}
+            style={{ "--d": `${i * 80}ms` } as CSSProperties}
+            data-testid={"home-plan-" + p.id}
+          >
+            <div className="eyebrow mb-3">{p.kicker}</div>
+            <div className="d-2">{p.nombre}</div>
+            <div className="num mt-2" style={{ color: "var(--gris-1)" }}>{p.precio}</div>
+            <ul className="muted small mt-3 grid gap-1.5">
+              {(p as any).beneficios.slice(0, 4).map((b: string) => <li key={b}>· {b}</li>)}
+            </ul>
+          </Link>
+        ))}
+      </div>
+
+      <div className="panel panel-pad chamfer mt-6 flex flex-wrap items-center gap-4" style={{ borderColor: "rgba(255,13,46,.3)" }} data-testid="home-fundadores">
+        <span className="tag tag-rojo">Etapa inicial</span>
+        <p className="muted small" style={{ maxWidth: "62ch" }}>
+          Las insignias se colocan solas en tu perfil. Quienes se registren en esta etapa inicial obtienen
+          reconocimiento como <strong style={{ color: "var(--blanco)" }}>miembros fundadores</strong> de la comunidad.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {["FOUNDER MEMBER", "SOCIO VANTS", "PRO", "CREATOR", "VERIFIED PARTNER"].map((n) => (
+            <span key={n} className="tag">{n}</span>
+          ))}
+        </div>
+      </div>
+
+      {(insignias.data?.catalogo || []).length > 0 && (
+        <div className="flex flex-wrap items-center gap-4 mt-6">
+          <span className="small muted">Insignias automáticas en tu perfil:</span>
+          {insignias.data!.catalogo.slice(0, 8).map((b) => <Insignia3D key={b.code} d={b} size={44} titulo={b.nombre} />)}
+          <Link href="/insignias" className="link-arrow">Ver todas <span aria-hidden>→</span></Link>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/* ---------- Home: 5 bloques ---------- */
+export default function Home() {
   const destacados = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=ongoing&porPagina=4");
   const proximos = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=upcoming&porPagina=5");
   const live = useApi<{ data: Paged<Match> }>("/api/matches?estado=live&porPagina=5", { refetchMs: 30_000 });
@@ -240,7 +324,20 @@ export default function Home() {
   const clips = useApi<{ videos: YtVideo[] }>("/api/youtube/ultimos");
   const streams = useApi<{ streams: Stream[]; total_canales: number }>("/api/twitch/directos?limite=3", { refetchMs: 60_000 });
   const directosInt = useApi<{ directos: DirectoInt[] }>("/int/directos", { refetchMs: 60_000 });
-  // Twitch (filtrado por juego en el Worker principal) + Kick y Twitch detectados por vants-integraciones.
+  const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
+
+  const torneos = [...(destacados.data?.data.items || []), ...(proximos.data?.data.items || [])].slice(0, 5);
+  const torneoProximo = (proximos.data?.data.items || []).find((t) => t.starts_at && new Date(t.starts_at).getTime() > Date.now());
+  const cargandoTorneos = destacados.isLoading || proximos.isLoading;
+  const errorTorneos = destacados.error || proximos.error;
+
+  const matches = [...(live.data?.data.items || []), ...(upcomingM.data?.data.items || [])].slice(0, 6);
+  const top = (ranking.data?.faceit || []).slice(0, 5);
+  const totalEquipos = teams.data?.data?.length ?? 0;
+  const noticias = news.data?.data.items || [];
+  const listaEventos = eventos.data?.eventos || [];
+  const listaClips = clips.data?.videos || [];
+
   const vivos = useMemo(() => {
     const xs: (Stream & { url?: string; plataforma?: "twitch" | "kick" })[] = (streams.data?.streams || []).map((s) => ({ ...s, plataforma: "twitch" as const }));
     for (const d of directosInt.data?.directos || []) {
@@ -250,226 +347,149 @@ export default function Home() {
     }
     return xs;
   }, [streams.data, directosInt.data]);
-  const canalesVigilados = Math.max(streams.data?.total_canales ?? 0, (directosInt.data?.directos || []).length);
-  const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=3");
-  const insignias = useCatalogoInsignias();
-
-  const torneos = [...(destacados.data?.data.items || []), ...(proximos.data?.data.items || [])].slice(0, 5);
-  const torneoProximo = (proximos.data?.data.items || []).find((t) => t.starts_at && new Date(t.starts_at).getTime() > Date.now());
-  const matches = [...(live.data?.data.items || []), ...(upcomingM.data?.data.items || [])].slice(0, 6);
-  const top = (ranking.data?.faceit || []).slice(0, 5);
-  const totalEquipos = teams.data?.data?.length ?? 0;
 
   return (
     <>
+      {/* Bloque 1 · Hero + guía de bienvenida */}
       <Hero />
-      <Marquee />
-      <div className="wrap pt-10">
-        <Stats torneos={torneos.length} equipos={totalEquipos} />
+      <div className="wrap pt-12">
+        <ComoFunciona />
+      </div>
+      <div className="pt-10">
+        <Marquee />
       </div>
 
-      {torneoProximo && (
+      {/* Bloque 3 · Métricas reales (sin contadores en cero) */}
+      <div className="wrap pt-10">
+        <div className="grid-auto grid grid-cols-2 md:grid-cols-4" data-testid="home-stats">
+          <Stat valor={JUEGOS.length} label="Juegos competitivos" delay="0ms" />
+          <Stat valor={1000} sufijo="+" label="Logros desbloqueables" delay="80ms" />
+          {!cargandoTorneos && torneos.length > 0 ? <Stat valor={torneos.length} label="Torneos del circuito" delay="160ms" /> : null}
+          {!teams.isLoading && totalEquipos > 0 ? <Stat valor={totalEquipos} label="Equipos registrados" delay="240ms" /> : null}
+          <div className="contador-entrada p-6 text-center grid content-center">
+            <div className="d-1" style={{ color: "var(--blanco)", fontSize: "clamp(1.1rem,2.2vw,1.6rem)" }}>Riot & FACEIT</div>
+            <div className="small muted mt-1" style={{ fontFamily: "var(--f-display)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Integración de estadísticas</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Bloque 2 · El Circuito */}
+      <ElCircuito />
+
+      {/* Bloque 3 · Actividad real (solo lo que existe) */}
+      {torneoProximo ? (
         <div className="wrap pt-10">
           <TorneoDestacado t={torneoProximo} />
         </div>
+      ) : null}
+
+      {cargandoTorneos ? (
+        <div className="wrap pt-10"><Skel h={120} n={1} /></div>
+      ) : errorTorneos ? (
+        <div className="wrap pt-10"><ErrorBox error={errorTorneos} what="los torneos" onRetry={() => { destacados.refetch(); proximos.refetch(); }} /></div>
+      ) : torneos.length > 0 ? (
+        <Section id="torneos" eyebrow="Circuito" title="Torneos destacados" more={{ to: "/torneos", label: "Todos los torneos" }}>
+          <div className="panel">
+            {torneos.map((t) => <TournamentRow key={t.slug} t={t} />)}
+          </div>
+        </Section>
+      ) : (
+        <div className="wrap pt-12">
+          <div className="panel panel-pad chamfer flex flex-wrap items-center justify-between gap-4" data-testid="home-torneos-vacio" style={{ borderColor: "rgba(255,13,46,.28)" }}>
+            <div>
+              <div className="eyebrow mb-2">La arena espera</div>
+              <p className="d-3">¿Quieres inaugurar la arena?</p>
+              <p className="muted small mt-1">Crea el primer torneo de tu comunidad hoy.</p>
+            </div>
+            <Link href="/crear-torneo" className="btn btn-rojo" data-testid="btn-inaugurar">Crear mi torneo <span aria-hidden="true">→</span></Link>
+          </div>
+        </div>
       )}
 
-      <div className="wrap pt-14">
-        <Section id="como-funciona" eyebrow="Cómo funciona" title={<>Del registro a la <span style={{ color: "var(--rojo)" }}>final</span></>} className="!px-0">
-          <ComoFunciona />
-        </Section>
-      </div>
-
-      <Section id="juegos" eyebrow="El circuito" title={<>Juegos de <span style={{ color: "var(--rojo)" }}>VANTS</span></>} more={{ to: "/torneos", label: "Torneos por juego" }}>
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
-          <p className="muted" style={{ maxWidth: "66ch" }}>Once títulos competitivos entre PC, consola y móvil. VALORANT y CS2 tienen integración de estadísticas y logros; el resto completa el circuito de torneos, equipos y clips.</p>
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar juegos por plataforma" data-testid="home-platform-filter">
-            {PLATAFORMAS.map((plat) => (
-              <button
-                key={plat}
-                type="button"
-                className={"btn btn-sm " + (plataforma === plat ? "btn-rojo" : "btn-ghost")}
-                aria-pressed={plataforma === plat}
-                onClick={() => setPlataforma(plat)}
-                data-testid={"platform-filter-" + plat.toLowerCase()}
-              >
-                {plat} <span className="num opacity-75">({conteoPlataformas[plat]})</span>
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="grid-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4" data-testid="home-juegos">
-          {juegosVisibles.map((j, i) => (
-            <Link
-              key={j.slug}
-              href={"/torneos?juego=" + j.slug}
-              className="reveal panel juego-cover flotar relative block min-h-[220px]"
-              style={{ "--d": `${Math.min(i * 40, 320)}ms` } as CSSProperties}
-              data-testid={"home-juego-" + j.slug}
-            >
-              {j.img && <img src={pub(j.img)} alt={j.nombre} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.62 }} loading="lazy" />}
-              <div className="absolute inset-0" style={{ background: "linear-gradient(0deg, rgba(10,10,11,.95) 8%, rgba(10,10,11,.25) 60%)" }} />
-              <div className="relative h-full flex flex-col justify-end p-4">
-                <div className="font-semibold leading-tight">{j.nombre}</div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  <span className="tag">{j.plataforma}</span>
-                  {j.integrado ? <span className="tag tag-rojo">Integrado</span> : null}
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </Section>
-
-      <Section id="torneos" eyebrow="Circuito" title="Torneos destacados" more={{ to: "/torneos", label: "Todos los torneos" }}>
-        <div className="panel">
-          <List
-            q={{
-              isLoading: destacados.isLoading || proximos.isLoading,
-              error: destacados.error || proximos.error,
-              data: torneos,
-              onRetry: () => { destacados.refetch(); proximos.refetch(); },
-            }}
-            what="los torneos"
-            render={(t) => <TournamentRow key={t.slug} t={t} />}
-            empty={<Empty code="torneos · 0" title="No hay torneos publicados ahora mismo" text="Cuando la organización publique un torneo desde el panel de administración aparecerá aquí con su fecha, formato y premio." />}
-          />
-        </div>
-      </Section>
-
       <div className="wrap grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-        <Section id="agenda" eyebrow="Agenda" title="Próximos enfrentamientos" more={{ to: "/agenda", label: "Agenda completa" }} className="!px-0">
-          <div className="panel">
-            <List
-              q={{
-                isLoading: live.isLoading || upcomingM.isLoading,
-                error: live.error || upcomingM.error,
-                data: matches,
-                onRetry: () => { live.refetch(); upcomingM.refetch(); },
-              }}
-              what="la agenda"
-              render={(m, i) => <MatchRow key={i} m={m} />}
-              empty={<Empty code="partidos · 0" title="Sin partidos programados" text="Los enfrentamientos se publican cuando un torneo genera su bracket." />}
-            />
-          </div>
-        </Section>
-        <Section id="ranking" eyebrow="Ranking global" title="Top jugadores VANTS" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
-          <div className="panel">
-            {ranking.isLoading ? <Skel n={5} h={44} /> : ranking.error ? <ErrorBox error={ranking.error} what="el ranking" onRetry={() => ranking.refetch()} /> : top.length === 0 ? (
-              <Empty code="ranking · 0" title="Aún no hay jugadores clasificados" text="Vincula FACEIT en tu perfil para entrar en el ranking VANTS." action={<Link href="/perfil/cuentas" className="link-arrow">Vincular FACEIT →</Link>} />
-            ) : (
-              <>
-                <ol>
-                  {top.map((e) => (
-                    <li key={e.nick + e.pos} className="row grid-cols-[32px_1fr_auto_auto] items-center gap-3">
-                      <span className="num" style={{ color: e.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(e.pos).padStart(2, "0")}</span>
-                      <a href={e.url} target="_blank" rel="noopener noreferrer" className="font-semibold truncate hover:text-[var(--rojo)]">{e.nick}{e.equipo?.tag ? <span className="small muted"> · {e.equipo.tag}</span> : null}</a>
-                      <NivelFaceit n={e.nivel} size={24} />
-                      <span className="num">{e.elo ?? "—"}</span>
-                    </li>
-                  ))}
-                </ol>
-                <p className="small muted px-4 py-3 border-t" style={{ borderColor: "var(--linea-suave)" }}>Jugadores VANTS · ELO de FACEIT CS2</p>
-              </>
-            )}
-          </div>
-        </Section>
+        {!(live.isLoading || upcomingM.isLoading) && matches.length === 0 ? null : (
+          <Section id="agenda" eyebrow="Agenda" title="Próximos enfrentamientos" more={{ to: "/agenda", label: "Agenda completa" }} className="!px-0">
+            <div className="panel">
+              <List
+                q={{ isLoading: live.isLoading || upcomingM.isLoading, error: live.error || upcomingM.error, data: matches, onRetry: () => { live.refetch(); upcomingM.refetch(); } }}
+                what="la agenda"
+                render={(m, i) => <MatchRow key={i} m={m} />}
+                empty={<Empty code="partidos · 0" title="Sin partidos programados" text="Los enfrentamientos se publican cuando un torneo genera su bracket." />}
+              />
+            </div>
+          </Section>
+        )}
+        {!ranking.isLoading && !ranking.error && top.length === 0 ? null : (
+          <Section id="ranking" eyebrow="Ranking global" title="Top jugadores VANTS" more={{ to: "/ranking", label: "Ver ranking" }} className="!px-0">
+            <div className="panel">
+              {ranking.isLoading ? <Skel n={5} h={44} /> : ranking.error ? <ErrorBox error={ranking.error} what="el ranking" onRetry={() => ranking.refetch()} /> : (
+                <>
+                  <ol>
+                    {top.map((e) => (
+                      <li key={e.nick + e.pos} className="row grid-cols-[32px_1fr_auto_auto] items-center gap-3">
+                        <span className="num" style={{ color: e.pos <= 3 ? "var(--rojo)" : "var(--gris-2)" }}>{String(e.pos).padStart(2, "0")}</span>
+                        <a href={e.url} target="_blank" rel="noopener noreferrer" className="font-semibold truncate hover:text-[var(--rojo)]">{e.nick}{e.equipo?.tag ? <span className="small muted"> · {e.equipo.tag}</span> : null}</a>
+                        <NivelFaceit n={e.nivel} size={24} />
+                        <span className="num">{e.elo ?? "—"}</span>
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="small muted px-4 py-3 border-t" style={{ borderColor: "var(--linea-suave)" }}>Jugadores VANTS · ELO de FACEIT CS2</p>
+                </>
+              )}
+            </div>
+          </Section>
+        )}
       </div>
 
-      <Section id="equipos" eyebrow="Circuito" title="Equipos" more={{ to: "/equipos", label: "Todos los equipos" }}>
-        {teams.isLoading ? <Skel /> : teams.error ? <ErrorBox error={teams.error} what="los equipos" /> : (teams.data?.data || []).length === 0 ? (
-          <Empty code="equipos · 0" title="Aún no hay equipos registrados" text="Sé el primero: crea tu equipo e invita a tus compañeros con un código." action={<Link href="/equipos" className="link-arrow">Crear equipo →</Link>} />
-        ) : (
+      {teams.isLoading ? null : teams.error ? null : totalEquipos === 0 ? null : (
+        <Section id="equipos" eyebrow="Circuito" title="Equipos" more={{ to: "/equipos", label: "Todos los equipos" }}>
           <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-4">
             {teams.data!.data.slice(0, 8).map((t) => <TeamTile key={t.slug} t={t} />)}
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
-      <Section id="ranked" eyebrow="Competición" title="VANTS Ranked">
-        <div className="grid gap-px md:grid-cols-[1.3fr_1fr]" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
-          <div className="relative overflow-hidden" style={{ minHeight: 240, background: "var(--grafito-1)" }}>
-            <img src={pub("img/setup.jpg")} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.5 }} loading="lazy" />
-            <div className="relative p-6 md:p-8 h-full flex flex-col justify-end" style={{ background: "linear-gradient(0deg, rgba(10,10,11,.92), rgba(10,10,11,.1))" }}>
-              <p className="d-2">Partidas con rango propio de VANTS</p>
-              <p className="muted mt-2" style={{ maxWidth: "48ch" }}>Las posiciones se calculan en el servidor a partir de partidas verificadas.</p>
-            </div>
-          </div>
-          <div className="p-6 md:p-8" style={{ background: "var(--grafito-1)" }}>
-            <Empty code="ranked · temporada" title="La temporada de Ranked todavía no ha empezado" text="Mientras tanto, la clasificación de jugadores VANTS se calcula con el ELO de FACEIT." action={<Link href="/ranking" className="link-arrow">Ver ranking VANTS <span aria-hidden>→</span></Link>} />
-          </div>
-        </div>
-      </Section>
-
-      <Section id="clips" eyebrow="Clips" title="Últimos clips" more={{ to: "/clips", label: "Ver clips" }}>
-        {clips.isLoading ? <Skel h={160} n={1} /> : clips.error ? <ErrorBox error={clips.error} what="los clips" /> : (clips.data?.videos || []).length === 0 ? (
-          <Empty code="clips · 0" title="Todavía no hay clips publicados" />
-        ) : (
+      {clips.isLoading || clips.error ? null : listaClips.length === 0 ? null : (
+        <Section id="clips" eyebrow="Clips" title="Últimos clips" more={{ to: "/clips", label: "Ver clips" }}>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {clips.data!.videos.slice(0, 4).map((v) => <VideoTile key={v.id} v={v} />)}
+            {listaClips.slice(0, 4).map((v) => <VideoTile key={v.id} v={v} />)}
           </div>
-        )}
-      </Section>
+        </Section>
+      )}
 
       <div className="wrap grid gap-8 lg:grid-cols-[1.6fr_1fr]">
-        <Section id="twitch" eyebrow="Twitch y Kick" title="En directo" more={{ to: "/en-vivo", label: "Directos en vivo" }} className="!px-0">
-          {streams.isLoading && directosInt.isLoading ? <Skel h={140} n={1} /> : streams.error && directosInt.error ? <ErrorBox error={streams.error} what="los directos" /> : vivos.length === 0 ? (
-            <Empty code={"twitch + kick · " + canalesVigilados + " canales vigilados"} title="Ningún canal de VANTS está en directo" text="Se muestran los canales de Twitch y Kick registrados en VANTS. Se comprueban cada 2 minutos." />
-          ) : (
+        {vivos.length > 0 ? (
+          <Section id="twitch" eyebrow="Twitch y Kick" title="En directo" more={{ to: "/directos", label: "Directos en vivo" }} className="!px-0">
             <div className="grid gap-6 sm:grid-cols-2">{vivos.slice(0, 4).map((s) => <StreamTile key={(s.plataforma || "twitch") + s.canal} s={s} />)}</div>
-          )}
-        </Section>
-        <Section id="noticias" eyebrow="Noticias" title="Anuncios" more={{ to: "/noticias", label: "Todas" }} className="!px-0">
-          <div className="panel">
-            {news.isLoading ? <Skel n={3} h={56} /> : news.error ? <ErrorBox error={news.error} what="las noticias" /> : (news.data?.data.items || []).length === 0 ? (
-              <Empty code="noticias · 0" title="Sin anuncios publicados" />
-            ) : news.data!.data.items.map((a) => (
-              <Link key={a.slug} href={"/noticias/" + a.slug} className="row grid-cols-1">
-                <span className="small muted num">{fecha(a.publicado_at)}</span>
-                <span className="font-semibold">{a.titulo}</span>
-              </Link>
-            ))}
-          </div>
-        </Section>
-        <Section id="eventos" eyebrow="Comunidad" title="Próximos eventos" more={{ to: "/eventos", label: "Todos" }} className="!px-0 lg:col-span-2">
-          <div className="panel">
-            {eventos.isLoading ? <Skel n={2} h={56} /> : eventos.error ? <ErrorBox error={eventos.error} what="los eventos" /> : (eventos.data?.eventos || []).length === 0 ? (
-              <Empty code="eventos · 0" title="No hay eventos programados" />
-            ) : (eventos.data?.eventos || []).slice(0, 3).map((e) => <FilaEvento key={e.id} e={e} />)}
-          </div>
-        </Section>
+          </Section>
+        ) : null}
+        {news.isLoading || news.error ? null : noticias.length === 0 ? null : (
+          <Section id="noticias" eyebrow="Noticias" title="Anuncios" more={{ to: "/noticias", label: "Todas" }} className="!px-0">
+            <div className="panel">
+              {noticias.map((a) => (
+                <Link key={a.slug} href={"/noticias/" + a.slug} className="row grid-cols-1">
+                  <span className="small muted num">{new Date(a.publicado_at).toLocaleDateString("es-VE")}</span>
+                  <span className="font-semibold">{a.titulo}</span>
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
+        {eventos.isLoading || eventos.error ? null : listaEventos.length === 0 ? null : (
+          <Section id="eventos" eyebrow="Comunidad" title="Próximos eventos" more={{ to: "/eventos", label: "Todos" }} className="!px-0 lg:col-span-2">
+            <div className="panel">
+              {listaEventos.slice(0, 3).map((e: any) => <FilaEvento key={e.id} e={e} />)}
+            </div>
+          </Section>
+        )}
       </div>
 
-      <Section id="membresias" eyebrow="Membresías" title="Juega con ventaja" more={{ to: "/membresias", label: "Comparar planes" }}>
-        <p className="muted" style={{ maxWidth: "72ch" }}>Los planes VANTS desbloquean la creación de torneos propios, inscripciones sin fee, cola prioritaria en Ranked y sellos exclusivos en tu perfil. Sin plan se puede competir; con plan se domina.</p>
-        <div className="grid-auto grid md:grid-cols-3">
-          {PLANES.filter((p) => p.checkout).map((p, i) => (
-            <Link
-              key={p.id}
-              href="/membresias"
-              className={"reveal flotar p-6 block" + (p.id === "pro" ? " brillo-borde" : "")}
-              style={{ "--d": `${i * 90}ms` } as CSSProperties}
-              data-testid={"home-plan-" + p.id}
-            >
-              <div className="eyebrow mb-3">{p.kicker}</div>
-              <div className="d-2">{p.nombre}</div>
-              <div className="num mt-2" style={{ color: "var(--gris-1)" }}>{p.precio}</div>
-              <p className="muted small mt-3">{p.lema}</p>
-            </Link>
-          ))}
-        </div>
-        {(insignias.data?.catalogo || []).length > 0 && (
-          <div className="flex flex-wrap items-center gap-4 mt-6">
-            <span className="small muted">Insignias que se colocan solas en tu perfil:</span>
-            {insignias.data!.catalogo.slice(0, 8).map((b) => <Insignia3D key={b.code} d={b} size={44} titulo={b.nombre} />)}
-            <Link href="/insignias" className="link-arrow">Ver todas <span aria-hidden>→</span></Link>
-          </div>
-        )}
-      </Section>
+      {/* Bloque 4 · Planes e insignias */}
+      <EscaleraPlanes />
 
-      <Section id="tienda" eyebrow="Tienda" title="Tienda oficial" more={{ to: "/tienda", label: "Ir a la tienda" }}>
-        <Empty code="tienda · sin catálogo" title="La tienda abrirá con la Colección 01" text="La venta se activará cuando el catálogo esté conectado al sistema de pagos. Hasta entonces no hay carrito ni compras." />
-      </Section>
+      {/* Bloque 5 · Empresas */}
+      <SeccionEmpresas />
     </>
   );
 }

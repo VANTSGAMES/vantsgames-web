@@ -305,6 +305,28 @@ button { font: inherit; color: inherit; }
   .cta-xs-off { display: none !important; }
 }
 
+/* ---------- Modal (formulario de alianzas) ---------- */
+.modal-fondo {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(10, 10, 11, 0.8);
+  display: grid; place-items: center;
+  padding: var(--gutter);
+  overflow-y: auto;
+}
+.modal-caja { width: min(600px, 100%); max-height: calc(100vh - 2 * var(--gutter)); overflow-y: auto; }
+
+/* ---------- Legal: índice y anclas ---------- */
+.legal h2, .legal h3 { scroll-margin-top: 96px; }
+.legal-index {
+  border: 1px solid var(--linea-suave);
+  background: var(--grafito-1);
+  padding: clamp(1rem, 2.4vw, 1.5rem);
+  margin-bottom: 2rem;
+}
+.legal-index ol { margin: 0; padding-left: 1.4rem; display: grid; gap: 0.4rem; }
+.legal-index a { color: var(--gris-1); text-decoration: none; }
+.legal-index a:hover { color: var(--blanco); text-decoration: underline; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .marquee-pista { animation: none; }

@@ -421,6 +421,7 @@ export default function Perfil() {
 export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) {
   const { status, login } = useAuth();
   const [email, setEmail] = useState("");
+  const [acepta, setAcepta] = useState(false);
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
   const titulos = { entrar: "Iniciar sesión", registro: "Crear cuenta", recuperar: "Recuperar contraseña" };
   const recuperar = async (e: FormEvent) => {
@@ -461,8 +462,44 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
             )
           ) : (
             <>
-              <p className="muted">{modo === "entrar" ? "Accede con tu cuenta de VANTS." : "Crea tu cuenta para inscribirte en torneos, ganar insignias y guardar tu perfil."}</p>
-              <button className="btn btn-rojo" disabled={status === "cargando"} onClick={() => login({ signup: modo === "registro", returnTo: "/perfil" })} data-testid={"button-" + modo}>{titulos[modo]}</button>
+              {modo === "registro" && (
+                <p className="muted" data-testid="bienvenida-registro">
+                  Bienvenido a VANTS. Crea tu cuenta gratis en menos de un minuto, vincula tu perfil gamer y
+                  empieza a competir o armar tu propia comunidad.
+                </p>
+              )}
+              {modo === "registro" && (
+                <div className="field">
+                  <label className="flex items-start gap-3 small" style={{ cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      required
+                      checked={acepta}
+                      onChange={(e) => setAcepta(e.target.checked)}
+                      data-testid="checkbox-terminos"
+                      style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
+                    />
+                    <span>
+                      Acepto los{" "}
+                      <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline">Términos de Servicio</a>, la{" "}
+                      <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidad</a>{" "}
+                      y las normas de conducta y juego limpio de VANTS GAMES.
+                    </span>
+                  </label>
+                </div>
+              )}
+              {modo !== "registro" && (
+                <p className="muted">Accede con tu cuenta de VANTS.</p>
+              )}
+              <button
+                className="btn btn-rojo"
+                disabled={status === "cargando" || (modo === "registro" && !acepta)}
+                onClick={() => login({ signup: modo === "registro", returnTo: "/perfil" })}
+                data-testid={"button-" + modo}
+              >
+                {titulos[modo]}
+              </button>
               <div className="flex flex-wrap gap-4 small">
                 {modo === "entrar" ? <Link href="/registro" className="underline muted">Crear cuenta</Link> : <Link href="/entrar" className="underline muted">Ya tengo cuenta</Link>}
                 <Link href="/recuperar" className="underline muted">Olvidé mi contraseña</Link>

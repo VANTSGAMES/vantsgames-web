@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./lib/auth";
 import { Privado } from "./components/MuroAcceso";
+import { PaginaEmpresas } from "./components/SeccionEmpresas";
 import { Shell } from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FeedbackProvider } from "./components/FeedbackProvider";
@@ -88,7 +89,8 @@ function Rutas() {
           <Route path="/ranked"><Priv seccion="VANTS Ranked"><Ranked /></Priv></Route>
           <Route path="/torneos"><Priv seccion="Los torneos"><TorneosLista /></Priv></Route>
           <Route path="/torneos/competir"><Priv seccion="Las inscripciones abiertas"><TorneosLista competir /></Priv></Route>
-          <Route path="/torneos/crear"><Priv seccion="La creación de torneos"><CrearTorneo /></Priv></Route>
+          <Route path="/torneos/crear"><Redirect to="/crear-torneo" replace /></Route>
+          <Route path="/crear-torneo"><Priv seccion="La creación de torneos"><CrearTorneo /></Priv></Route>
           <Route path="/torneos/:slug"><Priv seccion="Este torneo"><TorneoDetalle /></Priv></Route>
           <Route path="/workspace"><Priv seccion="El Centro Workspace"><Workspace /></Priv></Route>
           <Route path="/arena-3d"><Priv seccion="La Arena 3D"><Arena3D /></Priv></Route>
@@ -112,8 +114,11 @@ function Rutas() {
           <Route path="/eventos"><Priv seccion="Los eventos"><EventosLista /></Priv></Route>
           <Route path="/publicar"><Priv seccion="Publicar en VANTS"><Publicar /></Priv></Route>
           <Route path="/en-vivo"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
+          <Route path="/directos"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
           <Route path="/creadores"><Priv seccion="Los creadores"><Creadores /></Priv></Route>
           <Route path="/membresias" component={Membresias} />
+          <Route path="/pase-s4" component={Membresias} />
+          <Route path="/empresas" component={PaginaEmpresas} />
           <Route path="/insignias"><Priv seccion="Las insignias"><Insignias /></Priv></Route>
           <Route path="/logros"><Priv seccion="Los logros"><Logros /></Priv></Route>
           <Route path="/progreso"><Priv seccion="Tu progreso"><Progreso /></Priv></Route>

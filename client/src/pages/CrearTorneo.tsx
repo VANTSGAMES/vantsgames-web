@@ -57,6 +57,7 @@ function FormularioTorneo() {
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<{ slug: string; nombre: string } | null>(null);
+  const [acepta, setAcepta] = useState(false);
   const set = (k: string, v: string | number) => setF((p) => ({ ...p, [k]: v }));
 
   const enviar = async (e: React.FormEvent) => {
@@ -159,8 +160,35 @@ function FormularioTorneo() {
           <textarea id="ct-reglas" className="input" maxLength={2000} value={f.reglas} onChange={(e) => set("reglas", e.target.value)} placeholder="Formato de mapas, horarios de veto, conducta esperada…" />
         </div>
         {error && <p className="small" style={{ color: "#ff5468" }} role="alert">{error}</p>}
+        <div className="panel panel-pad grid gap-2" style={{ borderColor: "rgba(255,13,46,.28)" }} data-testid="aviso-organizador">
+          <div className="eyebrow">Requisitos del organizador</div>
+          <ul className="muted small grid gap-1">
+            <li>▸ Cuenta verificada e historial positivo en la plataforma</li>
+            <li>▸ Cumplimiento de los horarios publicados</li>
+            <li>▸ Integridad del bracket y de los resultados reportados</li>
+            <li>▸ Respeto a la privacidad de los datos de los participantes</li>
+          </ul>
+        </div>
+        <div className="field">
+          <label className="flex items-start gap-3 small" style={{ cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              required
+              checked={acepta}
+              onChange={(e) => setAcepta(e.target.checked)}
+              data-testid="checkbox-reglas-torneo"
+              style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
+            />
+            <span>
+              Acepto las reglas de torneos y los{" "}
+              <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline">Términos de Servicio</a>{" "}
+              de VANTS GAMES como organizador.
+            </span>
+          </label>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button type="submit" className="btn btn-rojo" disabled={enviando} data-testid="btn-enviar-torneo">{enviando ? "Enviando…" : "Enviar a revisión"}</button>
+          <button type="submit" className="btn btn-rojo" disabled={enviando || !acepta} data-testid="btn-enviar-torneo">{enviando ? "Enviando…" : "Enviar a revisión"}</button>
           <span className="small muted">El equipo VANTS revisa cada torneo antes de publicarlo. Recibirás un correo con el resultado.</span>
         </div>
       </div>

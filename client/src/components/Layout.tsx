@@ -173,6 +173,7 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
               </div>
             )}
             <Link href="/" className="d-2">Inicio</Link>
+            <Link href="/empresas" className="d-2">Empresas</Link>
             {NAV.map((g) => (
               <div key={g.base}>
                 <div className="eyebrow mb-2">{g.label}</div>
@@ -206,6 +207,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
         <nav className="hidden lg:flex items-center ml-4" aria-label="Principal">
           <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} data-testid="nav-inicio">Inicio</Link>
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
+          <Link href="/empresas" className={"nav-btn" + (path === "/empresas" ? " activo" : "")} data-testid="nav-empresas">Empresas</Link>
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -231,6 +233,39 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
   );
 }
 
+const APP_APK = "https://github.com/VANTSGAMES/vantsgames-web/releases/latest/download/VANTS-1.0.0.apk";
+
+/** Columnas del footer: reflejan la navegación principal + legal y app. */
+const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?: boolean }[] }[] = [
+  { titulo: "Competición", enlaces: [
+    { label: "Torneos activos", to: "/torneos" },
+    { label: "Crear mi torneo", to: "/crear-torneo" },
+    { label: "Agenda en vivo", to: "/agenda" },
+    { label: "Resultados", to: "/resultados" },
+    { label: "Ranking global", to: "/ranking" },
+  ]},
+  { titulo: "Comunidad & Sala", enlaces: [
+    { label: "Clips", to: "/clips" },
+    { label: "Directos Twitch & Kick", to: "/directos" },
+    { label: "Noticias", to: "/noticias" },
+    { label: "Sala de jugadores", to: "/sala" },
+    { label: "Equipos", to: "/equipos" },
+  ]},
+  { titulo: "Planes & Empresas", enlaces: [
+    { label: "Membresías", to: "/membresias" },
+    { label: "Pase de Temporada S4", to: "/pase-s4" },
+    { label: "Insignias", to: "/insignias" },
+    { label: "Empresas y marcas", to: "/empresas" },
+  ]},
+  { titulo: "Legal & App", enlaces: [
+    { label: "Privacidad", to: "/privacidad" },
+    { label: "Términos", to: "/terminos" },
+    { label: "App Android (APK v1.0.0)", to: APP_APK, externo: true },
+    { label: "Twitch", to: "https://www.twitch.tv/feisreal", externo: true },
+    { label: "YouTube", to: "https://www.youtube.com/@feispla", externo: true },
+  ]},
+];
+
 export function Footer() {
   return (
     <footer className="mt-16 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
@@ -241,11 +276,19 @@ export function Footer() {
           <p className="muted small" style={{ maxWidth: "38ch" }}>Torneos, rankings, clips y comunidad de once juegos competitivos, desde Venezuela para Latinoamérica.</p>
           <a href="mailto:contacto@vants.cc" className="muted small hover:text-white">Contacto: contacto@vants.cc</a>
         </div>
-        {[NAV[1], NAV[0], NAV[3], NAV[4]].map((g) => (
-          <div key={g.base}>
-            <div className="eyebrow mb-3">{g.label}</div>
+        {COLUMNAS.map((col) => (
+          <div key={col.titulo}>
+            <div className="eyebrow mb-3">{col.titulo}</div>
             <ul className="grid gap-1.5 small">
-              {g.links.filter((l) => !l.privado).slice(0, 5).map((l) => <li key={l.to}><Link href={l.to} className="muted hover:text-white">{l.label}</Link></li>)}
+              {col.enlaces.map((l) => (
+                <li key={l.to}>
+                  {l.externo ? (
+                    <a href={l.to} target="_blank" rel="noopener noreferrer" className="muted hover:text-white">{l.label}</a>
+                  ) : (
+                    <Link href={l.to} className="muted hover:text-white">{l.label}</Link>
+                  )}
+                </li>
+              ))}
             </ul>
           </div>
         ))}
