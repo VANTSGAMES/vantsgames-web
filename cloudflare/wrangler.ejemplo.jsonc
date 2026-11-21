@@ -1,0 +1,70 @@
+{
+  // Plantilla del worker `vants-recursos` (Workflows + Durable Objects + Queues).
+  // Copia este archivo a wrangler.jsonc, rellena los ids REALES y despliega:
+  //   cd cloudflare && npx wrangler deploy
+  // Los recursos previos se crean con:
+  //   npx wrangler queues create webhooks-faceit
+  //   npx wrangler queues create webhooks-faceit-dlq
+  //   npx wrangler d1 create vants   (si aún no existe; el id va abajo)
+  "$schema": "node_modules/wrangler/config-schema.json",
+
+  "name": "vants-recursos",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Misma política de observabilidad que el worker `vants` de producción.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": false,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": true, "persist": true },
+    "traces": { "enabled": true, "head_sampling_rate": 1, "persist": true },
+    "issue_detection": { "enabled": true }
+  },
+
+  // D1 compartida con el proyecto (o la que definas para los recursos).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "vants",
+      "database_id": "PEGA_AQUI_EL_ID_DE_LA_D1"
+    }
+  ],
+
+  // Durable Object de salas: binding + registro de la clase (SQLite).
+  "durable_objects": {
+    "bindings": [
+      { "name": "SALA_TORNEO", "class_name": "SalaTorneo" }
+    ]
+  },
+  "exports": {
+    "SalaTorneo": { "type": "durable-object", "storage": "sqlite" }
+  },
+
+  // Workflow del circuito de torneos.
+  "workflows": [
+    { "name": "torneo-workflow", "binding": "TORNEO_WORKFLOW", "class_name": "TorneoWorkflow" }
+  ],
+
+  // Cola de webhooks FACEIT: productor + consumidor en este mismo worker,
+  // con reintentos y cola de mensajes muertos.
+  "queues": {
+    "producers": [
+      { "binding": "COLA_WEBHOOKS", "queue": "webhooks-faceit" }
+    ],
+    "consumers": [
+      {
+        "queue": "webhooks-faceit",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "webhooks-faceit-dlq"
+      }
+    ]
+  },
+
+  // Secreto opcional para validar el webhook (wrangler secret put WEBHOOK_SECRETO).
+  "vars": {},
+  "keep_vars": true
+}
