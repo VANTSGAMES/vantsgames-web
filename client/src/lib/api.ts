@@ -8,7 +8,7 @@ const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
 /** Origen público de la plataforma, para imágenes que la API devuelve con ruta relativa. */
 export const ASSET_ORIGIN: string =
-  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) ?? "https://vantscc-preview.vants.workers.dev";
+  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) ?? "https://vants.cc";
 
 /** En producción (mismo Worker que la API) las funciones se llaman directo a vants-functions (CORS abierto). */
 const FN_ORIGIN: string = (import.meta.env.VITE_FN_ORIGIN as string | undefined) || "";
@@ -33,6 +33,9 @@ export class ApiError extends Error {
 let tokenProvider: (() => Promise<string | null>) | null = null;
 export function setTokenProvider(fn: (() => Promise<string | null>) | null) {
   tokenProvider = fn;
+}
+export async function getAuthToken(): Promise<string | null> {
+  return tokenProvider ? tokenProvider() : null;
 }
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {

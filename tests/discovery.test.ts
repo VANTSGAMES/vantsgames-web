@@ -4,9 +4,11 @@ import { JUEGOS } from "../client/src/lib/juegos";
 import {
   computeAnnualSavingsPercent,
   countGamesByPlatform,
+  countTournamentsByGame,
   filterAndSortTournaments,
   filterGamesByPlatform,
   filterTeams,
+  groupTournamentsByGame,
   searchCommandItems,
   type CommandItem,
 } from "../client/src/lib/discovery";
@@ -22,12 +24,20 @@ test("filterGamesByPlatform splits all 11 VANTS games accurately", () => {
   assert.equal(counts.PC + counts.Consola + counts.Móvil, counts.Todas);
 });
 
-test("filterAndSortTournaments filters accent-insensitively and sorts by prize/slots/date", () => {
+test("filterAndSortTournaments filters accent-insensitively, strictly isolates by game, and sorts by prize/slots/date", () => {
   const sample: Tournament[] = [
     {
       slug: "copa-a",
       nombre: "Copa Relámpago Caracas",
+      descripcion: null,
       estado: "upcoming",
+      major: false,
+      location_type: "online",
+      fee: 0,
+      ends_at: null,
+      logo_url: null,
+      formato: "BO3",
+      is_demo: false,
       starts_at: "2026-08-10T18:00:00Z",
       max_teams: 16,
       region: "LATAM",
@@ -37,7 +47,15 @@ test("filterAndSortTournaments filters accent-insensitively and sorts by prize/s
     {
       slug: "major-b",
       nombre: "Major CS2 Sur",
+      descripcion: null,
       estado: "upcoming",
+      major: false,
+      location_type: "online",
+      fee: 0,
+      ends_at: null,
+      logo_url: null,
+      formato: "BO3",
+      is_demo: false,
       starts_at: "2026-07-05T18:00:00Z",
       max_teams: 32,
       region: "SA",
@@ -47,7 +65,15 @@ test("filterAndSortTournaments filters accent-insensitively and sorts by prize/s
     {
       slug: "open-c",
       nombre: "Open Smash Weekend",
+      descripcion: null,
       estado: "upcoming",
+      major: false,
+      location_type: "online",
+      fee: 0,
+      ends_at: null,
+      logo_url: null,
+      formato: "BO5",
+      is_demo: false,
       starts_at: "2026-09-01T18:00:00Z",
       max_teams: 64,
       region: "VE",
@@ -59,6 +85,15 @@ test("filterAndSortTournaments filters accent-insensitively and sorts by prize/s
   const byText = filterAndSortTournaments(sample, { query: "relampago" });
   assert.deepEqual(byText.map((t) => t.slug), ["copa-a"]);
 
+  const onlyValo = filterAndSortTournaments(sample, { juego: "valorant" });
+  assert.deepEqual(onlyValo.map((t) => t.slug), ["copa-a"]);
+
+  const onlyCs2 = filterAndSortTournaments(sample, { juego: "cs2" });
+  assert.deepEqual(onlyCs2.map((t) => t.slug), ["major-b"]);
+
+  const onlyFortnite = filterAndSortTournaments(sample, { juego: "fortnite" });
+  assert.deepEqual(onlyFortnite, []);
+
   const byPrize = filterAndSortTournaments(sample, { sort: "premio" });
   assert.deepEqual(byPrize.map((t) => t.slug), ["major-b", "copa-a", "open-c"]);
 
@@ -67,6 +102,16 @@ test("filterAndSortTournaments filters accent-insensitively and sorts by prize/s
 
   const byDate = filterAndSortTournaments(sample, { sort: "fecha" });
   assert.deepEqual(byDate.map((t) => t.slug), ["major-b", "copa-a", "open-c"]);
+
+  const counts = countTournamentsByGame(sample);
+  assert.equal(counts.valorant, 1);
+  assert.equal(counts.cs2, 1);
+  assert.equal(counts.smash, 1);
+  assert.equal(counts.fortnite, 0);
+
+  const groups = groupTournamentsByGame(sample);
+  assert.deepEqual(groups.map((g) => g.slug), ["valorant", "cs2", "smash"]);
+  assert.equal(groups[0].tournaments.length, 1);
 });
 
 test("filterTeams combines game slug and query across name, tag, and region", () => {

@@ -14,7 +14,11 @@ import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, ro
 import { rutasInsignias, invalidarInsignias } from './insignias.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
-const JUEGOS = ['valorant', 'cs2', 'otro'];
+const JUEGOS = ['valorant', 'cs2', 'fortnite', 'fc27', 'smash', 'warzone', 'freefire', 'lol', 'wildrift', 'mlbb', 'clashroyale', 'otro'];
+const normalizarJuego = (v) => {
+  const s = String(v || '').trim().toLowerCase();
+  return JUEGOS.includes(s) ? s : 'otro';
+};
 const PLANES = ['pro', 'creator', 'pase', 'socio'];
 
 async function asegurar(db) {
@@ -114,7 +118,22 @@ async function datosClipTwitch(env, H, id) {
   return (j.data || [])[0] || null;
 }
 
-const juegoTwitch = (gid) => (gid === '516575' ? 'valorant' : gid === '32399' ? 'cs2' : 'otro');
+const TWITCH_JUEGOS = {
+  '516575': 'valorant',
+  '32399': 'cs2',
+  '33214': 'fortnite',
+  '2011938005': 'fc27',
+  '143106037': 'fc27',
+  '1745202732': 'fc27',
+  '504461': 'smash',
+  '512710': 'warzone',
+  '502732': 'freefire',
+  '21779': 'lol',
+  '514858': 'wildrift',
+  '512923': 'mlbb',
+  '491168': 'clashroyale',
+};
+const juegoTwitch = (gid) => TWITCH_JUEGOS[String(gid || '')] || 'otro';
 
 // Clips del canal de Twitch del jugador (los más vistos de los últimos 180 días).
 async function clipsTwitchCanal(env, H, login) {
@@ -142,7 +161,21 @@ async function kickJson(path) {
   if (!r.ok) throw new Error('kick_' + r.status);
   return r.json();
 }
-const juegoKick = (c) => { const n = String((c && (c.slug || c.name)) || '').toLowerCase(); return n.includes('valorant') ? 'valorant' : /counter|cs2|cs-2/.test(n) ? 'cs2' : 'otro'; };
+const juegoKick = (c) => {
+  const n = String((c && (c.slug || c.name)) || '').toLowerCase();
+  if (n.includes('valorant')) return 'valorant';
+  if (/counter|cs2|cs-2/.test(n)) return 'cs2';
+  if (n.includes('fortnite')) return 'fortnite';
+  if (/ea[- ]?sports[- ]?fc|\bfc[- ]?2[4-9]\b|fifa/.test(n)) return 'fc27';
+  if (n.includes('smash')) return 'smash';
+  if (/warzone|call[- ]?of[- ]?duty/.test(n)) return 'warzone';
+  if (/free[- ]?fire/.test(n)) return 'freefire';
+  if (/wild[- ]?rift/.test(n)) return 'wildrift';
+  if (/league[- ]?of[- ]?legends|\blol\b/.test(n)) return 'lol';
+  if (/mobile[- ]?legends|mlbb/.test(n)) return 'mlbb';
+  if (/clash[- ]?royale/.test(n)) return 'clashroyale';
+  return 'otro';
+};
 
 async function datosClipKick(id) {
   const j = await kickJson('/clips/' + encodeURIComponent(id));
@@ -177,7 +210,7 @@ async function clipsSubidos(H, subs) {
     return r.ok ? r.json() : { clips: [] };
   }).catch(() => ({ clips: [] }));
   return ((j && j.clips) || []).filter((c) => c && subs.includes(c.sub)).map((c) => ({
-    id: c.id, origen: 'subido', plataforma: 'vants', url: c.video, titulo: c.titulo, juego: String(c.juego || '').toLowerCase() === 'cs2' ? 'cs2' : String(c.juego || '').toLowerCase() === 'valorant' ? 'valorant' : 'otro',
+    id: c.id, origen: 'subido', plataforma: 'vants', url: c.video, titulo: c.titulo, juego: normalizarJuego(c.juego),
     miniatura: c.thumb || null, embed: null, video: c.video, duracion: c.dur, creado: c.fecha, autor: c.nick, propio: true,
   }));
 }
@@ -454,7 +487,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const b = await req.json().catch(() => ({}));
     const info = analizarClip(b.url);
     if (!info) return H.json({ ok: false, error: 'enlace_invalido' }, 400);
-    let juego = JUEGOS.includes(b.juego) ? b.juego : 'otro';
+    let juego = normalizarJuego(b.juego);
     let titulo = txt(b.titulo, 100), miniatura = info.miniatura, video = null, juegoDet = null;
     if (info.plataforma === 'kick') {
       const d = await datosClipKick(info.id).catch(() => null);
@@ -523,8 +556,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     if (thumb && typeof thumb !== 'string' && thumb.size && thumb.size <= 400_000) { await env.CLIPS_KV.put('t:' + id, await thumb.arrayBuffer()); hayMini = true; }
     const dur = Math.max(0, Math.min(3600, parseInt(form.get('dur'), 10) || 0));
     await env.CLIPS_KV.put('m:' + id, JSON.stringify({ mime, size: buf.byteLength, partes, dur }));
-    const juegoF = String(form.get('juego') || '').toLowerCase();
-    const juego = juegoF === 'cs2' ? 'cs2' : juegoF === 'valorant' ? 'valorant' : 'otro';
+    const juego = normalizarJuego(form.get('juego'));
     const vurl = INT_URL + '/clips/archivo/' + id;
     await env.DB.prepare(
       "INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, 'subido', NULL, ?, ?, ?, ?, ?)"
@@ -539,7 +571,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     const fila = await env.DB.prepare('SELECT id, auth0_sub FROM integ_clips WHERE id = ?').bind(String(b.id || '')).first();
     if (!fila || !(subs.includes(fila.auth0_sub) || (await esOwner(env.DB, sub)))) return H.json({ ok: false, error: 'no_encontrado' }, 404);
     const sets = [], vals = [];
-    if (b.juego !== undefined) { const j = String(b.juego || '').toLowerCase(); sets.push('juego = ?'); vals.push(j === 'cs2' ? 'cs2' : j === 'valorant' ? 'valorant' : 'otro'); }
+    if (b.juego !== undefined) { sets.push('juego = ?'); vals.push(normalizarJuego(b.juego)); }
     if (b.titulo !== undefined) { sets.push('titulo = ?'); vals.push(txt(b.titulo, 100) || 'Clip'); }
     if (b.publico !== undefined) { sets.push('publico = ?'); vals.push(b.publico ? 1 : 0); }
     if (!sets.length) return H.json({ ok: false, error: 'sin_cambios' }, 400);

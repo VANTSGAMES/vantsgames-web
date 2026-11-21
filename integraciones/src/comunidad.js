@@ -215,7 +215,7 @@ async function crearEquipo(env, sub, b) {
   const region = txt(b.region, 40);
   if (!nombre || nombre.length < 2) return { status: 400, body: { ok: false, error: 'nombre_invalido' } };
   if (!/^[A-Z0-9]{2,4}$/.test(tag)) return { status: 400, body: { ok: false, error: 'tag_invalido' } };
-  if (!JUEGOS.includes(juego)) return { status: 400, body: { ok: false, error: 'juego_invalido' } };
+  if (!JUEGOS_CATALOGO.includes(juego)) return { status: 400, body: { ok: false, error: 'juego_invalido' } };
   const ya = await db.prepare('SELECT t.slug FROM integ_equipo_miembros m JOIN pt_teams t ON t.slug = m.team_slug WHERE m.auth0_sub = ? AND t.game_slug = ?').bind(sub, juego).first();
   if (ya) return { status: 409, body: { ok: false, error: 'ya_tienes_equipo', slug: ya.slug } };
   const repe = await db.prepare('SELECT 1 FROM pt_teams WHERE lower(nombre) = lower(?)').bind(nombre).first();
@@ -567,7 +567,7 @@ async function owner(env, sub, p, m, req, H) {
     const t = torneoDesde(b);
     const edita = !!b.slug;
     if ((!edita || b.nombre !== undefined) && (!t.nombre || t.nombre.length < 3)) return H.json({ ok: false, error: 'nombre_invalido' }, 400);
-    if ((!edita || b.juego !== undefined) && !JUEGOS.includes(t.game_slug)) return H.json({ ok: false, error: 'juego_invalido' }, 400);
+    if ((!edita || b.juego !== undefined) && !JUEGOS_CATALOGO.includes(t.game_slug)) return H.json({ ok: false, error: 'juego_invalido' }, 400);
     if (!ESTADOS_T.includes(t.estado)) return H.json({ ok: false, error: 'estado_invalido' }, 400);
     if (t.ends_at && t.starts_at && t.ends_at < t.starts_at) return H.json({ ok: false, error: 'fechas_invalidas' }, 400);
     const cols = Object.keys(t);
@@ -590,7 +590,7 @@ async function owner(env, sub, p, m, req, H) {
 
   if (p === '/admin/anuncio' && m === 'POST') {
     const titulo = txt(b.titulo, 140), cuerpo = txt(b.cuerpo, 20000), resumen = txt(b.resumen, 300);
-    const juego = JUEGOS.includes(b.juego) ? b.juego : null;
+    const juego = JUEGOS_CATALOGO.includes(b.juego) ? b.juego : null;
     if (!titulo || titulo.length < 3 || !cuerpo) return H.json({ ok: false, error: 'datos_invalidos' }, 400);
     if (b.slug) {
       const r = await db.prepare('UPDATE pt_articulos SET titulo = ?, resumen = ?, cuerpo = ?, game_slug = ? WHERE slug = ?').bind(titulo, resumen, cuerpo, juego, String(b.slug)).run();
@@ -610,7 +610,7 @@ async function owner(env, sub, p, m, req, H) {
     if (termina && termina < empieza) return H.json({ ok: false, error: 'fechas_invalidas' }, 400);
     const url = txt(b.url, 400);
     if (url && !/^https?:\/\//i.test(url)) return H.json({ ok: false, error: 'url_invalida' }, 400);
-    const fila = [titulo, txt(b.tipo, 30) || 'comunidad', txt(b.descripcion, 2000), JUEGOS.includes(b.juego) ? b.juego : null, txt(b.lugar, 120), url, empieza, termina];
+    const fila = [titulo, txt(b.tipo, 30) || 'comunidad', txt(b.descripcion, 2000), JUEGOS_CATALOGO.includes(b.juego) ? b.juego : null, txt(b.lugar, 120), url, empieza, termina];
     if (b.id) {
       await db.prepare('UPDATE integ_eventos SET titulo=?, tipo=?, descripcion=?, juego=?, lugar=?, url=?, empieza=?, termina=? WHERE id = ?').bind(...fila, String(b.id)).run();
       return H.json({ ok: true, id: b.id, actualizado: true });

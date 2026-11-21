@@ -1,13 +1,35 @@
-import { initializeApp, getApps } from "firebase/app";
 import {
-  getAuth,
-  GoogleAuthProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut,
-  type User,
-} from "firebase/auth";
-import firebaseConfig from "../../../firebase-applet-config.json";
+  classifyGoogleOAuthError,
+  type AuthErrorDetail,
+} from "./googleOAuthErrors";
+
+export type { AuthErrorDetail };
+
+export interface WorkspaceUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  photoURL: string | null;
+}
+
+export class GoogleAuthClientError extends Error {
+  code: string;
+  detail: AuthErrorDetail;
+
+  constructor(detail: AuthErrorDetail) {
+    super(detail.description);
+    this.name = "GoogleAuthClientError";
+    this.code = detail.code;
+    this.detail = detail;
+  }
+}
+
+export const GOOGLE_CLOUD_PROJECT_ID =
+  (import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_ID as string) || "gen-lang-client-0825603513";
+
+const GOOGLE_OAUTH_CLIENT_ID =
+  (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string) ||
+  "139095543579-1dbrkuvovomeakma1pc9fjt7fcuj2k1g.apps.googleusercontent.com";
 
 export const WORKSPACE_SCOPES = [
   "https://www.googleapis.com/auth/drive.file",
@@ -31,51 +53,203 @@ export const WORKSPACE_SCOPES = [
   "https://www.googleapis.com/auth/meetings.space.readonly",
 ] as const;
 
-export const FIREBASE_PROJECT_ID = firebaseConfig.projectId;
+const BASIC_SCOPES = ["openid", "email", "profile"] as const;
 
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-export const firebaseAuth = getAuth(app);
-
-const provider = new GoogleAuthProvider();
-for (const scope of WORKSPACE_SCOPES) {
-  provider.addScope(scope);
-}
-provider.setCustomParameters({ prompt: "consent" });
-
-// Strictly in-memory OAuth token cache (never localStorage or sessionStorage).
-let isSigningIn = false;
+// Strictly in-memory OAuth session cache (never localStorage or sessionStorage).
 let cachedAccessToken: string | null = null;
+let cachedHasWorkspaceScopes = false;
+let currentUser: WorkspaceUser | null = null;
 
-export function initWorkspaceAuth(
-  onReady: (user: User, hasWorkspaceToken: boolean) => void,
-  onSignedOut: () => void,
-) {
-  return onAuthStateChanged(firebaseAuth, (user) => {
-    if (user) {
-      onReady(user, Boolean(cachedAccessToken));
-    } else if (!isSigningIn) {
-      cachedAccessToken = null;
-      onSignedOut();
-    }
+type AuthListener = (user: WorkspaceUser | null, hasWorkspaceToken: boolean) => void;
+const listeners = new Set<AuthListener>();
+
+function notifyListeners() {
+  listeners.forEach((listener) => {
+    listener(currentUser, Boolean(cachedAccessToken && cachedHasWorkspaceScopes));
   });
 }
 
+function getCurrentHostname(): string {
+  try {
+    return window.location.hostname || "";
+  } catch {
+    return "";
+  }
+}
+
+declare global {
+  interface Window {
+    gapi?: any;
+    google?: any;
+  }
+}
+
+let gsiScriptPromise: Promise<void> | null = null;
+function loadGoogleIdentityServices(): Promise<void> {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (gsiScriptPromise) return gsiScriptPromise;
+
+  gsiScriptPromise = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src="https://accounts.google.com/gsi/client"]',
+    );
+    if (existing && window.google?.accounts?.oauth2) {
+      resolve();
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      if (window.google?.accounts?.oauth2) {
+        resolve();
+      } else {
+        gsiScriptPromise = null;
+        reject(
+          new GoogleAuthClientError(
+            classifyGoogleOAuthError("gsi_script_blocked", "", getCurrentHostname()),
+          ),
+        );
+      }
+    };
+    script.onerror = () => {
+      gsiScriptPromise = null;
+      reject(
+        new GoogleAuthClientError(
+          classifyGoogleOAuthError("gsi_script_blocked", "", getCurrentHostname()),
+        ),
+      );
+    };
+    document.head.appendChild(script);
+  });
+
+  return gsiScriptPromise;
+}
+
+async function fetchGoogleUserProfile(accessToken: string): Promise<WorkspaceUser> {
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new GoogleAuthClientError(
+      classifyGoogleOAuthError(
+        "userinfo_error",
+        "No se pudo verificar tu perfil de Google tras la autorización.",
+        getCurrentHostname(),
+      ),
+    );
+  }
+  const data = (await res.json()) as {
+    sub?: string;
+    email?: string;
+    name?: string;
+    picture?: string;
+  };
+  if (!data.sub) {
+    throw new GoogleAuthClientError(
+      classifyGoogleOAuthError("userinfo_error", "Respuesta de perfil de Google incompleta.", getCurrentHostname()),
+    );
+  }
+  return {
+    uid: data.sub,
+    email: data.email || "",
+    displayName: data.name || data.email || "Usuario Google",
+    photoURL: data.picture || null,
+  };
+}
+
+async function requestGoogleOAuthToken(
+  scopes: readonly string[],
+  prompt: "consent" | "select_account",
+  includesWorkspaceScopes: boolean,
+): Promise<{ user: WorkspaceUser; accessToken: string }> {
+  await loadGoogleIdentityServices();
+
+  const token = await new Promise<string>((resolve, reject) => {
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        scope: scopes.join(" "),
+        prompt,
+        callback: (response: { access_token?: string; error?: string; error_description?: string }) => {
+          if (response.error || !response.access_token) {
+            reject(
+              new GoogleAuthClientError(
+                classifyGoogleOAuthError(
+                  response.error || "unknown",
+                  response.error_description || "",
+                  getCurrentHostname(),
+                ),
+              ),
+            );
+            return;
+          }
+          resolve(response.access_token);
+        },
+        error_callback: (err: { type?: string; message?: string }) => {
+          reject(
+            new GoogleAuthClientError(
+              classifyGoogleOAuthError(
+                err?.type || "unknown",
+                err?.message || "",
+                getCurrentHostname(),
+              ),
+            ),
+          );
+        },
+      });
+      tokenClient.requestAccessToken({ prompt });
+    } catch (err: any) {
+      reject(
+        new GoogleAuthClientError(
+          classifyGoogleOAuthError("unknown", err?.message || "", getCurrentHostname()),
+        ),
+      );
+    }
+  });
+
+  const user = await fetchGoogleUserProfile(token);
+  cachedAccessToken = token;
+  cachedHasWorkspaceScopes = includesWorkspaceScopes || cachedHasWorkspaceScopes;
+  currentUser = user;
+  notifyListeners();
+  return { user, accessToken: token };
+}
+
+export function initWorkspaceAuth(
+  onReady: (user: WorkspaceUser, hasWorkspaceToken: boolean) => void,
+  onSignedOut: () => void,
+) {
+  const listener: AuthListener = (user, hasToken) => {
+    if (user) {
+      onReady(user, hasToken);
+    } else {
+      onSignedOut();
+    }
+  };
+  listeners.add(listener);
+  listener(currentUser, Boolean(cachedAccessToken && cachedHasWorkspaceScopes));
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+export function getCurrentWorkspaceUser(): WorkspaceUser | null {
+  return currentUser;
+}
+
+/** Inicio de sesión básico con Google Identity Services (perfil y correo únicamente). */
+export async function signInWithGoogleBasic(): Promise<{ user: WorkspaceUser; accessToken: string }> {
+  return requestGoogleOAuthToken(BASIC_SCOPES, "select_account", false);
+}
+
+/** Inicio de sesión directo con Google Identity Services + permisos OAuth de Google Workspace (token solo en memoria). */
 export async function signInWithGoogleWorkspace(): Promise<{
-  user: User;
+  user: WorkspaceUser;
   accessToken: string;
 }> {
-  isSigningIn = true;
-  try {
-    const result = await signInWithPopup(firebaseAuth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (!credential?.accessToken) {
-      throw new Error("No se obtuvo el token de acceso de Google Workspace.");
-    }
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
-  } finally {
-    isSigningIn = false;
-  }
+  return requestGoogleOAuthToken([...BASIC_SCOPES, ...WORKSPACE_SCOPES], "consent", true);
 }
 
 export function getWorkspaceAccessToken(): string | null {
@@ -83,20 +257,32 @@ export function getWorkspaceAccessToken(): string | null {
 }
 
 export async function signOutGoogleWorkspace(): Promise<void> {
+  const tokenToRevoke = cachedAccessToken;
   cachedAccessToken = null;
-  await signOut(firebaseAuth);
+  cachedHasWorkspaceScopes = false;
+  currentUser = null;
+  notifyListeners();
+  if (tokenToRevoke && window.google?.accounts?.oauth2?.revoke) {
+    await new Promise<void>((resolve) => {
+      try {
+        window.google.accounts.oauth2.revoke(tokenToRevoke, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
 }
 
-/** Helper para llamar a /api/pro/* en nuestro backend Express + Cloud SQL usando Firebase ID Token. */
+/** Helper para llamar a /api/pro/* en nuestro backend Express + Cloud SQL usando el token de acceso de Google OAuth 2.0. */
 export async function proApi<T>(
   path: string,
   opts: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
-  const user = firebaseAuth.currentUser;
-  if (!user) throw new Error("Inicia sesión con Google para guardar en tu espacio Pro.");
-  const idToken = await user.getIdToken();
+  if (!currentUser || !cachedAccessToken) {
+    throw new Error("Inicia sesión con Google para guardar en tu espacio Pro.");
+  }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${idToken}`,
+    Authorization: `Bearer ${cachedAccessToken}`,
     Accept: "application/json",
   };
   const init: RequestInit = { method: opts.method || "GET", headers };
@@ -159,13 +345,6 @@ export async function listDriveFiles(pageSize = 12): Promise<DriveFileItem[]> {
 }
 
 /* ---------------- Google Picker (client-side widget, sin developer key) ---------------- */
-declare global {
-  interface Window {
-    gapi?: any;
-    google?: any;
-  }
-}
-
 let pickerScriptPromise: Promise<void> | null = null;
 function loadGooglePickerApi(): Promise<void> {
   if (window.google?.picker) return Promise.resolve();

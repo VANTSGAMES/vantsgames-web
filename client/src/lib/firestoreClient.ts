@@ -13,9 +13,16 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import firebaseConfig from "../../../firebase-applet-config.json";
-import { firebaseAuth } from "./googleWorkspace";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 
-export const db = getFirestore(firebaseAuth.app, firebaseConfig.firestoreDatabaseId);
+// La app de Firebase se inicializa aquí: desde la actualización Workspace el
+// login ya no pasa por Firebase Auth (es OAuth de Google Workspace), pero
+// Firestore sigue necesitando la app para la base del applet.
+const appFirebase = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const firebaseAuth = getAuth(appFirebase);
+
+export const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
 
 export enum OperationType {
   CREATE = "create",

@@ -14,7 +14,8 @@ const SECURITY = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
   "x-frame-options": "SAMEORIGIN",
-  "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  "cross-origin-opener-policy": "same-origin-allow-popups",
+  "permissions-policy": "camera=(), microphone=(self), geolocation=(self)",
 };
 
 async function proxy(req, binding, host, path) {

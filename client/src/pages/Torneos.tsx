@@ -7,22 +7,51 @@ import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/c
 import { TournamentRow, MatchRow } from "@/components/domain";
 import { dinero, fecha, hora } from "@/lib/format";
 import { useMisEquipos, MisInscripciones } from "./Vants";
-import { filtrosJuegos } from "@/lib/juegos";
+import { JUEGO_POR_SLUG, filtrosJuegos } from "@/lib/juegos";
 import { normalizeJuegoSlug, parseQueryParam } from "@/lib/urlFilters";
-import { filterAndSortTournaments, normalizeText, type TorneoOrden } from "@/lib/discovery";
+import {
+  countTournamentsByGame,
+  filterAndSortTournaments,
+  normalizeText,
+  type TorneoOrden,
+} from "@/lib/discovery";
 import { classifyBracketStatus, filterBracketMatches, type BracketStatusFilter } from "@/lib/competitive";
 import { useMembresia } from "@/lib/useMembresia";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { useQueryClient } from "@tanstack/react-query";
 
 const JUEGOS = filtrosJuegos();
+const POR_PAGINA = 12;
 
-function GameFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function GameFilter({
+  value,
+  onChange,
+  counts,
+  totalTodos,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  counts?: Record<string, number>;
+  totalTodos?: number;
+}) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por juego">
-      {JUEGOS.map((j) => (
-        <button key={j.v} className={"btn btn-sm " + (value === j.v ? "btn-rojo" : "btn-ghost")} aria-pressed={value === j.v} onClick={() => onChange(j.v)} data-testid={"filter-juego-" + (j.v || "todos")}>{j.l}</button>
-      ))}
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por juego" data-testid="torneos-filtro-juegos">
+      {JUEGOS.map((j) => {
+        const n = j.v ? (counts ? counts[j.v] : undefined) : totalTodos;
+        return (
+          <button
+            key={j.v}
+            type="button"
+            className={"btn btn-sm " + (value === j.v ? "btn-rojo" : "btn-ghost")}
+            aria-pressed={value === j.v}
+            onClick={() => onChange(j.v)}
+            data-testid={"filter-juego-" + (j.v || "todos")}
+          >
+            {j.l}
+            {typeof n === "number" && n > 0 ? <span className="num opacity-80">({n})</span> : null}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -94,21 +123,32 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
     };
   }, []);
 
-  const q = useApi<{ data: Paged<Tournament> }>(`/api/tournaments?estado=${estado}&pag=${pag}&porPagina=12${juego ? "&juego=" + juego : ""}`);
-  const d = q.data?.data;
+  const q = useApi<{ data: Paged<Tournament> }>(`/api/tournaments?estado=${estado}&pag=1&porPagina=100`);
+  const todosItems = q.data?.data?.items || [];
+
+  const conteosPorJuego = useMemo(() => countTournamentsByGame(todosItems), [todosItems]);
+
   const itemsVisibles = useMemo(
-    () => filterAndSortTournaments(d?.items || [], { query: busqueda, sort: orden }),
-    [d?.items, busqueda, orden],
+    () => filterAndSortTournaments(todosItems, { juego, query: busqueda, sort: orden }),
+    [todosItems, juego, busqueda, orden],
   );
+
+  const paginados = useMemo(
+    () => itemsVisibles.slice((pag - 1) * POR_PAGINA, pag * POR_PAGINA),
+    [itemsVisibles, pag],
+  );
+
+  const juegoActivo = juego ? JUEGO_POR_SLUG[juego] || null : null;
+
   return (
     <>
       <PageHead
         eyebrow={competir ? "Competir" : "Torneos"}
         title={competir ? <>Inscribe a tu <span style={{ color: "var(--rojo)" }}>equipo</span></> : "Descubrir torneos"}
-        lead={competir ? "Torneos con inscripción próxima. La inscripción se valida en el servidor y queda pendiente hasta que la organización la confirme." : "Torneos de los once juegos del circuito publicados por la organización de VANTS y por la comunidad con plan."}
-        actions={<Link href="/torneos/crear" className="btn" data-testid="cta-crear-torneo">Crear mi torneo</Link>}
+        lead={competir ? "Torneos con inscripción próxima. Filtra por videojuego para ver exclusivamente sus competencias disponibles." : "Torneos de los once juegos del circuito publicados por la organización de VANTS y por la comunidad con plan."}
+        actions={<Link href={juego ? "/torneos/crear?juego=" + encodeURIComponent(juego) : "/torneos/crear"} className="btn" data-testid="cta-crear-torneo">Crear mi torneo</Link>}
       />
-      <div className="wrap grid gap-4">
+      <div className="wrap grid gap-4 pb-12">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {!competir ? (
             <div className="tabs" role="tablist">
@@ -118,18 +158,34 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
           <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
             <input
               type="search"
-              className="input h-10 w-full sm:w-64"
-              placeholder="Buscar torneo, región o formato"
+              className="input h-10 w-full sm:w-60"
+              placeholder={juegoActivo ? `Buscar torneo de ${juegoActivo.label}…` : "Buscar torneo, región o formato"}
               aria-label="Buscar torneo"
               value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
+              onChange={(e) => { setBusqueda(e.target.value); setPag(1); }}
               data-testid="input-buscar-torneo"
             />
+            <select
+              className="input h-10 w-full sm:w-48"
+              aria-label="Filtrar torneos por juego"
+              value={juego}
+              onChange={(e) => handleJuegoChange(e.target.value)}
+              data-testid="select-juego-torneo"
+            >
+              {JUEGOS.map((j) => {
+                const n = j.v ? conteosPorJuego[j.v] : todosItems.length;
+                return (
+                  <option key={j.v || "todos"} value={j.v}>
+                    {j.v ? `${j.l}${n ? ` (${n})` : ""}` : `Juego: Todos${todosItems.length ? ` (${todosItems.length})` : ""}`}
+                  </option>
+                );
+              })}
+            </select>
             <select
               className="input h-10 w-full sm:w-44"
               aria-label="Ordenar torneos"
               value={orden}
-              onChange={(e) => setOrden(e.target.value as TorneoOrden)}
+              onChange={(e) => { setOrden(e.target.value as TorneoOrden); setPag(1); }}
               data-testid="select-orden-torneo"
             >
               <option value="fecha">Ordenar: Próximos</option>
@@ -138,19 +194,66 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
             </select>
           </div>
         </div>
-        <GameFilter value={juego} onChange={handleJuegoChange} />
-        <div className="panel">
-          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="los torneos" onRetry={() => q.refetch()} /> : !d || itemsVisibles.length === 0 ? (
+
+        <GameFilter
+          value={juego}
+          onChange={handleJuegoChange}
+          counts={conteosPorJuego}
+          totalTodos={todosItems.length}
+        />
+
+        <div className="panel" data-testid="panel-lista-torneos">
+          {q.isLoading ? (
+            <Skel />
+          ) : q.error ? (
+            <ErrorBox error={q.error} what="los torneos" onRetry={() => q.refetch()} />
+          ) : itemsVisibles.length === 0 ? (
             <Empty
-              code={"torneos · " + estado + (juego ? " · " + juego : "")}
-              title={busqueda ? "Ningún torneo coincide con tu búsqueda" : competir ? "No hay inscripciones abiertas" : "No hay torneos en esta categoría"}
-              text={busqueda ? "Prueba con otro término o limpia el filtro de juego." : "Los torneos los publica la organización desde el panel interno. Vuelve más tarde o sigue los anuncios en Comunidad."}
-              action={busqueda ? <button type="button" className="btn btn-sm" onClick={() => setBusqueda("")}>Limpiar búsqueda</button> : <Link href="/noticias" className="link-arrow">Ver anuncios <span aria-hidden>→</span></Link>}
+              code={"torneos · " + estado + (juegoActivo ? " · " + juegoActivo.slug : "")}
+              title={
+                busqueda
+                  ? "Ningún torneo coincide con tu búsqueda"
+                  : juegoActivo
+                    ? `No hay torneos de ${juegoActivo.nombre} en esta categoría`
+                    : competir
+                      ? "No hay inscripciones abiertas"
+                      : "No hay torneos en esta categoría"
+              }
+              text={
+                busqueda
+                  ? "Prueba con otro término o limpia el filtro de juego."
+                  : juegoActivo
+                    ? `Cuando la organización o la comunidad publiquen un torneo de ${juegoActivo.nombre}, aparecerá exclusivamente aquí.`
+                    : "Los torneos los publica la organización desde el panel interno. Vuelve más tarde o sigue los anuncios en Comunidad."
+              }
+              action={
+                busqueda ? (
+                  <button type="button" className="btn btn-sm" onClick={() => setBusqueda("")}>
+                    Limpiar búsqueda
+                  </button>
+                ) : juegoActivo ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className="btn btn-sm" onClick={() => handleJuegoChange("")} data-testid="button-ver-todos-juegos">
+                      Ver todos los juegos
+                    </button>
+                    <Link
+                      href={"/torneos/crear?juego=" + encodeURIComponent(juegoActivo.slug)}
+                      className="btn btn-sm btn-rojo"
+                    >
+                      Crear torneo de {juegoActivo.label}
+                    </Link>
+                  </div>
+                ) : (
+                  <Link href="/noticias" className="link-arrow">
+                    Ver anuncios <span aria-hidden>→</span>
+                  </Link>
+                )
+              }
             />
           ) : (
             <>
-              {itemsVisibles.map((t) => <TournamentRow key={t.slug} t={t} />)}
-              <Pager pag={d.pag} total={d.total} por={d.porPagina || 12} onPage={setPag} />
+              {paginados.map((t) => <TournamentRow key={t.slug} t={t} />)}
+              <Pager pag={pag} total={itemsVisibles.length} por={POR_PAGINA} onPage={setPag} />
             </>
           )}
         </div>
@@ -454,13 +557,8 @@ function GuardarTorneoBtn({ t }: { t: Tournament }) {
     setSaving(true);
     try {
       const ws = await import("@/lib/googleWorkspace");
-      if (!ws.firebaseAuth.currentUser) {
-        toast({
-          kind: "info",
-          title: "Conecta Google en Centro Workspace",
-          description: "Inicia sesión con Google en /workspace para guardar torneos en tu seguimiento Pro.",
-        });
-        return;
+      if (!ws.getCurrentWorkspaceUser()) {
+        await ws.signInWithGoogleBasic();
       }
       if (savedId) {
         await ws.proApi(`/api/pro/bookmarks/${savedId}`, { method: "DELETE" });
@@ -622,15 +720,29 @@ export function BracketPrincipal() {
 }
 
 export function Ligas() {
-  const q = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=archive&porPagina=12");
+  const [juego, setJuego] = useState("");
+  const q = useApi<{ data: Paged<Tournament> }>("/api/tournaments?estado=archive&porPagina=100");
+  const todos = q.data?.data?.items || [];
+  const counts = useMemo(() => countTournamentsByGame(todos), [todos]);
+  const visibles = useMemo(
+    () => filterAndSortTournaments(todos, { juego }),
+    [todos, juego],
+  );
   return (
     <>
-      <PageHead eyebrow="Ligas y temporadas" title="Ligas y temporadas" lead="Temporadas del circuito VANTS y su histórico de torneos." />
+      <PageHead eyebrow="Ligas y temporadas" title="Ligas y temporadas" lead="Temporadas del circuito VANTS y su histórico de torneos organizados por videojuego." />
       <Section title="Torneos de temporadas anteriores">
-        <div className="panel">
-          {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el archivo" onRetry={() => q.refetch()} /> : (q.data?.data.items || []).length === 0 ? (
-            <Empty code="ligas · 0" title="Todavía no hay temporadas cerradas" text="Al terminar la primera temporada su clasificación y torneos quedarán archivados aquí." />
-          ) : q.data!.data.items.map((t) => <TournamentRow key={t.slug} t={t} />)}
+        <div className="grid gap-4">
+          <GameFilter value={juego} onChange={setJuego} counts={counts} totalTodos={todos.length} />
+          <div className="panel">
+            {q.isLoading ? <Skel /> : q.error ? <ErrorBox error={q.error} what="el archivo" onRetry={() => q.refetch()} /> : visibles.length === 0 ? (
+              <Empty
+                code={"ligas · " + (juego || "0")}
+                title={juego && JUEGO_POR_SLUG[juego] ? `Sin temporadas cerradas de ${JUEGO_POR_SLUG[juego].nombre}` : "Todavía no hay temporadas cerradas"}
+                text="Al terminar la primera temporada su clasificación y torneos quedarán archivados aquí."
+              />
+            ) : visibles.map((t) => <TournamentRow key={t.slug} t={t} />)}
+          </div>
         </div>
       </Section>
     </>

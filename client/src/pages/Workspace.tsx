@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "wouter";
-import type { User } from "firebase/auth";
 import { PageHead, Empty, Skel } from "@/components/ui-vants";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { JUEGOS, etiquetaJuego, opcionesJuegos } from "@/lib/juegos";
 import { validateTacticalNote } from "@/lib/urlFilters";
 import {
-  FIREBASE_PROJECT_ID,
+  GOOGLE_CLOUD_PROJECT_ID,
+  GoogleAuthClientError,
   createCalendarScrimEvent,
   createGoogleTask,
   createMeetBriefingRoom,
@@ -28,11 +28,13 @@ import {
   signInWithGoogleWorkspace,
   signOutGoogleWorkspace,
   toggleGoogleTask,
+  type AuthErrorDetail,
   type CalendarEventItem,
   type ChatSpaceItem,
   type DriveFileItem,
   type GmailMessageSummary,
   type GoogleTaskItem,
+  type WorkspaceUser,
 } from "@/lib/googleWorkspace";
 
 type TabKey = "archivos" | "agenda" | "comunicaciones" | "notas";
@@ -88,10 +90,11 @@ const WORKSPACE_SERVICES = [
 
 export default function Workspace() {
   const { confirm, toast } = useFeedback();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<WorkspaceUser | null>(null);
   const [hasToken, setHasToken] = useState(false);
   const [authReady, setAuthReady] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
+  const [authError, setAuthError] = useState<AuthErrorDetail | null>(null);
   const [tab, setTab] = useState<TabKey>("archivos");
   const [selectedGame, setSelectedGame] = useState("valorant");
 
@@ -223,6 +226,7 @@ export default function Workspace() {
 
   const handleSignIn = async () => {
     setSigningIn(true);
+    setAuthError(null);
     try {
       const res = await signInWithGoogleWorkspace();
       setUser(res.user);
@@ -234,11 +238,20 @@ export default function Workspace() {
         description: `Sesión activa como ${res.user.email || res.user.displayName}.`,
       });
     } catch (err: any) {
-      toast({
-        kind: "error",
-        title: "No se completó el acceso con Google",
-        description: err?.message || "Inténtalo de nuevo.",
-      });
+      if (err instanceof GoogleAuthClientError) {
+        setAuthError(err.detail);
+        toast({
+          kind: "error",
+          title: err.detail.title,
+          description: err.detail.description,
+        });
+      } else {
+        toast({
+          kind: "error",
+          title: "No se completó el acceso con Google",
+          description: err?.message || "Inténtalo de nuevo.",
+        });
+      }
     } finally {
       setSigningIn(false);
     }
@@ -641,6 +654,18 @@ export default function Workspace() {
                   label={signingIn ? "Abriendo Google…" : "Sign in with Google"}
                 />
               </div>
+              {authError && (
+                <div
+                  role="alert"
+                  data-testid="workspace-auth-error"
+                  className="px-3.5 py-3 border text-xs leading-relaxed grid gap-1"
+                  style={{ borderColor: "rgba(255,13,46,0.45)", background: "rgba(255,13,46,0.1)", color: "#ffd2d8" }}
+                >
+                  <div className="font-semibold text-white">{authError.title}</div>
+                  <div>{authError.description}</div>
+                  {authError.actionHint && <div className="text-zinc-200">{authError.actionHint}</div>}
+                </div>
+              )}
             </div>
             <div className="grid gap-px" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
               {WORKSPACE_SERVICES.map((s) => (
@@ -1060,7 +1085,7 @@ export default function Workspace() {
                       <span className="empty-code">google chat · requisito workspace</span>
                       <p className="small muted">{chatNotice}</p>
                       <a
-                        href={`https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${FIREBASE_PROJECT_ID}`}
+                        href={`https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${GOOGLE_CLOUD_PROJECT_ID}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="link-arrow"

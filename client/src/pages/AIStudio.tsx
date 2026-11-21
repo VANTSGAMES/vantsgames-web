@@ -19,7 +19,7 @@ import { PageHead } from "@/components/ui-vants";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { JUEGOS } from "@/lib/juegos";
 import {
-  firebaseAuth,
+  getCurrentWorkspaceUser,
   initWorkspaceAuth,
   signInWithGoogleWorkspace,
 } from "@/lib/googleWorkspace";
@@ -42,7 +42,7 @@ import {
   type StudioModeId,
   type StudioModelId,
 } from "@/lib/studioHelpers";
-import type { User } from "firebase/auth";
+import type { WorkspaceUser } from "@/lib/googleWorkspace";
 
 interface ChatMessage {
   id: string;
@@ -103,7 +103,7 @@ export default function AIStudio() {
   const [tab, setTab] = useState<"coach" | "voz" | "media">("coach");
 
   // Firebase Auth & Firestore persistence
-  const [fbUser, setFbUser] = useState<User | null>(firebaseAuth.currentUser);
+  const [fbUser, setFbUser] = useState<WorkspaceUser | null>(getCurrentWorkspaceUser());
   const [savedSessions, setSavedSessions] = useState<SavedAiSession[]>([]);
   const [savedVoiceNotes, setSavedVoiceNotes] = useState<SavedVoiceNote[]>([]);
   const [signingIn, setSigningIn] = useState(false);

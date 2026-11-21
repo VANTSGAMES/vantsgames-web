@@ -13,7 +13,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { opcionesJuegos } from "@/lib/juegos";
+import { filtrosJuegos, opcionesJuegos } from "@/lib/juegos";
+import { detectKickClipGame, filterClipsByGame } from "@/lib/clipFiltering";
 import { api, apiForm } from "@/lib/api";
 import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
 import { useFeedback } from "@/components/FeedbackProvider";
@@ -43,7 +44,7 @@ const mensaje = (e: any) => ERR[e?.code] || "No se pudo completar (" + (e?.code 
 
 /* ---------------- Kick (desde el navegador) ---------------- */
 type KickClip = { id: string; title: string; video_url?: string; clip_url?: string; thumbnail_url?: string; views?: number; view_count?: number; duration?: number; created_at: string; category?: { name?: string; slug?: string }; creator?: { username?: string } };
-const juegoKick = (c?: { name?: string; slug?: string }) => { const n = String(c?.slug || c?.name || "").toLowerCase(); return n.includes("valorant") ? "valorant" : /counter|cs2|cs-2/.test(n) ? "cs2" : "otro"; };
+const juegoKick = (c?: { name?: string; slug?: string }) => detectKickClipGame(c);
 async function kickApi<T>(path: string): Promise<T> {
   const r = await fetch("https://kick.com/api/v2" + path, { headers: { accept: "application/json" } });
   if (!r.ok) throw new Error("kick_" + r.status);
@@ -241,7 +242,7 @@ export function SubirClip() {
   const enviar = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) return setSt({ k: "error", m: ERR.falta_video });
-    if (!juego) return setSt({ k: "error", m: "Elige el juego del clip (VALORANT, CS2 u Otro)." });
+    if (!juego) return setSt({ k: "error", m: "Elige el juego correcto del clip para que aparezca en su categoría." });
     setSt({ k: "enviando", m: "Preparando el vídeo…" });
     try {
       const { thumb, dur } = await miniaturaDe(file);
@@ -296,7 +297,7 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   const qc = useQueryClient();
   const q = useApi<Mios>("/int/clips/mios", { auth: true });
   const kk = useClipsKick(q.data?.canal_kick);
-  const [filtro, setFiltro] = useState<"todos" | "valorant" | "cs2">("todos");
+  const [filtro, setFiltro] = useState<string>("");
   const borrar = async (c: Clip) => {
     const ok = await confirm({ title: "Quitar clip de tu biblioteca", description: `¿Quitar «${c.titulo || "este clip"}» de tu biblioteca?`, confirmLabel: "Quitar clip", danger: true });
     if (!ok) return;
@@ -307,15 +308,26 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
       toast({ kind: "ok", title: "Clip quitado de tu biblioteca" });
     } catch (e) { toast({ kind: "error", title: "No se pudo quitar el clip", description: mensaje(e) }); }
   };
-  const f = (xs: Clip[] | undefined) => (filtro === "todos" ? xs || [] : (xs || []).filter((c) => c.juego === filtro));
+  const f = (xs: Clip[] | undefined) => filterClipsByGame(xs, filtro);
   const enlaces = new Set((q.data?.clips || []).map((c) => c.url));
   const propios = f(q.data?.clips), subidos = f(q.data?.subidos), tw = f(q.data?.twitch);
   const kick = f((q.data?.kick && q.data.kick.length ? q.data.kick : kk.data) || []).filter((c) => !enlaces.has(c.url));
+  const filtros = filtrosJuegos();
   return (
     <div className="grid gap-8" data-testid="mi-biblioteca">
       {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0"><SubirClip /><PublicarClip /></div>}
-      <div className="flex gap-1 flex-wrap" role="group" aria-label="Filtrar por juego">
-        {([["todos", "Todos"], ["valorant", "VALORANT"], ["cs2", "CS2"]] as const).map(([v, l]) => <button key={v} className={"btn btn-sm " + (filtro === v ? "btn-rojo" : "btn-ghost")} aria-pressed={filtro === v} onClick={() => setFiltro(v)}>{l}</button>)}
+      <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Filtrar por juego">
+        {filtros.map((j) => (
+          <button
+            key={j.v}
+            className={"btn btn-sm " + (filtro === j.v ? "btn-rojo" : "btn-ghost")}
+            aria-pressed={filtro === j.v}
+            onClick={() => setFiltro(j.v)}
+            data-testid={"biblioteca-juego-" + (j.v || "todos")}
+          >
+            {j.l}
+          </button>
+        ))}
       </div>
       {q.isLoading ? <Skel h={160} n={2} /> : q.error ? <ErrorBox error={q.error} what="tu biblioteca" /> : (
         <>
@@ -344,10 +356,23 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
 }
 
 /** Clips públicos de la comunidad VANTS (Recientes / Por videojuego). */
-export function ClipsComunidad({ juego }: { juego?: string }) {
-  const q = useApi<{ clips: Clip[] }>("/int/clips/comunidad" + (juego ? "?juego=" + juego : ""));
-  const cs = q.data?.clips || [];
-  if (q.isLoading || cs.length === 0) return null;
+export function ClipsComunidad({ juego, mostrarVacio = false }: { juego?: string; mostrarVacio?: boolean }) {
+  const q = useApi<{ clips: Clip[] }>("/int/clips/comunidad" + (juego ? "?juego=" + encodeURIComponent(juego) : ""));
+  const cs = filterClipsByGame(q.data?.clips, juego);
+  if (q.isLoading) return mostrarVacio ? <Skel h={160} n={1} /> : null;
+  if (cs.length === 0) {
+    if (!mostrarVacio) return null;
+    return (
+      <div className="mb-8">
+        <Empty
+          code={"clips · " + (juego || "0")}
+          title={juego ? "Todavía no hay clips publicados en esta categoría" : "Todavía no hay clips de la comunidad"}
+          text="Cuando subas o pegues un clip eligiendo este juego, aparecerá exclusivamente aquí."
+          action={<Link href="/clips/publicar" className="btn btn-sm btn-rojo">Publicar clip</Link>}
+        />
+      </div>
+    );
+  }
   return (
     <section className="grid gap-4 mb-10" data-testid="clips-comunidad">
       <h2 className="d-3">Clips de la comunidad VANTS</h2>

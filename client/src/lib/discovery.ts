@@ -1,8 +1,16 @@
-import type { DefJuego, PlataformaJuego } from "./juegos";
+import { JUEGOS, JUEGO_POR_SLUG, type DefJuego, type PlataformaJuego } from "./juegos";
 import type { Team, Tournament } from "./api";
 
 export type PlataformaFiltro = "Todas" | PlataformaJuego;
 export type TorneoOrden = "fecha" | "premio" | "plazas";
+
+export interface TournamentGameGroup {
+  slug: string;
+  game: DefJuego | null;
+  label: string;
+  nombre: string;
+  tournaments: Tournament[];
+}
 
 export interface CommandItem {
   id: string;
@@ -20,6 +28,29 @@ export function normalizeText(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+/** Extrae y normaliza el slug oficial del videojuego de un torneo. */
+export function resolveTournamentGameSlug(t: Pick<Tournament, "game">): string {
+  const rawSlug = typeof t.game === "string" ? t.game : t.game?.slug || "";
+  const clean = normalizeText(rawSlug);
+  if (clean && JUEGO_POR_SLUG[clean]) return clean;
+
+  const rawName = typeof t.game === "string" ? t.game : t.game?.nombre || "";
+  const name = normalizeText(rawName);
+  if (!name) return clean;
+  if (name.includes("valorant")) return "valorant";
+  if (name.includes("counter-strike") || name === "cs2" || name.includes("csgo")) return "cs2";
+  if (name.includes("fortnite")) return "fortnite";
+  if (name.includes("fc 27") || name.includes("fc27") || name.includes("ea sports fc")) return "fc27";
+  if (name.includes("smash")) return "smash";
+  if (name.includes("warzone") || name.includes("call of duty")) return "warzone";
+  if (name.includes("free fire") || name.includes("freefire")) return "freefire";
+  if (name.includes("wild rift") || name.includes("wildrift")) return "wildrift";
+  if (name.includes("league of legends") || name === "lol") return "lol";
+  if (name.includes("mobile legends") || name === "mlbb") return "mlbb";
+  if (name.includes("clash royale") || name === "clashroyale") return "clashroyale";
+  return clean;
 }
 
 /** Filtra el catálogo de juegos por plataforma ("Todas" | "PC" | "Consola" | "Móvil"). */
@@ -44,20 +75,73 @@ export function countGamesByPlatform(games: DefJuego[]): Record<PlataformaFiltro
   return counts;
 }
 
-/** Filtra torneos por texto (nombre, región, formato o juego) y ordena según criterio elegido. */
+/** Cuenta cuántos torneos hay publicados por cada slug de juego. */
+export function countTournamentsByGame(items: Tournament[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const j of JUEGOS) counts[j.slug] = 0;
+  for (const t of items) {
+    const slug = resolveTournamentGameSlug(t);
+    if (!slug) continue;
+    counts[slug] = (counts[slug] || 0) + 1;
+  }
+  return counts;
+}
+
+/** Agrupa torneos por videojuego respetando el orden oficial del catálogo VANTS. */
+export function groupTournamentsByGame(items: Tournament[]): TournamentGameGroup[] {
+  const bySlug = new Map<string, Tournament[]>();
+  for (const t of items) {
+    const slug = resolveTournamentGameSlug(t) || "otros";
+    if (!bySlug.has(slug)) bySlug.set(slug, []);
+    bySlug.get(slug)!.push(t);
+  }
+
+  const groups: TournamentGameGroup[] = [];
+  for (const j of JUEGOS) {
+    const list = bySlug.get(j.slug);
+    if (list && list.length > 0) {
+      groups.push({
+        slug: j.slug,
+        game: j,
+        label: j.label,
+        nombre: j.nombre,
+        tournaments: list,
+      });
+      bySlug.delete(j.slug);
+    }
+  }
+
+  bySlug.forEach((list, slug) => {
+    const first = list[0];
+    groups.push({
+      slug,
+      game: null,
+      label: (first?.game?.nombre || slug).toUpperCase(),
+      nombre: first?.game?.nombre || slug,
+      tournaments: list,
+    });
+  });
+
+  return groups;
+}
+
+/** Filtra torneos por juego (estricto), texto (nombre, región, formato o juego) y ordena según criterio elegido. */
 export function filterAndSortTournaments(
   items: Tournament[],
-  opts: { query?: string; sort?: TorneoOrden },
+  opts: { juego?: string; query?: string; sort?: TorneoOrden },
 ): Tournament[] {
+  const selectedGame = normalizeText(opts.juego || "");
   const q = normalizeText(opts.query || "");
-  const filtered = q
-    ? items.filter((t) => {
-        const haystack = normalizeText(
-          [t.nombre, t.region, t.formato, t.game?.nombre, t.game?.slug].filter(Boolean).join(" "),
-        );
-        return haystack.includes(q);
-      })
-    : [...items];
+  const filtered = items.filter((t) => {
+    if (selectedGame && resolveTournamentGameSlug(t) !== selectedGame) {
+      return false;
+    }
+    if (!q) return true;
+    const haystack = normalizeText(
+      [t.nombre, t.region, t.formato, t.game?.nombre, t.game?.slug].filter(Boolean).join(" "),
+    );
+    return haystack.includes(q);
+  });
 
   const sort = opts.sort || "fecha";
   filtered.sort((a, b) => {

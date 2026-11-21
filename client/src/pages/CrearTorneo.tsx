@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { useMembresia } from "@/lib/useMembresia";
 import { JUEGOS } from "@/lib/juegos";
+import { normalizeJuegoSlug, parseQueryParam } from "@/lib/urlFilters";
 import { PLANES } from "./Membresias";
 import { useApi } from "@/lib/useApi";
 
@@ -51,7 +52,8 @@ function GatePlan() {
 }
 
 function FormularioTorneo() {
-  const [f, setF] = useState({ nombre: "", juego: "valorant", formato: FORMATOS[0], region: REGIONES[0], plazas: 8, premio: "", inicio: "", reglas: "" });
+  const juegoInicial = normalizeJuegoSlug(parseQueryParam("juego")) || "valorant";
+  const [f, setF] = useState({ nombre: "", juego: juegoInicial, formato: FORMATOS[0], region: REGIONES[0], plazas: 8, premio: "", inicio: "", reglas: "" });
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<{ slug: string; nombre: string } | null>(null);

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import type { Article, Paged, Stream, YtVideo, Creator } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
@@ -9,6 +10,15 @@ import { JUEGOS } from "@/lib/juegos";
 import { MiBiblioteca, ClipsComunidad } from "./MisClips";
 import { UpsellPlan } from "./Torneos";
 import { useMembresia } from "@/lib/useMembresia";
+import { communityFetch } from "@/lib/communityApi";
+import { formatExpiryCountdown, type LfgListingItem } from "@/lib/lfgHelpers";
+import {
+  formatRelativeTimeEs,
+  forumCategoryLabel,
+  type ForumPostItem,
+} from "@/lib/forumHelpers";
+import type { WeeklyMissionsResponse } from "@/lib/missionsHelpers";
+import type { CommunityVotingResponse } from "@/lib/votingHelpers";
 
 /* ---------------- Clips ---------------- */
 const CLIP_TABS = [
@@ -43,7 +53,7 @@ function Destacados() {
   );
 }
 
-function Recientes({ filtro }: { filtro?: string }) {
+function Recientes({ filtro, silencioso = false }: { filtro?: string; silencioso?: boolean }) {
   const q = useApi<{ videos: YtVideo[]; canal?: { titulo: string } }>("/api/youtube/ultimos");
   let v = q.data?.videos || [];
   const CLAVES: Record<string, RegExp> = {
@@ -60,9 +70,9 @@ function Recientes({ filtro }: { filtro?: string }) {
     clashroyale: /clash royale/i,
   };
   if (filtro && CLAVES[filtro]) v = v.filter((x) => CLAVES[filtro].test(x.titulo));
-  if (q.isLoading) return <Skel h={160} n={1} />;
-  if (q.error) return <ErrorBox error={q.error} what="los clips" onRetry={() => q.refetch()} />;
-  if (v.length === 0) return <Empty code={"clips · " + (filtro || "0")} title={filtro ? "No hay clips de " + gameLabel(filtro) + " todavía" : "Todavía no hay clips"} />;
+  if (q.isLoading) return silencioso ? null : <Skel h={160} n={1} />;
+  if (q.error) return silencioso ? null : <ErrorBox error={q.error} what="los clips" onRetry={() => q.refetch()} />;
+  if (v.length === 0) return silencioso ? null : <Empty code={"clips · " + (filtro || "0")} title={filtro ? "No hay clips de " + gameLabel(filtro) + " todavía" : "Todavía no hay clips"} />;
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">{v.map((x) => <VideoTile key={x.id} v={x} />)}</div>
@@ -85,9 +95,21 @@ export function Clips({ vista }: { vista: "destacados" | "recientes" | "juego" }
         {vista === "recientes" && <><ClipsComunidad /><Recientes /></>}
         {vista === "juego" && (
           <>
-            <div className="flex flex-wrap gap-1.5 mb-6" role="group" aria-label="Juego">{JUEGOS.map((j) => <button key={j.slug} className={"btn btn-sm " + (juego === j.slug ? "btn-rojo" : "btn-ghost")} aria-pressed={juego === j.slug} onClick={() => setJuego(j.slug)}>{j.label}</button>)}</div>
-            <ClipsComunidad juego={juego} />
-            <Recientes filtro={juego} />
+            <div className="flex flex-wrap gap-1.5 mb-6" role="group" aria-label="Juego">
+              {JUEGOS.map((j) => (
+                <button
+                  key={j.slug}
+                  className={"btn btn-sm " + (juego === j.slug ? "btn-rojo" : "btn-ghost")}
+                  aria-pressed={juego === j.slug}
+                  onClick={() => setJuego(j.slug)}
+                  data-testid={"clips-juego-" + j.slug}
+                >
+                  {j.label}
+                </button>
+              ))}
+            </div>
+            <ClipsComunidad juego={juego} mostrarVacio />
+            <Recientes filtro={juego} silencioso />
           </>
         )}
       </div>
@@ -232,18 +254,165 @@ export function Comunidad() {
   const news = useApi<{ data: Paged<Article> }>("/api/articles?porPagina=4");
   const creadores = useApi<{ creadores: Creator[] }>("/api/twitch/creadores");
   const vivos = useApi<{ jugadores: any[] }>("/api/en-vivo", { refetchMs: 60_000 });
+  const lfg = useQuery<{ listings: LfgListingItem[] }>({
+    queryKey: ["community-lfg", "preview"],
+    queryFn: () => communityFetch<{ listings: LfgListingItem[] }>("/api/community/lfg"),
+    staleTime: 30_000,
+  });
+  const forum = useQuery<{ posts: ForumPostItem[] }>({
+    queryKey: ["community-forum", "preview"],
+    queryFn: () => communityFetch<{ posts: ForumPostItem[] }>("/api/community/forum"),
+    staleTime: 30_000,
+  });
+  const missions = useQuery<WeeklyMissionsResponse>({
+    queryKey: ["community-missions", "preview"],
+    queryFn: () => communityFetch<WeeklyMissionsResponse>("/api/community/missions"),
+    staleTime: 30_000,
+  });
+  const voting = useQuery<CommunityVotingResponse>({
+    queryKey: ["community-voting", "preview"],
+    queryFn: () => communityFetch<CommunityVotingResponse>("/api/community/voting"),
+    staleTime: 30_000,
+  });
+  const lfgItems = lfg.data?.listings || [];
+  const forumItems = forum.data?.posts || [];
+  const missionItems = missions.data?.missions || [];
+  const pollItems = voting.data?.polls || [];
+  const pickemItems = voting.data?.pickemMatches || [];
   return (
     <>
-      <PageHead eyebrow="Comunidad" title={<>Connect<span style={{ color: "var(--rojo)" }}>.</span></>} lead="Lo que pasa en VANTS: anuncios, actividad y creadores." />
-      <div className="wrap grid gap-px md:grid-cols-3" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
-        {[
-          ["/noticias", "Noticias y anuncios", news.data ? news.data.data.total + " publicadas" : "…"],
-          ["/en-vivo", "Twitch en vivo", creadores.data ? creadores.data.creadores.filter((c) => c.enVivo).length + " en directo" : "…"],
-          ["/creadores", "Creadores", creadores.data ? creadores.data.creadores.length + " canales" : "…"],
-        ].map(([to, l, n]) => (
-          <Link key={to} href={to} className="p-6 hover:bg-[var(--grafito-2)] transition-colors" style={{ background: "var(--grafito-1)" }}><div className="d-2">{l}</div><div className="num muted mt-2">{n}</div></Link>
-        ))}
+      <PageHead eyebrow="Comunidad" title={<>Connect<span style={{ color: "var(--rojo)" }}>.</span></>} lead="Lo que pasa en VANTS: buscador de equipos y scrims, muro por juego, misiones semanales, votaciones Pick'em, anuncios y creadores." />
+      <div className="wrap">
+        <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-4" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
+          {[
+            ["/comunidad/lfg", "Buscador LFG / Scrims", lfg.isLoading ? "…" : lfgItems.length + " activos"],
+            ["/comunidad/foro", "Muro / Foro", forum.isLoading ? "…" : forumItems.length + " hilos"],
+            ["/comunidad/misiones", "Misiones Semanales", missions.isLoading ? "…" : missionItems.length + " retos · " + (missions.data?.summary.maxWeeklyXp || 0) + " XP"],
+            ["/comunidad/votaciones", "Votaciones y Pick'em", voting.isLoading ? "…" : pollItems.length + " encuestas · " + pickemItems.length + " series"],
+            ["/eventos", "Eventos", "Showmatches y quedadas"],
+            ["/noticias", "Noticias y anuncios", news.data ? news.data.data.total + " publicadas" : "…"],
+            ["/en-vivo", "Twitch en vivo", creadores.data ? creadores.data.creadores.filter((c) => c.enVivo).length + " en directo" : "…"],
+            ["/creadores", "Creadores", creadores.data ? creadores.data.creadores.length + " canales" : "…"],
+          ].map(([to, l, n]) => (
+            <Link key={to} href={to} className="p-6 hover:bg-[var(--grafito-2)] transition-colors" style={{ background: "var(--grafito-1)" }} data-testid={"comunidad-card-" + to.replace(/\//g, "-").replace(/^-/, "")}><div className="d-2">{l}</div><div className="num muted mt-2">{n}</div></Link>
+          ))}
+        </div>
       </div>
+      <Section id="lfg-comunidad" eyebrow="Fase 1 · Equipos y Scrims" title="Buscador LFG / LFT" more={{ to: "/comunidad/lfg", label: "Abrir buscador" }}>
+        {lfg.isLoading ? (
+          <Skel h={84} n={2} />
+        ) : lfgItems.length === 0 ? (
+          <Empty
+            code="lfg · 0"
+            title="Sin anuncios activos en este momento"
+            text="Publica si buscas equipo (LFT), jugadores para tu roster (LFG) o scrims en cualquiera de los 11 juegos de VANTS."
+            action={<Link href="/comunidad/lfg" className="btn btn-sm btn-rojo">Publicar en el buscador →</Link>}
+          />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {lfgItems.slice(0, 4).map((item) => (
+              <Link
+                key={item.id}
+                href="/comunidad/lfg"
+                className="panel p-5 grid gap-2 hover:bg-[var(--grafito-2)] transition-colors"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={item.type === "lft" ? "tag tag-rojo" : item.type === "lfg" ? "tag tag-ok" : "tag"}>
+                      {item.type.toUpperCase()}
+                    </span>
+                    <GameTag g={item.gameSlug} />
+                    <span className="tag">{item.region}</span>
+                  </div>
+                  <span className="small muted num">{formatExpiryCountdown(item.expiresAt)}</span>
+                </div>
+                <strong className="d-3">{item.title}</strong>
+                <div className="small muted">
+                  {item.roleNeeded} · {item.rankLevel} · {item.schedule}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section id="foro-comunidad" eyebrow="Fase 2 · Muro y Foro" title="Conversación por videojuego" more={{ to: "/comunidad/foro", label: "Ir al muro" }}>
+        {forum.isLoading ? (
+          <Skel h={84} n={2} />
+        ) : forumItems.length === 0 ? (
+          <Empty
+            code="foro · 0"
+            title="Aún no hay hilos en el muro"
+            text="Comparte discusiones, guías y lineups, highlights, análisis de torneos o debates en cualquiera de los 11 juegos de VANTS."
+            action={<Link href="/comunidad/foro" className="btn btn-sm btn-rojo">Abrir el muro →</Link>}
+          />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {forumItems.slice(0, 4).map((post) => (
+              <Link
+                key={post.id}
+                href="/comunidad/foro"
+                className="panel p-5 grid gap-2 hover:bg-[var(--grafito-2)] transition-colors"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="tag">{forumCategoryLabel(post.category)}</span>
+                    {post.gameSlug === "general" ? <span className="tag">General</span> : <GameTag g={post.gameSlug} />}
+                  </div>
+                  <span className="small muted num">{formatRelativeTimeEs(post.createdAt)}</span>
+                </div>
+                <strong className="d-3">{post.title}</strong>
+                <div className="small muted">
+                  {post.authorNick} · GG {post.reactions.gg} · Fuego {post.reactions.fire} · {post.commentsCount} comentarios
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section id="misiones-comunidad" eyebrow="Fase 3 · Retos Semanales" title="Misiones y XP de temporada" more={{ to: "/comunidad/misiones", label: "Ver todas" }}>
+        {missions.isLoading ? (
+          <Skel h={84} n={2} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-3">
+            {missionItems.slice(0, 3).map((m) => (
+              <Link
+                key={m.code}
+                href="/comunidad/misiones"
+                className="panel p-5 grid gap-2 hover:bg-[var(--grafito-2)] transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="tag">{m.badgeTag}</span>
+                  <span className="tag tag-rojo num">+{m.xp} XP</span>
+                </div>
+                <strong className="d-3">{m.title}</strong>
+                <div className="small muted line-clamp-2">{m.description}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section id="votaciones-comunidad" eyebrow="Fase 4 · Encuestas y Pick'em" title="Votaciones oficiales y predicciones" more={{ to: "/comunidad/votaciones", label: "Ir a votar" }}>
+        {voting.isLoading ? (
+          <Skel h={84} n={2} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {pollItems.slice(0, 2).map((p) => (
+              <Link
+                key={p.id}
+                href="/comunidad/votaciones"
+                className="panel p-5 grid gap-2 hover:bg-[var(--grafito-2)] transition-colors"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="tag tag-rojo">{p.badge}</span>
+                  <span className="small muted num">{p.totalVotes} votos</span>
+                </div>
+                <strong className="d-3">{p.title}</strong>
+                <div className="small muted line-clamp-2">{p.description}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
       <Section id="actividad" eyebrow="Actividad reciente" title="Jugadores conectados ahora">
         {vivos.isLoading ? <Skel n={2} /> : vivos.error ? <ErrorBox error={vivos.error} what="la actividad" /> : (vivos.data?.jugadores || []).length === 0 ? (
           <Empty code="actividad · 0" title="Nadie conectado en este momento" text="La presencia se registra cuando un jugador con sesión está en la plataforma." />

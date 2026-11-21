@@ -24,7 +24,7 @@ import { PageHead } from "@/components/ui-vants";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { JUEGOS } from "@/lib/juegos";
 import {
-  firebaseAuth,
+  getCurrentWorkspaceUser,
   initWorkspaceAuth,
   signInWithGoogleWorkspace,
 } from "@/lib/googleWorkspace";
@@ -35,7 +35,7 @@ import {
   type SavedArenaSpot,
 } from "@/lib/firestoreClient";
 import { formatRouteSummary, isQuotaErrorPayload } from "@/lib/studioHelpers";
-import type { User } from "firebase/auth";
+import type { WorkspaceUser } from "@/lib/googleWorkspace";
 
 interface CityHub {
   id: string;
@@ -359,7 +359,7 @@ export default function ArenasMapa() {
   const [mapError, setMapError] = useState<string | null>(null);
 
   // Firebase Auth & Firestore saved arena spots
-  const [fbUser, setFbUser] = useState<User | null>(firebaseAuth.currentUser);
+  const [fbUser, setFbUser] = useState<WorkspaceUser | null>(getCurrentWorkspaceUser());
   const [savedSpots, setSavedSpots] = useState<SavedArenaSpot[]>([]);
   const [spotNote, setSpotNote] = useState("");
   const [spotGame, setSpotGame] = useState("valorant");
