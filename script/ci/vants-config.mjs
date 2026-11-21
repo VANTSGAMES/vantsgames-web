@@ -34,6 +34,15 @@ const cfg = {
     ...(a.html_handling ? { html_handling: a.html_handling } : {}),
   },
   triggers: { crons: JSON.parse(process.env.CRONS || "[]") },
-  observability: set.observability,
+  // Activada a petición (antes se copiaba set.observability, que traía enabled=false
+  // de Cloudflare): logs, traces y detección de problemas con persistencia.
+  observability: {
+    enabled: true,
+    head_sampling_rate: 1,
+    redact_query_string: false,
+    logs: { enabled: true, head_sampling_rate: 1, invocation_logs: true, persist: true },
+    traces: { enabled: true, head_sampling_rate: 1, persist: true },
+    issue_detection: { enabled: true },
+  },
 };
 console.log(JSON.stringify(cfg, null, 2));
