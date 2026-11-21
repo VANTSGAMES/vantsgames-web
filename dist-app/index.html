@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>VANTS GAMES</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #0a0a0b; color: #f4f4f5;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      text-align: center; padding: 24px;
+    }
+    .marca {
+      font-weight: 800; letter-spacing: 0.14em; font-size: 1.3rem;
+    }
+    .marca span { color: #8e8e96; font-weight: 600; }
+    p { color: #8e8e96; max-width: 34ch; line-height: 1.6; font-size: 0.95rem; }
+    button {
+      margin-top: 8px; background: #ff0d2e; color: #fff; border: 0; cursor: pointer;
+      padding: 12px 22px; font-weight: 700; letter-spacing: 0.06em;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="marca">VANTS<span> GAMES</span></div>
+    <p>Necesitas conexión a internet para entrar al circuito. Comprueba tu red y vuelve a intentarlo.</p>
+    <button onclick="location.reload()">Reintentar</button>
+  </main>
+</body>
+</html>

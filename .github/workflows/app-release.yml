@@ -1,0 +1,115 @@
+name: "App Android · APK firmado + Release"
+
+# Construye la app Android (shell Capacitor de https://vants.cc), la firma con
+# el keystore de los secrets y publica el APK en GitHub Releases con el tag
+# de la versión que se indique.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión (x.y.z)"
+        required: true
+        default: "1.0.0"
+      codigo:
+        description: "versionCode (entero creciente)"
+        required: false
+        default: "1"
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Componentes del SDK de Android
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" >/dev/null
+
+      - name: Proyecto Capacitor
+        run: |
+          npm ci --no-audit --no-fund
+          npm i -D @capacitor/cli @capacitor/core @capacitor/android sharp
+          npx cap add android
+          npx cap sync android
+
+      - name: Icono, splash y versión
+        env:
+          APP_VERSION: ${{ inputs.version }}
+          APP_VERSION_CODE: ${{ inputs.codigo }}
+        run: node script/ci/app-icono.mjs
+
+      - name: Inyectar firma de release
+        env:
+          VANTS_KEYSTORE_B64: ${{ secrets.VANTS_ANDROID_KEYSTORE }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$VANTS_KEYSTORE_B64" | base64 -d > vants-release.jks
+          export VANTS_KEYSTORE_FILE="$PWD/vants-release.jks"
+          node -e '
+            const fs=require("fs");
+            const f="android/app/build.gradle";
+            let g=fs.readFileSync(f,"utf8");
+            const FIRMA = [
+              "    signingConfigs {",
+              "        release {",
+              "            storeFile file(System.getenv(\u0027VANTS_KEYSTORE_FILE\u0027))",
+              "            storePassword System.getenv(\u0027VANTS_KEYSTORE_PASSWORD\u0027)",
+              "            keyAlias System.getenv(\u0027VANTS_KEY_ALIAS\u0027)",
+              "            keyPassword System.getenv(\u0027VANTS_KEY_PASSWORD\u0027)",
+              "        }",
+              "    }",
+            ].join("\n");
+            if (!g.includes("signingConfigs {")) {
+              g=g.replace(/android\s*\{/, "android {\n"+FIRMA+"\n");
+              console.log("signingConfigs inyectado");
+            }
+            g=g.replace("signingConfig signingConfigs.debug","signingConfig signingConfigs.release");
+            if (!g.includes("signingConfig signingConfigs.release")) {
+              g=g.replace(/(buildTypes\s*\{[\s\S]*?release\s*\{)/, "$1\n            signingConfig signingConfigs.release");
+            }
+            fs.writeFileSync(f,g);
+            if (!g.includes("signingConfig signingConfigs.release")) {
+              console.error("El buildType release no quedo firmado"); process.exit(1);
+            }
+            console.log("Firma de release lista");
+          '
+
+      - name: Construir APK (assembleRelease)
+        env:
+          VANTS_KEYSTORE_FILE: ${{ github.workspace }}/vants-release.jks
+          VANTS_KEYSTORE_PASSWORD: ${{ secrets.VANTS_KEYSTORE_PASSWORD }}
+          VANTS_KEY_PASSWORD: ${{ secrets.VANTS_KEY_PASSWORD }}
+          VANTS_KEY_ALIAS: ${{ secrets.VANTS_KEY_ALIAS }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+          mv app/build/outputs/apk/release/app-release.apk ../VANTS-${{ inputs.version }}.apk
+          cd ..
+          ls -la VANTS-*.apk
+
+      - name: Publicar en GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" "VANTS-${{ inputs.version }}.apk" \
+            --title "VANTS GAMES v${{ inputs.version }}" \
+            --notes "App Android oficial de VANTS GAMES.
+
+          - Torneos, rankings, sala, clips y comunidad con acceso de miembros
+          - Instalación: descarga el APK y permite *instalar apps de origen desconocido* (es nuestro APK firmado, no está en Play Store)
+          - Si ya tenías una versión anterior, se actualiza sin perder nada" \
+            --latest -R "$GITHUB_REPOSITORY"
