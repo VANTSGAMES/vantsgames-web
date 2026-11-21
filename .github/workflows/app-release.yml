@@ -28,15 +28,18 @@ jobs:
         with:
           node-version: 22
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
       - name: Componentes del SDK de Android
         run: |
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" >/dev/null
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER="$(dirname "$(dirname "$(readlink -f "$(command -v sdkmanager || true)")")")/bin/sdkmanager"
+          echo "usando: $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" >/dev/null
 
       - name: Proyecto Capacitor
         run: |
