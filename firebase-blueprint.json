@@ -1,0 +1,70 @@
+{
+  "entities": {
+    "AiSession": {
+      "title": "AiSession",
+      "description": "Saved VANTS AI Coach & Grounding session owned by an authenticated user.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "title": { "type": "string", "description": "Short session title (1-140 chars)." },
+        "model": {
+          "type": "string",
+          "enum": ["gemini-4-hydrogen", "gemini-3.1-flash-lite", "gemini-4-neon", "gemini-4-carbon"]
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["coach", "search", "maps"]
+        },
+        "summary": { "type": "string", "description": "Saved answer or tactical recap (1-4000 chars)." },
+        "messageCount": { "type": "integer", "minimum": 1, "maximum": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "model", "mode", "summary", "messageCount", "createdAt", "updatedAt"]
+    },
+    "VoiceNote": {
+      "title": "VoiceNote",
+      "description": "Transcribed tactical voice note generated via gemini-3.5-transcribe.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "title": { "type": "string", "description": "Short note title (1-140 chars)." },
+        "transcript": { "type": "string", "description": "Transcribed text (1-8000 chars)." },
+        "gameSlug": { "type": "string", "description": "Optional game identifier (<= 40 chars)." },
+        "durationSec": { "type": "number", "minimum": 0, "maximum": 600 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "transcript", "durationSec", "createdAt", "updatedAt"]
+    },
+    "ArenaSpot": {
+      "title": "ArenaSpot",
+      "description": "User-bookmarked LAN arena or gaming venue referencing only its Google Maps placeId plus personal notes.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "placeId": { "type": "string", "description": "Google Maps Place ID (exempt from caching limits)." },
+        "userLabel": { "type": "string", "description": "User-defined label for this venue (1-140 chars)." },
+        "userNote": { "type": "string", "description": "Personal tactical/scrim note (<= 1000 chars)." },
+        "gameSlug": { "type": "string", "description": "Optional game slug (<= 40 chars)." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "placeId", "userLabel", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/ai_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/AiSession" },
+      "description": "Private AI tactical coaching sessions per verified user."
+    },
+    "/users/{userId}/voice_notes/{noteId}": {
+      "schema": { "$ref": "#/entities/VoiceNote" },
+      "description": "Private transcribed voice notes per verified user."
+    },
+    "/users/{userId}/arena_spots/{spotId}": {
+      "schema": { "$ref": "#/entities/ArenaSpot" },
+      "description": "Private bookmarked LAN arena Place IDs and user notes per verified user."
+    }
+  }
+}

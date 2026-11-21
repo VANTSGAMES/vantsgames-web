@@ -1,0 +1,128 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidOptionalString(val, maxLen) {
+      return val == null || (val is string && val.size() <= maxLen);
+    }
+
+    function isValidAiSessionData(data, userId) {
+      return data.keys().hasAll(['ownerId', 'title', 'model', 'mode', 'summary', 'messageCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'title', 'model', 'mode', 'summary', 'messageCount', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && isValidString(data.title, 1, 140)
+        && data.model in ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-4-neon', 'gemini-4-carbon']
+        && data.mode in ['coach', 'search', 'maps']
+        && isValidString(data.summary, 1, 4000)
+        && data.messageCount is int
+        && data.messageCount >= 1
+        && data.messageCount <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidVoiceNoteData(data, userId) {
+      return data.keys().hasAll(['ownerId', 'title', 'transcript', 'durationSec', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'title', 'transcript', 'gameSlug', 'durationSec', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && isValidString(data.title, 1, 140)
+        && isValidString(data.transcript, 1, 8000)
+        && (!('gameSlug' in data) || isValidOptionalString(data.gameSlug, 40))
+        && (data.durationSec is int || data.durationSec is float)
+        && data.durationSec >= 0
+        && data.durationSec <= 600
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidArenaSpotData(data, userId) {
+      return data.keys().hasAll(['ownerId', 'placeId', 'userLabel', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'placeId', 'userLabel', 'userNote', 'gameSlug', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && isValidString(data.placeId, 1, 200)
+        && isValidString(data.userLabel, 1, 140)
+        && (!('userNote' in data) || isValidOptionalString(data.userNote, 1000))
+        && (!('gameSlug' in data) || isValidOptionalString(data.gameSlug, 40))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      match /ai_sessions/{sessionId} {
+        allow read: if isOwner(userId) && isValidId(sessionId);
+        allow create: if isOwner(userId)
+          && isValidId(sessionId)
+          && isValidAiSessionData(request.resource.data, userId)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(sessionId)
+          && resource.data.ownerId == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'summary', 'messageCount', 'updatedAt'])
+          && isValidAiSessionData(request.resource.data, userId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(sessionId) && resource.data.ownerId == userId;
+      }
+
+      match /voice_notes/{noteId} {
+        allow read: if isOwner(userId) && isValidId(noteId);
+        allow create: if isOwner(userId)
+          && isValidId(noteId)
+          && isValidVoiceNoteData(request.resource.data, userId)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(noteId)
+          && resource.data.ownerId == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'transcript', 'gameSlug', 'updatedAt'])
+          && isValidVoiceNoteData(request.resource.data, userId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(noteId) && resource.data.ownerId == userId;
+      }
+
+      match /arena_spots/{spotId} {
+        allow read: if isOwner(userId) && isValidId(spotId);
+        allow create: if isOwner(userId)
+          && isValidId(spotId)
+          && isValidArenaSpotData(request.resource.data, userId)
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time;
+        allow update: if isOwner(userId)
+          && isValidId(spotId)
+          && resource.data.ownerId == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['userLabel', 'userNote', 'gameSlug', 'updatedAt'])
+          && isValidArenaSpotData(request.resource.data, userId)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if isOwner(userId) && isValidId(spotId) && resource.data.ownerId == userId;
+      }
+    }
+  }
+}

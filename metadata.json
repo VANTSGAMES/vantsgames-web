@@ -1,0 +1,11 @@
+{
+  "name": "VANTS GAMES",
+  "description": "Plataforma competitiva de esports en Venezuela y Latinoamérica para 11 videojuegos: torneos, rankings FACEIT/Riot, Google Workspace, Arena 3D, VANTS AI Studio y Mapa de Arenas LAN.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
