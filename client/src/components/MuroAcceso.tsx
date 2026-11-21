@@ -58,7 +58,8 @@ export function MuroAcceso({ seccion }: { seccion: string }) {
         <div className="reveal">
           <div className="eyebrow mb-4">// ACCESO MIEMBROS · VANTS GAMES</div>
           <h1 className="d-1">
-            {seccion} es <span style={{ color: "var(--rojo)" }}>del club</span>
+            {seccion}
+            <span className="block" style={{ color: "var(--rojo)" }}>solo para miembros</span>
           </h1>
           <p className="lead mt-4" style={{ maxWidth: "52ch" }}>
             El interior de VANTS es exclusivo para miembros: torneos, rankings, sala de jugadores,
