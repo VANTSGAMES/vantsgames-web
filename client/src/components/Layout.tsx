@@ -124,14 +124,14 @@ function AccountButton() {
   return (
     <div className="flex items-center gap-2">
       <button className="btn btn-sm btn-ghost hidden sm:inline-flex" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
-      <button className="btn btn-sm btn-rojo" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
+      <button className="btn btn-sm btn-rojo hidden sm:inline-flex" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
     </div>
   );
 }
 
 function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => void }) {
   const [open, setOpen] = useState(false);
-  const { status } = useAuth();
+  const { status, login } = useAuth();
   useEffect(() => setOpen(false), [path]);
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
   return (
@@ -152,6 +152,26 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
               <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>⌘K</span>
             </button>
             <PWAInstallButton compact />
+            {AUTH_ENABLED && status === "anonimo" && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => { setOpen(false); login(); }}
+                  data-testid="button-mobile-login"
+                >
+                  Entrar
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-rojo"
+                  onClick={() => { setOpen(false); login({ signup: true }); }}
+                  data-testid="button-mobile-signup"
+                >
+                  Crear cuenta
+                </button>
+              </div>
+            )}
             <Link href="/" className="d-2">Inicio</Link>
             {NAV.map((g) => (
               <div key={g.base}>
