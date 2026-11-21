@@ -14,6 +14,7 @@
 export interface ColaEnv {
   COLA_WEBHOOKS: Queue;
   DB: D1Database;
+  FACEIT_API_KEY?: string; // clave de FACEIT Data API v4 (wrangler secret put FACEIT_API_KEY)
 }
 
 export type EventoFaceit =
@@ -37,10 +38,23 @@ export async function encolarWebhook(
   await cola.send({ ...webhook, recibidoEn: new Date().toISOString() });
 }
 
+/** Enriquece el evento con datos del partido vía la API v4 de FACEIT.
+ *  Opcional: solo actúa si FACEIT_API_KEY está configurada como secreto. */
+async function enriquecerConFaceit(w: WebhookFaceit, apiKey?: string): Promise<void> {
+  if (!apiKey) return;
+  const resp = await fetch(`https://open.faceit.com/data/v4/matches/${encodeURIComponent(w.matchId)}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!resp.ok) throw new Error(`FACEIT v4 respondió ${resp.status} para ${w.matchId}`);
+  const datos = (await resp.json()) as Record<string, unknown>;
+  w.datos = { ...w.datos, faceit: { status: datos.status, results: datos.results } };
+}
+
 /** CONSUMIDOR — handler `queue` del worker (lo llama Cloudflare por lote). */
 export async function procesarLote(batch: MessageBatch<WebhookFaceit>, env: ColaEnv): Promise<void> {
   for (const mensaje of batch.messages) {
     try {
+      await enriquecerConFaceit(mensaje.body, env.FACEIT_API_KEY);
       await aplicarWebhook(env, mensaje.body);
       mensaje.ack();
     } catch (error) {
