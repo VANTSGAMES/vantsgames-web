@@ -44,4 +44,5 @@ export const PERFIL_LINKS: NavLink[] = [
   { label: "Cuentas vinculadas", to: "/perfil/cuentas" },
   { label: "Workspace Pro", to: "/workspace" },
   { label: "Configuración", to: "/perfil/ajustes" },
+  { label: "Soporte", to: "/perfil/soporte" },
 ];

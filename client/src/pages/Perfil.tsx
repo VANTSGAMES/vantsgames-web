@@ -391,10 +391,94 @@ function FortnitePropio() {
   return <div className="wrap grid gap-3"><h2 className="d-3">Fortnite</h2>{q.isLoading ? <div className="sk" style={{ height: 120 }} /> : <PanelFortnite c={q.data} propio />}</div>;
 }
 
+/* ---------------- Soporte: tickets al canal tickets-soporte ---------------- */
+const ASUNTOS_SOPORTE = [
+  "Problema con mi cuenta o sesión",
+  "Vinculación de Riot / FACEIT / Epic",
+  "Torneos e inscripciones",
+  "Clips y perfil público",
+  "Pagos y membresías",
+  "Reporte de jugador o trampa",
+  "Propuesta o problema técnico",
+];
+
+function Soporte() {
+  const { status } = useAuth();
+  const [asunto, setAsunto] = useState(ASUNTOS_SOPORTE[0]);
+  const [mensaje, setMensaje] = useState("");
+  const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string; ref?: string }>({ k: "idle" });
+  useEffect(() => { setSt({ k: "idle" }); }, [status]);
+  const enviar = async (e: FormEvent) => {
+    e.preventDefault();
+    if (mensaje.trim().length < 10) { setSt({ k: "error", m: "Cuéntanos un poco más (mínimo 10 caracteres)." }); return; }
+    setSt({ k: "enviando" });
+    try {
+      const r = await api<{ ok: boolean; ref?: string }>("/int/soporte/ticket", { method: "POST", auth: true, body: { asunto, mensaje: mensaje.trim() } });
+      setSt({ k: "ok", ref: r.ref || "" });
+      setMensaje("");
+    } catch (err: any) {
+      const codigo = err?.code || "";
+      setSt({
+        k: "error",
+        m: codigo === "cuenta_no_verificada"
+          ? "Verifica tu correo electrónico para abrir tickets de soporte."
+          : "No se pudo enviar ahora mismo. Inténtalo de nuevo en unos minutos.",
+      });
+    }
+  };
+  return (
+    <div className="wrap">
+      <div className="panel panel-pad chamfer grid gap-4 max-w-2xl" data-testid="soporte">
+        <div>
+          <div className="eyebrow mb-2">Soporte VANTS</div>
+          <h2 className="d-3">Abre un ticket</h2>
+          <p className="muted small mt-1">Tu solicitud llega directo al equipo con una referencia VTS. Te respondemos por correo y por la campana de notificaciones de la plataforma.</p>
+        </div>
+        <form className="grid gap-4" onSubmit={enviar}>
+          <div className="field">
+            <label htmlFor="so-asunto">Asunto *</label>
+            <select id="so-asunto" className="input" value={asunto} onChange={(e) => setAsunto(e.target.value)}>
+              {ASUNTOS_SOPORTE.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="so-mensaje">Mensaje *</label>
+            <textarea
+              id="so-mensaje"
+              className="input"
+              rows={4}
+              maxLength={1500}
+              required
+              placeholder="Describe qué pasa, qué esperabas y desde dónde (web o app)…"
+              value={mensaje}
+              onChange={(e) => setMensaje(e.target.value)}
+              data-testid="ticket-mensaje"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="btn-ticket">
+              {st.k === "enviando" ? "Enviando…" : "Abrir ticket"}
+            </button>
+            <span className="small muted num">{mensaje.length}/1500</span>
+          </div>
+        </form>
+        {st.k === "ok" && (
+          <div className="grid gap-2" role="status" data-testid="ticket-ok">
+            <p className="d-3">Ticket {st.ref} creado 🎫</p>
+            <p className="muted small">El equipo ya lo recibió. Recibirás la respuesta en tu correo y en las notificaciones de la plataforma.</p>
+          </div>
+        )}
+        {st.k === "error" && <p className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</p>}
+      </div>
+    </div>
+  );
+}
+
 const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   "": { t: "Mi perfil", el: Resumen },
   ajustes: { t: "Configuración", el: Ajustes },
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
+  soporte: { t: "Soporte", el: Soporte },
   membresia: { t: "Membresía", el: Membresia },
   estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-8"><EstadisticasFaceit /><div className="wrap grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div><FortnitePropio /></div> },
   equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit pie={(actual) => <VincularEquipoFaceit actual={actual} />} /></div></div> },

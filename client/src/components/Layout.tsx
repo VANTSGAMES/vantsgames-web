@@ -260,6 +260,7 @@ const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?
   { titulo: "Legal & App", enlaces: [
     { label: "Privacidad", to: "/privacidad" },
     { label: "Términos", to: "/terminos" },
+    { label: "Soporte (abrir ticket)", to: "/perfil/soporte" },
     { label: "App Android (APK v1.0.0)", to: APP_APK, externo: true },
     { label: "Twitch", to: "https://www.twitch.tv/feisreal", externo: true },
     { label: "YouTube", to: "https://www.youtube.com/@feispla", externo: true },
