@@ -456,3 +456,7 @@ select.input { appearance: auto; }
 @media (prefers-reduced-motion: reduce) {
   .sello-brillo > img, .sello-brillo .aura, .sello-brillo .brillo:before, .sello-entrada > .sello-brillo { animation: none; }
 }
+
+/* Cloudflare Zaraz Consent: evita texto blanco sobre fondo blanco en el modal de cookies */
+.cf_modal_container { color: #111827; }
+

@@ -2,12 +2,14 @@ interface Props {
   onClick: () => void;
   disabled?: boolean;
   label?: string;
+  className?: string;
 }
 
 export function GoogleSignInButton({
   onClick,
   disabled = false,
   label = "Sign in with Google",
+  className = "",
 }: Props) {
   return (
     <button
@@ -15,7 +17,7 @@ export function GoogleSignInButton({
       onClick={onClick}
       disabled={disabled}
       data-testid="button-google-signin"
-      className="inline-flex items-center gap-3 px-4 h-11 rounded-[4px] font-medium text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+      className={"inline-flex items-center justify-center gap-3 px-4 h-11 rounded-[4px] font-medium text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed " + className}
       style={{
         backgroundColor: "#ffffff",
         color: "#1f1f1f",

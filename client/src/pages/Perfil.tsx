@@ -688,7 +688,8 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
   const [otpStep, setOtpStep] = useState<"email" | "code">("email");
   const [acepta, setAcepta] = useState(false);
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
-  useEffect(() => { setSt({ k: "idle" }); }, [modo]);
+  const [faltaTerminos, setFaltaTerminos] = useState(false);
+  useEffect(() => { setSt({ k: "idle" }); setFaltaTerminos(false); }, [modo]);
   const returnTo = safeReturnParam();
   const authErrorParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("auth_error") : null;
   const titulos = {
@@ -696,8 +697,22 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
     registro: "Crear cuenta",
     recuperar: "Acceder con código",
   };
+  const exigirTerminos = (): boolean => {
+    if (modo === "registro" && !acepta) {
+      setFaltaTerminos(true);
+      setSt({ k: "error", m: "Marca la casilla de Términos de Servicio y Política de Privacidad para continuar." });
+      return false;
+    }
+    setFaltaTerminos(false);
+    return true;
+  };
+  const entrarConGoogle = () => {
+    if (!exigirTerminos()) return;
+    loginWithGoogle(returnTo);
+  };
   const enviarOtp = async (e: FormEvent) => {
     e.preventDefault();
+    if (!exigirTerminos()) return;
     setSt({ k: "enviando" });
     try {
       await startEmailOtp(email);
@@ -720,7 +735,6 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
       setSt({ k: "error", m: OTP_ERR[code] || "No se pudo verificar el código (" + code + ")." });
     }
   };
-  const bloqueadoRegistro = modo === "registro" && !acepta;
   const qsReturn = returnTo !== "/perfil" ? "?returnTo=" + encodeURIComponent(returnTo) : "";
   return (
     <>
@@ -747,33 +761,45 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
                     Bienvenido a VANTS. Crea tu cuenta gratis en menos de un minuto, vincula tu perfil gamer y
                     empieza a competir o armar tu propia comunidad.
                   </p>
-                  <div className="field">
-                    <label className="flex items-start gap-3 small" style={{ cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        className="mt-0.5"
-                        required
-                        checked={acepta}
-                        onChange={(e) => setAcepta(e.target.checked)}
-                        data-testid="checkbox-terminos"
-                        style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
-                      />
-                      <span>
-                        Acepto los{" "}
-                        <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline">Términos de Servicio</a>, la{" "}
-                        <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidad</a>{" "}
-                        y las normas de conducta y juego limpio de VANTS GAMES.
-                      </span>
-                    </label>
-                  </div>
+                  <label
+                    className="flex items-start gap-3 text-sm leading-relaxed p-3 rounded-[4px] border transition-colors"
+                    style={{
+                      cursor: "pointer",
+                      color: "var(--gris-1)",
+                      background: "rgba(255,255,255,0.02)",
+                      borderColor: faltaTerminos ? "#ff5468" : "var(--linea-suave)",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1 shrink-0"
+                      checked={acepta}
+                      onChange={(e) => {
+                        setAcepta(e.target.checked);
+                        if (e.target.checked) {
+                          setFaltaTerminos(false);
+                          if (st.k === "error") setSt({ k: "idle" });
+                        }
+                      }}
+                      data-testid="checkbox-terminos"
+                      style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
+                    />
+                    <span>
+                      Acepto los{" "}
+                      <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline text-white">Términos de Servicio</a>, la{" "}
+                      <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline text-white">Política de Privacidad</a>{" "}
+                      y las normas de conducta y juego limpio de VANTS GAMES.
+                    </span>
+                  </label>
                 </>
               )}
               {modo !== "registro" && (
                 <p className="muted">Accede con Google o recibe un código de 6 dígitos en tu correo (sin contraseña).</p>
               )}
               <GoogleSignInButton
-                onClick={() => loginWithGoogle(returnTo)}
-                disabled={status === "cargando" || bloqueadoRegistro}
+                onClick={entrarConGoogle}
+                disabled={status === "cargando"}
+                className="w-full"
                 label={modo === "registro" ? "Registrarse con Google" : "Continuar con Google"}
               />
               <div className="flex items-center gap-3 small muted">
@@ -787,7 +813,7 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
                     <label htmlFor="otp-em">Correo electrónico</label>
                     <input id="otp-em" type="email" className="input" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="tu@correo.com" />
                   </div>
-                  <button className="btn btn-rojo" disabled={st.k === "enviando" || bloqueadoRegistro} data-testid="button-otp-enviar">
+                  <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-otp-enviar">
                     {st.k === "enviando" ? "Enviando código…" : "Enviar código de acceso"}
                   </button>
                 </form>

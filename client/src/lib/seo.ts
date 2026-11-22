@@ -34,6 +34,9 @@ export const SEO: [RegExp, string, string][] = [
   [/^\/membresias/, "Membresías — VANTS GAMES", "Compara planes VANTS PRO, VANTS CREATOR y Pase de temporada S4 para competir sin límites."],
   [/^\/insignias/, "Insignias — VANTS GAMES", "Catálogo completo de insignias 3D verificadas y los 1000 logros competitivos de VANTS."],
   [/^\/tienda/, "Tienda oficial — VANTS GAMES", "Ropa, jerseys y accesorios oficiales de la marca VANTS GAMES."],
+  [/^\/entrar/, "Iniciar sesión — VANTS GAMES", "Accede a tu cuenta de VANTS GAMES con Google o con un código de 6 dígitos en tu correo."],
+  [/^\/registro/, "Crear cuenta — VANTS GAMES", "Crea tu cuenta gratis en VANTS GAMES con Google o correo electrónico para competir en torneos y rankings."],
+  [/^\/recuperar/, "Acceder con código — VANTS GAMES", "Entra a tu cuenta de VANTS GAMES con un código temporal de 6 dígitos enviado a tu correo."],
   [/^\/privacidad/, "Política de privacidad — VANTS GAMES", "Qué datos trata VANTS GAMES y qué derechos tienes sobre tu cuenta."],
   [/^\/terminos/, "Términos de servicio — VANTS GAMES", "Reglas de uso y participación en la plataforma VANTS GAMES."],
 ];
