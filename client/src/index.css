@@ -328,9 +328,13 @@ button { font: inherit; color: inherit; }
 .legal-index a:hover { color: var(--blanco); text-decoration: underline; }
 
 /* ---------- Responsive de paneles: nada de scroll horizontal ---------- */
-/* Tablas: se desplazan dentro de su propio contenedor, nunca de la página. */
+/* Tablas: se desplazan dentro de su propio contenedor, nunca de la página.
+   min-width:0 en los items de grid evita que el min-content de una tabla
+   ensanche la columna y rompa todo el layout móvil. */
 @media (max-width: 640px) {
-  table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; max-width: 100%; }
+  .grid > * { min-width: 0; }
+  .grid-auto { grid-template-columns: 1fr; }
   .panel { max-width: 100%; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
