@@ -145,6 +145,19 @@ export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }
     return json({ ok: true, url: AUTORIZAR + '?' + q });
   }
   if (p === '/epic/yo' && m === 'GET') return json({ ok: true, ...(await cuenta(env, sub, cacheado)) });
+  if (p === '/epic/diagnostico' && m === 'GET') {
+    // Diagnóstico OAuth: la URL que hay que registrar EXACTA en el Epic Dev Portal
+    // y el estado de las credenciales, para eliminar los 400 de un vistazo.
+    const redirect = callbackUrl(env, url);
+    return json({
+      ok: true,
+      redirect_uri: redirect,
+      registrar_en_portal: redirect,
+      client_id: env.EPIC_CLIENT_ID ? String(env.EPIC_CLIENT_ID).slice(0, 8) + '…' : null,
+      client_secret: env.EPIC_CLIENT_SECRET ? 'presente' : 'FALTA',
+      instrucciones: 'En dev.epicgames.com → Epic Account Services → tu cliente → Redirect URLs, añade EXACTAMENTE: ' + redirect + ' . Si el error es invalid_client, regenera el Client Secret y actualiza el secret EPIC_CLIENT_SECRET.',
+    });
+  }
   if (p === '/epic/desvincular' && m === 'POST') {
     await env.DB.prepare('DELETE FROM integ_epic WHERE auth0_sub = ?').bind(sub).run();
     return json({ ok: true });

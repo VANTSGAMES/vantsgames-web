@@ -327,6 +327,18 @@ button { font: inherit; color: inherit; }
 .legal-index a { color: var(--gris-1); text-decoration: none; }
 .legal-index a:hover { color: var(--blanco); text-decoration: underline; }
 
+/* ---------- Responsive de paneles: nada de scroll horizontal ---------- */
+/* Tablas: se desplazan dentro de su propio contenedor, nunca de la página. */
+@media (max-width: 640px) {
+  table { display: block; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; }
+  .panel { max-width: 100%; }
+  .tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  /* Filas de insignias/minis: se apilan y envuelven, no desbordan. */
+  .row.grid-cols-\[32px_1fr_auto_auto\] { grid-template-columns: 24px 1fr auto; }
+  img { max-width: 100%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
   .marquee-pista { animation: none; }

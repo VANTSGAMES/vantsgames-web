@@ -12,7 +12,7 @@
 import { esOwner } from './comunidad.js';
 import { webhookDiscord } from './comms.js';
 import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js'
-import { rutasInsignias, invalidarInsignias } from './insignias.js';
+import { rutasInsignias, invalidarInsignias, evaluar } from './insignias.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
 const JUEGOS = ['valorant', 'cs2', 'fortnite', 'fc27', 'smash', 'warzone', 'freefire', 'lol', 'wildrift', 'mlbb', 'clashroyale', 'otro'];
@@ -39,6 +39,7 @@ async function preparar(env) {
   await asegurar(env.DB);
   await env.DB.prepare('ALTER TABLE integ_clips ADD COLUMN video TEXT').run().catch(() => null); // ya existe
   await env.DB.prepare('ALTER TABLE perfiles_publicos ADD COLUMN banner TEXT').run().catch(() => null); // ya existe
+  await env.DB.prepare('ALTER TABLE perfiles_publicos ADD COLUMN vitrina TEXT').run().catch(() => null); // ya existe
   listo = true;
 }
 
@@ -368,7 +369,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     return H.json(r, r.ok ? 200 : st);
   }
 
-  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia', '/perfil/foto', '/perfil/publico'];
+  const privadas = ['/clips/mios', '/clips', '/clips/borrar', '/clips/subir', '/clips/editar', '/equipos/logo', '/membresia', '/perfil/foto', '/perfil/publico', '/perfil/vitrina'];
   if (!privadas.includes(p)) return null;
   await preparar(env);
   const sub = await H.usuario(req, env);
@@ -379,18 +380,27 @@ export async function rutasExtras(req, env, url, p, m, H) {
   const REDES_OK = ['twitch', 'youtube', 'x', 'tiktok', 'instagram'];
   if (p === '/perfil/publico') {
     if (m === 'GET') {
-      const fila = await env.DB.prepare('SELECT banner, redes FROM perfiles_publicos WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+      const fila = await env.DB.prepare('SELECT banner, redes, vitrina FROM perfiles_publicos WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
       let redes = null;
       try { redes = fila && fila.redes ? JSON.parse(fila.redes) : null; } catch { redes = null; }
-      return H.json({ ok: true, banner: fila ? fila.banner : null, redes });
+      let vitrina = null;
+      try { vitrina = fila && fila.vitrina ? JSON.parse(fila.vitrina) : null; } catch { vitrina = null; }
+      return H.json({ ok: true, banner: fila ? fila.banner : null, redes, vitrina: Array.isArray(vitrina) ? vitrina : null });
     }
     if (m !== 'POST') return H.json({ ok: false, error: 'metodo' }, 405);
     const b = await req.json().catch(() => ({}));
-    // Banner: URL https válida o null (quitar).
+    // Banner: imagen subida (data URL ≤ 500 KB; el cliente la recorta a 3:1 y
+    // la comprime antes de enviar) o URL https válida. Null = quitar.
     let banner = null;
     if (typeof b.banner === 'string' && b.banner.trim()) {
-      if (!/^https:\/\/[^\s"'<>]{4,600}$/.test(b.banner.trim())) return H.json({ ok: false, error: 'banner_invalido' }, 400);
-      banner = b.banner.trim();
+      const v = b.banner.trim();
+      const mt = v.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+      if (mt) {
+        if (mt[2].length > 500_000) return H.json({ ok: false, error: 'banner_grande' }, 413);
+        banner = v;
+      } else if (/^https:\/\/[^\s"'<>]{4,600}$/.test(v)) {
+        banner = v;
+      } else return H.json({ ok: false, error: 'banner_invalido' }, 400);
     }
     // Redes: solo claves permitidas, valores usuario/url de hasta 120 chars.
     const redes = {};
@@ -407,6 +417,25 @@ export async function rutasExtras(req, env, url, p, m, H) {
     ).bind(sub, nick, JSON.stringify(redes), banner).run();
     invalidarIdentidades();
     return H.json({ ok: true, banner, redes });
+  }
+
+  // Vitrina de insignias: cuáles mostrar en la ficha pública y en qué orden.
+  // Solo se aceptan insignias conseguidas por el propio usuario; máx. 6.
+  if (p === '/perfil/vitrina' && m === 'POST') {
+    const b = await req.json().catch(() => ({}));
+    const pedidas = Array.isArray(b.codigos) ? [...new Set(b.codigos.map((c) => String(c || '').slice(0, 40)))].filter(Boolean) : [];
+    if (pedidas.length > 6) return H.json({ ok: false, error: 'vitrina_maxima' }, 400);
+    const ident = await identidadDe(env.DB, sub).catch(() => null);
+    if (!ident) return H.json({ ok: false, error: 'sin_perfil' }, 409);
+    const ins = await evaluar(env, ident).catch(() => null);
+    const conseguidas = new Set([...(((ins && ins.conseguidas) || [])), 'MEMBER']);
+    const codigos = pedidas.filter((c) => consiguidas.has(c));
+    const nick = await nickDe(env.DB, sub);
+    await env.DB.prepare(
+      "INSERT INTO perfiles_publicos (auth0_sub, nickname, vitrina, updated_at) VALUES (?, ?, ?, datetime('now')) ON CONFLICT(auth0_sub) DO UPDATE SET vitrina = excluded.vitrina, updated_at = datetime('now')"
+    ).bind(sub, nick, JSON.stringify(codigos)).run();
+    invalidarIdentidades();
+    return H.json({ ok: true, codigos });
   }
 
   // Foto del perfil principal: subida (data URL ≤ 300 KB), enlace https (p. ej. la foto de Google/Twitch) o quitar.

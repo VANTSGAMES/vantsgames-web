@@ -312,7 +312,9 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   const enlaces = new Set((q.data?.clips || []).map((c) => c.url));
   const propios = f(q.data?.clips), subidos = f(q.data?.subidos), tw = f(q.data?.twitch);
   const kick = f((q.data?.kick && q.data.kick.length ? q.data.kick : kk.data) || []).filter((c) => !enlaces.has(c.url));
-  const filtros = filtrosJuegos();
+  // Filtros con contenido real: se ocultan los juegos sin ningún clip activo.
+  const todosLosClips = [...(q.data?.clips || []), ...(q.data?.subidos || []), ...(q.data?.twitch || []), ...kick];
+  const filtros = filtrosJuegos().filter((j) => !j.v || filterClipsByGame(todosLosClips, j.v).length > 0);
   return (
     <div className="grid gap-8" data-testid="mi-biblioteca">
       {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0"><SubirClip /><PublicarClip /></div>}

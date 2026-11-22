@@ -32,7 +32,7 @@ export async function identidades(db) {
   const [links, players, perfiles, ranking, miembros, riot] = await Promise.all([
     todas(db, 'SELECT auth0_sub, platform, handle, platform_user_id, avatar_url FROM vants_links'),
     todas(db, 'SELECT id, auth0_sub, discord_user_id, auth_user_id, display_name, username, xp, role, avatar_url, creado_at, stats FROM players'),
-    todas(db, 'SELECT auth0_sub, nickname, redes, banner, updated_at FROM perfiles_publicos'),
+    todas(db, 'SELECT auth0_sub, nickname, redes, banner, vitrina, updated_at FROM perfiles_publicos'),
     todas(db, 'SELECT auth0_sub, faceit_id, nick, avatar, pais, nivel, elo, partidas, winrate, kd, actualizado FROM integ_ranking'),
     todas(db, 'SELECT auth0_sub FROM integ_equipo_miembros'),
     todas(db, 'SELECT auth0_sub FROM integ_riot'),
@@ -93,6 +93,7 @@ export async function identidades(db) {
       desde: gr.players.map((p) => p.creado_at).filter(Boolean).sort()[0] || null,
       redes: (() => { try { return perf && perf.redes ? JSON.parse(perf.redes) : null; } catch { return null; } })(),
       banner: gr.perfiles.map((x) => x.banner).find(Boolean) || null,
+      vitrina: (() => { try { const v = gr.perfiles.map((x) => x.vitrina).find(Boolean); return v ? JSON.parse(v) : null; } catch { return null; } })(),
     };
     for (const s of gr.subs) porSub.set(s, ident);
     for (const p of gr.players) if (!p.auth0_sub) porSub.set('p:' + p.id, ident);
@@ -133,9 +134,12 @@ export async function perfilPublico(env, pid) {
   const fortnite = await fortnitePublico(env, id.subs).catch(() => null);
   const rk = id.ranking;
   const ins = await evaluar(env, id).catch(() => null);
+  // Vitrina personalizada (máx. 6, solo conseguidas) o las primeras automáticas.
+  const conseguidas = ins ? ins.conseguidas : ['MEMBER'];
+  const vitrina = Array.isArray(id.vitrina) ? id.vitrina.filter((c) => conseguidas.includes(c) || c === 'MEMBER').slice(0, 6) : [];
   return {
     pid: id.pid, nick: id.nick, avatar: id.avatar, fundador: id.fundador, xp: id.xp, desde: id.desde, redes: id.redes, banner: id.banner,
-    sello: ins ? ins.sello : null, insignias: ins ? ins.conseguidas : ['MEMBER'],
+    sello: ins ? ins.sello : null, insignias: vitrina.length ? vitrina : conseguidas,
     faceit: rk ? { nick: rk.nick, nivel: rk.nivel, elo: rk.elo, partidas: rk.partidas, winrate: rk.winrate, kd: rk.kd, pais: rk.pais, avatar: rk.avatar, url: 'https://www.faceit.com/es/players/' + encodeURIComponent(rk.nick) } : null,
     valorant,
     fortnite,

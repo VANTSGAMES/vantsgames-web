@@ -3,7 +3,7 @@ import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./Pe
 import { MisEquiposPanel, MisInscripciones, imagenEquipo, mensajeError } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
-import { FilaInsignias, Sello3D, SelloAvatar } from "@/components/Insignia3D";
+import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
@@ -161,7 +161,130 @@ function Ajustes() {
         </div>
       </form>
       <div className="mt-6"><PerfilPublicoForm /></div>
+      <div className="mt-6"><VitrinaInsignias /></div>
       <div className="mt-6"><CanalesForm /></div>
+    </div>
+  );
+}
+
+/** Vitrina de insignias: elige cuáles mostrar en tu ficha pública y en qué orden. */
+function VitrinaInsignias() {
+  const qc = useQueryClient();
+  const ficha = useApi<{ vitrina: string[] | null }>("/int/perfil/publico", { auth: true });
+  const mias = useMisInsignias();
+  const cat = useCatalogoInsignias();
+  const [sel, setSel] = useState<string[] | null>(null);
+  const [st, setSt] = useState<{ k: "idle" | "guardando" | "ok" | "error"; m?: string }>({ k: "idle" });
+  useEffect(() => {
+    if (ficha.data && sel === null) setSel(ficha.data.vitrina || []);
+  }, [ficha.data, sel]);
+
+  const conseguidas = (mias.data?.conseguidas || []).filter((c) => c !== "MEMBER");
+  const info = (code: string) => (cat.data?.catalogo || []).find((b) => b.code === code);
+
+  const alternar = (code: string) => {
+    setSt({ k: "idle" });
+    setSel((prev) => {
+      const p = prev || [];
+      if (p.includes(code)) return p.filter((c) => c !== code);
+      if (p.length >= 6) return p;
+      return [...p, code];
+    });
+  };
+  const mover = (code: string, dir: -1 | 1) => {
+    setSel((prev) => {
+      const p = [...(prev || [])];
+      const i = p.indexOf(code);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= p.length) return p;
+      [p[i], p[j]] = [p[j], p[i]];
+      return p;
+    });
+  };
+  const guardar = async () => {
+    setSt({ k: "guardando" });
+    try {
+      const r = await api<{ ok: boolean; codigos: string[] }>("/int/perfil/vitrina", { method: "POST", auth: true, body: { codigos: sel || [] } });
+      setSel(r.codigos);
+      const foto = await qc.getQueryData<{ pid: string | null }>(["/int/perfil/foto", true]);
+      if (foto?.pid) qc.invalidateQueries({ queryKey: ["/int/u/" + foto.pid, false] });
+      await qc.invalidateQueries({ queryKey: ["/int/perfil/publico", true] });
+      setSt({ k: "ok" });
+    } catch (err: any) {
+      setSt({ k: "error", m: "No se pudo guardar la vitrina (" + (err?.code || "error") + ")." });
+    }
+  };
+
+  if (mias.isLoading || ficha.isLoading) return <div className="panel panel-pad"><div className="sk" style={{ height: 80 }} /></div>;
+
+  return (
+    <div className="panel panel-pad grid gap-4 max-w-xl" data-testid="vitrina-insignias">
+      <div>
+        <h2 className="d-3">Vitrina de insignias</h2>
+        <p className="small muted">Elige hasta 6 insignias para exhibir en tu ficha pública y ordénalas a tu gusto. Pasa el cursor por cada una para ver su requisito.</p>
+      </div>
+
+      {/* Orden actual con controles */}
+      {(sel || []).length > 0 ? (
+        <ol className="grid gap-2" data-testid="vitrina-orden">
+          {(sel || []).map((code, i) => {
+            const d = info(code);
+            return (
+              <li key={code} className="flex items-center gap-3 p-2 border" style={{ borderColor: "var(--linea-suave)" }}>
+                <span className="num muted" style={{ width: 20 }}>{i + 1}</span>
+                {d ? <Insignia3D d={d} size={40} titulo={d.nombre} /> : <img src={pngInsignia(code, 64)} alt="" width={40} height={40} />}
+                <span className="flex-1 min-w-0 truncate font-semibold">{d?.nombre || code}</span>
+                <div className="flex gap-1">
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => mover(code, -1)} disabled={i === 0} aria-label={"Subir " + (d?.nombre || code)}>↑</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => mover(code, 1)} disabled={i === (sel || []).length - 1} aria-label={"Bajar " + (d?.nombre || code)}>↓</button>
+                  <button type="button" className="btn btn-sm btn-ghost" onClick={() => alternar(code)} aria-label={"Quitar " + (d?.nombre || code)}>✕</button>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : (
+        <p className="small muted" data-testid="vitrina-vacia">Sin vitrina: tu ficha muestra automáticamente tus primeras insignias. Elige algunas abajo para personalizarla.</p>
+      )}
+
+      {/* Catálogo de conseguidas */}
+      {conseguidas.length === 0 ? (
+        <p className="small muted">Aún no tienes insignias conseguidas. Compite, publica clips y vincula tus cuentas para desbloquearlas.</p>
+      ) : (
+        <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))" }} data-testid="vitrina-catalogo">
+          {conseguidas.map((code) => {
+            const d = info(code);
+            const activa = (sel || []).includes(code);
+            return (
+              <button
+                key={code}
+                type="button"
+                onClick={() => alternar(code)}
+                title={(d ? d.nombre + " — " + d.requisito : code) + (activa ? " (en vitrina)" : "")}
+                aria-pressed={activa}
+                className="grid gap-1 justify-items-center p-2 border transition-colors"
+                style={{
+                  borderColor: activa ? "var(--rojo)" : "var(--linea-suave)",
+                  background: activa ? "var(--rojo-tenue)" : "transparent",
+                }}
+                data-testid={"vitrina-item-" + code}
+              >
+                {d ? <Insignia3D d={d} size={44} titulo={d.nombre} /> : <img src={pngInsignia(code, 64)} alt="" width={44} height={44} />}
+                <span className="text-[10px] muted truncate w-full text-center">{d?.nombre || code}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <button className="btn btn-rojo" disabled={st.k === "guardando" || sel === null} onClick={guardar} data-testid="btn-guardar-vitrina">
+          {st.k === "guardando" ? "Guardando…" : "Guardar vitrina"}
+        </button>
+        <span className="small muted num">{(sel || []).length}/6</span>
+        {st.k === "ok" && <span className="small" style={{ color: "var(--ok)" }} role="status">Vitrina actualizada.</span>}
+        {st.k === "error" && <span className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</span>}
+      </div>
     </div>
   );
 }
@@ -186,6 +309,28 @@ function PerfilPublicoForm() {
     setBanner(q.data.banner || "");
     setRedes(q.data.redes || {});
   }, [q.data]);
+  // Subida de banner: recorte central 3:1, ancho máx 1600 y JPEG comprimido.
+  const elegirBanner = (file: File | undefined) => {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { setSt({ k: "error", m: "Elige un archivo de imagen (JPG, PNG o WebP)." }); return; }
+    const urlObj = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(urlObj);
+      const PROP = 3, MAXW = 1600;
+      let sw = img.width, sh = Math.round(img.width / PROP);
+      if (sh > img.height) { sh = img.height; sw = Math.round(img.height * PROP); }
+      const sx = Math.max(0, Math.round((img.width - sw) / 2)), sy = Math.max(0, Math.round((img.height - sh) / 2));
+      const w = Math.min(MAXW, sw), h = Math.round(w / PROP);
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      cv.getContext("2d")?.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+      setBanner(cv.toDataURL("image/jpeg", 0.82));
+      setSt({ k: "idle" });
+    };
+    img.onerror = () => { URL.revokeObjectURL(urlObj); setSt({ k: "error", m: "No se pudo leer la imagen." }); };
+    img.src = urlObj;
+  };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setSt({ k: "guardando" });
@@ -196,21 +341,34 @@ function PerfilPublicoForm() {
       await qc.invalidateQueries({ queryKey: ["/int/perfil/publico", true] });
       setSt({ k: "ok" });
     } catch (err: any) {
-      const m: Record<string, string> = { banner_invalido: "El banner debe ser un enlace https:// de una imagen.", sin_sesion: "Tu sesión caducó. Vuelve a iniciar sesión." };
+      const m: Record<string, string> = { banner_invalido: "El banner debe ser una imagen o un enlace https://.", banner_grande: "La imagen quedó demasiado pesada tras optimizarla: prueba con una más ligera.", sin_sesion: "Tu sesión caducó. Vuelve a iniciar sesión." };
       setSt({ k: "error", m: m[err.code] || "No se pudo guardar (" + err.code + ")." });
     }
   };
   return (
     <form onSubmit={submit} className="panel panel-pad grid gap-4 max-w-xl" data-testid="form-perfil-publico">
       <h2 className="d-3">Ficha pública</h2>
-      <p className="small muted">El banner y tus redes se muestran arriba de tu perfil público. El banner debe ser el enlace (https) de una imagen horizontal (sugerido 1200×400).</p>
+      <p className="small muted">El banner y tus redes se muestran arriba de tu perfil público. Sube una imagen horizontal y se optimiza sola: recorte 3:1, hasta 1600 px y comprimida.</p>
       {q.isLoading ? <div className="sk" style={{ height: 44 }} /> : (
         <>
           <div className="field">
-            <label htmlFor="banner">Banner (URL de imagen)</label>
-            <input id="banner" className="input" value={banner} onChange={(e) => setBanner(e.target.value)} placeholder="https://…/mi-banner.jpg" maxLength={600} data-testid="input-banner" />
+            <label htmlFor="banner-file">Banner de la ficha</label>
+            <input
+              id="banner-file"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="input"
+              onChange={(e) => elegirBanner(e.target.files?.[0])}
+              data-testid="input-banner-file"
+            />
+            <span className="small muted">JPG, PNG o WebP · se recorta al centro y se comprime automáticamente</span>
           </div>
-          {banner.trim() && <img src={banner.trim()} alt="Vista previa del banner" className="chamfer object-cover w-full" style={{ height: 120 }} onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} onLoad={(e) => { (e.target as HTMLImageElement).style.display = "block"; }} />}
+          {banner.trim() && (
+            <div className="grid gap-2">
+              <img src={banner.trim()} alt="Vista previa del banner" className="chamfer object-cover w-full" style={{ height: 120 }} data-testid="preview-banner" />
+              <button type="button" className="btn btn-sm btn-ghost w-fit" onClick={() => setBanner("")}>Quitar banner</button>
+            </div>
+          )}
           <div className="grid sm:grid-cols-2 gap-3">
             {REDES_FORM.map((r) => (
               <div className="field" key={r.k}>

@@ -1,42 +1,103 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useLocation } from "wouter";
-import { NAV } from "@/lib/nav";
+import { useQuery } from "@tanstack/react-query";
 import { JUEGOS } from "@/lib/juegos";
-import { searchCommandItems, type CommandItem } from "@/lib/discovery";
+import { normalizeText, searchCommandItems, type CommandItem } from "@/lib/discovery";
+import { api, type Paged, type Team, type Tournament } from "@/lib/api";
 
-const BASE_ITEMS: CommandItem[] = [
-  { id: "home", label: "Inicio", hint: "Portada del circuito VANTS GAMES", to: "/", group: "Navegación", keywords: ["home", "portada"] },
-  ...NAV.flatMap((g) =>
-    g.links
-      .filter((l) => !l.privado)
-      .map((l) => ({
-        id: "nav-" + l.to,
-        label: l.label,
-        hint: l.hint,
-        to: l.to,
-        group: g.label,
-        keywords: [g.label],
-      })),
-  ),
-  ...JUEGOS.map((j) => ({
-    id: "juego-" + j.slug,
-    label: `Torneos de ${j.nombre}`,
-    hint: `${j.plataforma}${j.integrado ? " · Integrado con estadísticas y logros" : " · Circuito VANTS"}`,
-    to: `/torneos?juego=${j.slug}`,
-    group: "Juegos del circuito",
-    keywords: [j.slug, j.label, j.plataforma, "torneos", "juego"],
-  })),
+/** Esenciales curados (el resto de la navegación ya vive en el header/menú). */
+const ESPECIALES: CommandItem[] = [
+  { id: "home", label: "Inicio", hint: "Portada del circuito VANTS GAMES", to: "/", group: "Ir a", keywords: ["home", "portada"] },
+  { id: "ir-torneos", label: "Torneos", hint: "Próximos, en curso y archivo", to: "/torneos", group: "Ir a", keywords: ["competicion"] },
+  { id: "ir-ranking", label: "Ranking global", hint: "Jugadores por ELO de FACEIT", to: "/ranking", group: "Ir a", keywords: ["sala"] },
+  { id: "ir-clips", label: "Clips", hint: "Destacados de la comunidad", to: "/clips", group: "Ir a" },
+  { id: "ir-planes", label: "Planes", hint: "PRO, CREATOR y Pase S4", to: "/membresias", group: "Ir a" },
+  { id: "ir-empresas", label: "Empresas", hint: "Patrocinios y alianzas", to: "/empresas", group: "Ir a", keywords: ["b2b", "marcas"] },
+  { id: "ir-soporte", label: "Soporte", hint: "Abrir un ticket", to: "/perfil/soporte", group: "Ir a", keywords: ["ticket", "ayuda"] },
+  { id: "ir-app", label: "App Android", hint: "Descargar APK v1.0.0", to: "https://github.com/VANTSGAMES/vantsgames-web/releases/latest/download/VANTS-1.0.0.apk", group: "Ir a", keywords: ["apk", "descargar", "movil"] },
 ];
+
+const JUEGOS_ITEMS: CommandItem[] = JUEGOS.map((j) => ({
+  id: "juego-" + j.slug,
+  label: `Torneos de ${j.nombre}`,
+  hint: `${j.plataforma}${j.integrado ? " · Estadísticas integradas" : " · Circuito VANTS"}`,
+  to: `/torneos?juego=${j.slug}`,
+  group: "Juegos del circuito",
+  keywords: [j.slug, j.label, j.plataforma, "torneos", "juego"],
+}));
+
+interface Vivo { items: CommandItem[]; cargando: boolean }
+
+/** Motor de resultados en vivo: torneos, equipos y jugadores de la plataforma. */
+function useResultadosVivo(abierto: boolean, consulta: string): Vivo {
+  const torneos = useQuery<{ data: Paged<Tournament> }>({
+    queryKey: ["palette-torneos"],
+    queryFn: () => api<{ data: Paged<Tournament> }>("/api/tournaments?porPagina=60"),
+    enabled: abierto,
+    staleTime: 60_000,
+  });
+  const equipos = useQuery<{ data: Team[] }>({
+    queryKey: ["palette-equipos"],
+    queryFn: () => api<{ data: Team[] }>("/api/teams"),
+    enabled: abierto,
+    staleTime: 60_000,
+  });
+  const jugadores = useQuery<{ faceit: { nick: string; pos: number; elo: number | null; url: string }[] }>({
+    queryKey: ["palette-jugadores"],
+    queryFn: () => api<{ faceit: { nick: string; pos: number; elo: number | null; url: string }[] }>("/int/ranking"),
+    enabled: abierto,
+    staleTime: 120_000,
+  });
+
+  return useMemo(() => {
+    const q = normalizeText(consulta);
+    if (q.length < 2) return { items: [], cargando: false };
+    const tocar = (n: string) => normalizeText(n).includes(q);
+    const items: CommandItem[] = [];
+    for (const t of (torneos.data?.data.items || []).slice(0, 60)) {
+      if (tocar(t.nombre) || tocar(t.game?.nombre || "") || tocar(t.formato || "")) {
+        items.push({ id: "torneo-" + t.slug, label: t.nombre, hint: [t.game?.nombre, t.formato, t.region].filter(Boolean).join(" · "), to: "/torneos/" + t.slug, group: "Torneos", keywords: ["vivo"] });
+      }
+      if (items.filter((i) => i.group === "Torneos").length >= 5) break;
+    }
+    for (const e of (equipos.data?.data || []).slice(0, 80)) {
+      if (tocar(e.nombre) || tocar(e.tag || "") || tocar(e.slug)) {
+        items.push({ id: "equipo-" + e.slug, label: e.nombre + (e.tag ? " [" + e.tag + "]" : ""), hint: "Equipo del circuito", to: "/equipos/" + e.slug, group: "Equipos", keywords: ["vivo"] });
+      }
+      if (items.filter((i) => i.group === "Equipos").length >= 5) break;
+    }
+    for (const j of jugadores.data?.faceit || []) {
+      if (tocar(j.nick)) {
+        items.push({ id: "jug-" + j.nick, label: j.nick, hint: "Jugador VANTS · ELO " + (j.elo ?? "—"), to: "/ranking", group: "Jugadores", keywords: ["vivo"] });
+      }
+      if (items.filter((i) => i.group === "Jugadores").length >= 5) break;
+    }
+    const cargando = torneos.isLoading || equipos.isLoading || jugadores.isLoading;
+    return { items, cargando };
+  }, [consulta, torneos.data, equipos.data, jugadores.data, torneos.isLoading, equipos.isLoading, jugadores.isLoading]);
+}
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (next: boolean) => void }) {
   const [, setLocation] = useLocation();
-  const [query, setQuery] = useState("");
+  const [texto, setTexto] = useState("");
+  const [consulta, setConsulta] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const results = useMemo(() => searchCommandItems(BASE_ITEMS, query), [query]);
+  // Debounce: la consulta en vivo se dispara a los 220ms de dejar de teclear.
+  useEffect(() => {
+    const id = window.setTimeout(() => setConsulta(texto), 220);
+    return () => window.clearTimeout(id);
+  }, [texto]);
 
-  // Agrupar resultados conservando el orden de relevancia
+  const vivo = useResultadosVivo(open, consulta);
+
+  const results = useMemo(() => {
+    const estaticos = searchCommandItems([...ESPECIALES, ...JUEGOS_ITEMS], consulta);
+    const estaticosRecortados = estaticos.slice(0, consulta.length >= 2 ? 6 : 12);
+    return [...vivo.items, ...estaticosRecortados];
+  }, [consulta, vivo.items]);
+
   const grouped = useMemo(() => {
     const map = new Map<string, { item: CommandItem; flatIdx: number }[]>();
     results.forEach((item, flatIdx) => {
@@ -63,20 +124,20 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   useEffect(() => {
     if (open) {
-      setQuery("");
+      setTexto("");
+      setConsulta("");
       setActiveIndex(0);
       const id = window.setTimeout(() => inputRef.current?.focus(), 20);
       return () => window.clearTimeout(id);
     }
   }, [open]);
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
+  useEffect(() => setActiveIndex(0), [results.length]);
 
-  const go = (to: string) => {
+  const abrir = (item: CommandItem) => {
     onOpenChange(false);
-    setLocation(to);
+    if (/^https:\/\//.test(item.to)) window.open(item.to, "_blank", "noopener");
+    else setLocation(item.to);
   };
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
@@ -88,7 +149,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       setActiveIndex((i) => (results.length === 0 ? 0 : (i - 1 + results.length) % results.length));
     } else if (e.key === "Enter" && results[activeIndex]) {
       e.preventDefault();
-      go(results[activeIndex].to);
+      abrir(results[activeIndex]);
     }
   };
 
@@ -122,35 +183,34 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <input
             ref={inputRef}
             type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ir a torneos, juegos (VALORANT, CS2, FC 27…), Workspace, membresías…"
-            aria-label="Buscar sección o juego"
+            placeholder="Buscar torneos, equipos, jugadores o juegos…"
+            aria-label="Buscar en VANTS"
             className="w-full bg-transparent text-sm outline-none focus:outline-none focus-visible:outline-none"
             style={{ color: "var(--blanco)", outline: "none" }}
             data-testid="command-palette-input"
           />
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="tag shrink-0 cursor-pointer hover:text-white"
-            aria-label="Cerrar buscador"
-          >
-            ESC
-          </button>
+          {vivo.cargando && consulta.length >= 2 ? (
+            <span className="text-xs muted shrink-0" style={{ fontFamily: "var(--f-mono)" }}>…</span>
+          ) : null}
+          <button type="button" onClick={() => onOpenChange(false)} className="tag shrink-0 cursor-pointer hover:text-white" aria-label="Cerrar buscador">ESC</button>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-2" role="listbox" aria-label="Resultados de navegación">
+        <div className="max-h-[60vh] overflow-y-auto p-2" role="listbox" aria-label="Resultados">
           {results.length === 0 ? (
             <div className="py-10 text-center small muted">
-              Sin coincidencias para «{query}». Prueba con un juego (VALORANT, CS2, Smash) o sección (Workspace, Planes).
+              {consulta.length >= 2
+                ? "Sin coincidencias para «" + consulta + "». Prueba con un juego (VALORANT, CS2) o un nombre."
+                : "Escribe para buscar torneos, equipos y jugadores en tiempo real, o navega por juegos."}
             </div>
           ) : (
             grouped.map(([group, entries]) => (
               <div key={group} className="mb-2 last:mb-0">
-                <div className="px-3 py-1.5 text-[11px] uppercase tracking-widest muted" style={{ fontFamily: "var(--f-mono)" }}>
+                <div className="px-3 py-1.5 text-[11px] uppercase tracking-widest muted flex items-center gap-2" style={{ fontFamily: "var(--f-mono)" }}>
                   {group}
+                  {group === "Torneos" || group === "Equipos" || group === "Jugadores" ? <span style={{ color: "var(--ok)" }}>· en vivo</span> : null}
                 </div>
                 {entries.map(({ item, flatIdx }) => {
                   const active = flatIdx === activeIndex;
@@ -161,7 +221,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                       role="option"
                       aria-selected={active}
                       onMouseEnter={() => setActiveIndex(flatIdx)}
-                      onClick={() => go(item.to)}
+                      onClick={() => abrir(item)}
                       data-testid={"cmd-item-" + item.id}
                       className="w-full text-left px-3 py-2.5 flex items-center justify-between gap-3 transition-colors"
                       style={{
@@ -170,14 +230,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                       }}
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold truncate" style={{ color: active ? "var(--blanco)" : "var(--gris-1)" }}>
-                          {item.label}
-                        </div>
+                        <div className="text-sm font-semibold truncate" style={{ color: active ? "var(--blanco)" : "var(--gris-1)" }}>{item.label}</div>
                         {item.hint && <div className="text-xs muted truncate">{item.hint}</div>}
                       </div>
-                      <span className="text-xs muted shrink-0" style={{ fontFamily: "var(--f-mono)" }}>
-                        ↵
-                      </span>
+                      <span className="text-xs muted shrink-0" style={{ fontFamily: "var(--f-mono)" }}>↵</span>
                     </button>
                   );
                 })}
@@ -191,7 +247,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           style={{ borderColor: "var(--linea-suave)", background: "var(--negro)", fontFamily: "var(--f-mono)" }}
         >
           <span>↑↓ navegar · ↵ abrir · ESC cerrar</span>
-          <span>{results.length === 1 ? "1 acceso" : `${results.length} accesos`}</span>
+          <span>{results.length === 1 ? "1 resultado" : results.length + " resultados"}</span>
         </div>
       </div>
     </div>

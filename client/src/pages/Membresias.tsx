@@ -148,20 +148,25 @@ export default function Membresias() {
         <div>
           <div className="grid-auto grid md:grid-cols-2 xl:grid-cols-4">
             {PLANES.map((p) => (
-              <article key={p.id} className="p-6 flex flex-col gap-5" data-testid={"plan-" + p.id} style={p.id === "pro" ? { boxShadow: "inset 0 2px 0 var(--rojo)" } : undefined}>
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <span className="eyebrow">{p.kicker}</span>
-                    {p.id === "pro" && <span className="tag tag-rojo">Más elegido</span>}
-                  </div>
-                  <h2 className="d-2">{p.nombre}</h2>
-                  {precioVisible(p)}
-                  <p className="muted small mt-3">{p.lema}</p>
+              <article
+                key={p.id}
+                className={"panel chamfer p-6 flex flex-col gap-4 flotar" + (p.id === "pro" ? " brillo-borde" : "")}
+                data-testid={"plan-" + p.id}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="eyebrow">{p.kicker}</span>
+                  {p.id === "pro" && <span className="tag tag-rojo">Más elegido</span>}
                 </div>
-                <ul className="grid gap-2 small flex-1">
+                <h2 className="d-2" style={{ fontFamily: "var(--f-display)", letterSpacing: "0.03em" }}>{p.nombre}</h2>
+                {precioVisible(p)}
+                <p className="muted small">{p.lema}</p>
+                <hr className="rule" />
+                <ul className="grid gap-2 small">
                   {p.beneficios.map((b) => <li key={b} className="flex gap-2"><span style={{ color: "var(--rojo)" }} aria-hidden>▸</span>{b}</li>)}
                 </ul>
-                <CheckoutButtons plan={p} billing={billing} />
+                <div className="mt-auto pt-2">
+                  <CheckoutButtons plan={p} billing={billing} />
+                </div>
               </article>
             ))}
           </div>
