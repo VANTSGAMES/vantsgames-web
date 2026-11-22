@@ -37,15 +37,13 @@ jobs:
         run: |
           set -euo pipefail
           node -e '
-            const fs = require("fs");
-            async function inspectWorker(name) {
+            async function getWorkerSrc(name) {
               const r = await fetch(`${process.env.CF}/scripts/${name}/content/v2`, {
                 headers: { Authorization: "Bearer " + process.env.TOKEN }
               });
               const ct = r.headers.get("content-type") || "";
               const m = ct.match(/boundary=([^\r\n;]+)/i);
               const buf = Buffer.from(await r.arrayBuffer());
-              const files = [];
               if (m) {
                 const sep = Buffer.from("--" + m[1].trim());
                 let i = buf.indexOf(sep);
@@ -57,41 +55,26 @@ jobs:
                   if (k > 0) {
                     const hdr = part.subarray(0, k).toString("utf8");
                     const nm = (hdr.match(/name="([^"]+)"/) || [])[1] || "";
-                    if (nm.endsWith(".js") || nm.endsWith(".mjs")) {
-                      files.push({ nm, src: part.subarray(k + 4).toString("utf8") });
-                    }
+                    if (nm === "worker.js") return part.subarray(k + 4).toString("utf8");
                   }
                   i = j;
                 }
-              } else {
-                files.push({ nm: name + ".js", src: buf.toString("utf8") });
               }
-              console.log("=== WORKER:", name, "modules:", files.map(f => f.nm).join(", "));
-              for (const f of files) {
-                const lines = f.src.split(/\r?\n/);
-                const hits = [];
-                for (let idx = 0; idx < lines.length; idx++) {
-                  if (/jwks|AUTH0_DOMAIN|auth0|\/auth\/|verifyJwt|verificarJwt|fetchJwks|issuer|vants\.eu\.auth0/i.test(lines[idx])) {
-                    hits.push(idx);
-                  }
-                }
-                console.log(`-- ${f.nm}: ${lines.length} lines, ${hits.length} auth hits`);
-                const printed = new Set();
-                for (const h of hits.slice(0, 25)) {
-                  const a = Math.max(0, h - 3), b = Math.min(lines.length - 1, h + 5);
-                  for (let k = a; k <= b; k++) {
-                    if (printed.has(k)) continue;
-                    printed.add(k);
-                    console.log(`${k + 1}: ${lines[k].slice(0, 220)}`);
-                  }
-                  console.log("---");
-                }
-              }
+              return buf.toString("utf8");
             }
             (async () => {
-              await inspectWorker("vants");
-              await inspectWorker("vants-functions");
+              const vants = (await getWorkerSrc("vants")).split(/\r?\n/);
+              console.log("=== VANTS lines 2400-2530 ===");
+              for (let i = 2399; i < Math.min(vants.length, 2530); i++) console.log(`${i + 1}: ${vants[i]}`);
+              console.log("=== VANTS fetch handler (last 120 lines) ===");
+              for (let i = Math.max(0, vants.length - 120); i < vants.length; i++) console.log(`${i + 1}: ${vants[i]}`);
+
+              const fn = (await getWorkerSrc("vants-functions")).split(/\r?\n/);
+              console.log("=== VANTS-FUNCTIONS all jwks/validarJWT/AUTH0_DOMAIN hits ===");
+              for (let i = 0; i < fn.length; i++) {
+                if (/jwks|validarJWT|verifyJwt|AUTH0_DOMAIN|auth0\.com/i.test(fn[i])) {
+                  console.log(`${i + 1}: ${fn[i]}`);
+                }
+              }
             })();
           '
-          echo "=== settings vants-functions (bindings sin secretos) ==="
-          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-functions/settings" | jq '{compatibility_date, bindings: [.result.bindings[] | del(.text, .json)]}'
