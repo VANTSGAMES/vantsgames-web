@@ -42,10 +42,8 @@ jobs:
         env:
           VITE_ROUTER: history
           VITE_AUTH_ENABLED: "1"
-          VITE_AUTH_PROVIDER: vants
           VITE_ASSET_ORIGIN: ""
           VITE_FN_ORIGIN: https://vants-functions.vants.workers.dev
-          VITE_AUTH0_CLIENT_ID: totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo
           VITE_SITE_URL: https://vants.cc
           VITE_GOOGLE_CLOUD_PROJECT_ID: semiotic-ion-508913-r1
           VITE_GOOGLE_OAUTH_CLIENT_ID: 238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com

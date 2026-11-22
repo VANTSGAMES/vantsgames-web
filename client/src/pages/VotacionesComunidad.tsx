@@ -145,7 +145,7 @@ export default function VotacionesComunidad() {
                 </strong>
               </div>
               <p className="small muted">
-                Puedes consultar los resultados y enfrentamientos en vivo. Inicia sesión con Auth0 o Google para emitir tu voto (1 por cuenta) y entrar al Ranking Pick'em.
+                Puedes consultar los resultados y enfrentamientos en vivo. Inicia sesión con Google o correo electrónico para emitir tu voto (1 por cuenta) y entrar al Ranking Pick'em.
               </p>
             </div>
             <Link href="/entrar" className="btn btn-sm btn-rojo">

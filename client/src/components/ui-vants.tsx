@@ -116,7 +116,7 @@ export function AuthGate({ children, what }: { children: ReactNode; what: string
         <h2 className="d-2">Inicia sesión para ver {what}</h2>
         {status === "no_disponible" ? (
           <p className="muted">
-            El inicio de sesión funciona en el dominio de VANTS registrado en Auth0. En esta vista previa no hay sesión,
+            El inicio de sesión funciona en el dominio oficial de VANTS. En esta vista previa no hay sesión,
             así que no se muestra ningún dato privado.
           </p>
         ) : status === "error" ? (

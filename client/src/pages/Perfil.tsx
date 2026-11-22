@@ -7,11 +7,11 @@ import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalo
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm } from "./Juegos";
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api, pub } from "@/lib/api";
-import { useAuth, AUTH_ENABLED, AUTH_PROVIDER, AUTH0_DOMAIN, AUTH0_CLIENT_ID } from "@/lib/auth";
+import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PERFIL_LINKS } from "@/lib/nav";
 import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
@@ -670,34 +670,31 @@ const OTP_ERR: Record<string, string> = {
   codigo_incorrecto: "Código incorrecto. Revisa tu bandeja o solicita uno nuevo.",
 };
 
+function safeReturnParam(): string {
+  if (typeof window === "undefined") return "/perfil";
+  const fromSearch = new URLSearchParams(window.location.search).get("returnTo");
+  const hashQ = window.location.hash.includes("?") ? window.location.hash.split("?")[1] : "";
+  const raw = fromSearch || (hashQ ? new URLSearchParams(hashQ).get("returnTo") : "") || "";
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.includes("\\")) return "/perfil";
+  if (raw === "/" || raw === "/entrar" || raw === "/registro" || raw === "/recuperar") return "/perfil";
+  return raw;
+}
+
 export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) {
-  const { status, login, loginWithGoogle, startEmailOtp, verifyEmailOtp } = useAuth();
+  const [, nav] = useLocation();
+  const { status, loginWithGoogle, startEmailOtp, verifyEmailOtp } = useAuth();
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpStep, setOtpStep] = useState<"email" | "code">("email");
   const [acepta, setAcepta] = useState(false);
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
+  useEffect(() => { setSt({ k: "idle" }); }, [modo]);
+  const returnTo = safeReturnParam();
   const authErrorParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("auth_error") : null;
   const titulos = {
     entrar: "Iniciar sesión",
     registro: "Crear cuenta",
-    recuperar: AUTH_PROVIDER === "vants" ? "Acceder con código" : "Recuperar contraseña",
-  };
-  const recuperar = async (e: FormEvent) => {
-    e.preventDefault();
-    setSt({ k: "enviando" });
-    try {
-      // Endpoint público de Auth0 para usuarios con correo y contraseña: envía el enlace de restablecimiento.
-      const r = await fetch("https://" + AUTH0_DOMAIN + "/dbconnections/change_password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ client_id: AUTH0_CLIENT_ID, email: email.trim(), connection: "Username-Password-Authentication" }),
-      });
-      if (!r.ok) throw new Error("http_" + r.status);
-      setSt({ k: "ok" });
-    } catch (err: any) {
-      setSt({ k: "error", m: "No se pudo enviar el correo (" + (err.message || "error") + ")." });
-    }
+    recuperar: "Acceder con código",
   };
   const enviarOtp = async (e: FormEvent) => {
     e.preventDefault();
@@ -717,25 +714,27 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
     try {
       await verifyEmailOtp(email, otpCode);
       setSt({ k: "ok" });
+      nav(returnTo);
     } catch (err: any) {
       const code = String(err?.message || "error");
       setSt({ k: "error", m: OTP_ERR[code] || "No se pudo verificar el código (" + code + ")." });
     }
   };
   const bloqueadoRegistro = modo === "registro" && !acepta;
+  const qsReturn = returnTo !== "/perfil" ? "?returnTo=" + encodeURIComponent(returnTo) : "";
   return (
     <>
       <PageHead eyebrow="Cuenta" title={titulos[modo]} />
       <div className="wrap">
         <div className="panel panel-pad chamfer grid gap-5 max-w-lg" data-testid={"acceso-" + modo}>
           {status === "autenticado" ? (
-            <><p>Ya tienes la sesión iniciada.</p><Link href="/perfil" className="btn btn-rojo w-fit">Ir a mi perfil</Link></>
+            <><p>Ya tienes la sesión iniciada.</p><Link href={returnTo} className="btn btn-rojo w-fit">Continuar</Link></>
           ) : !AUTH_ENABLED || status === "no_disponible" ? (
             <>
               <p className="muted">El acceso usa la identidad de VANTS y solo funciona en el dominio registrado de la plataforma. En esta vista previa no se puede iniciar sesión y no se muestra ningún dato privado.</p>
               <p className="small" style={{ color: "var(--gris-3)" }}>Estado del servicio de identidad: no disponible en este entorno.</p>
             </>
-          ) : AUTH_PROVIDER === "vants" ? (
+          ) : (
             <>
               {authErrorParam && (
                 <p className="small" style={{ color: "#ff5468" }} role="alert">
@@ -773,7 +772,7 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
                 <p className="muted">Accede con Google o recibe un código de 6 dígitos en tu correo (sin contraseña).</p>
               )}
               <GoogleSignInButton
-                onClick={() => loginWithGoogle("/perfil")}
+                onClick={() => loginWithGoogle(returnTo)}
                 disabled={status === "cargando" || bloqueadoRegistro}
                 label={modo === "registro" ? "Registrarse con Google" : "Continuar con Google"}
               />
@@ -811,60 +810,7 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
               )}
               {st.k === "error" && <p className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</p>}
               <div className="flex flex-wrap gap-4 small">
-                {modo === "entrar" ? <Link href="/registro" className="underline muted">Crear cuenta</Link> : <Link href="/entrar" className="underline muted">Ya tengo cuenta</Link>}
-              </div>
-            </>
-          ) : modo === "recuperar" ? (
-            st.k === "ok" ? <p role="status">Si la dirección corresponde a una cuenta, recibirás un correo para restablecer la contraseña.</p> : (
-              <form onSubmit={recuperar} className="grid gap-4">
-                <div className="field"><label htmlFor="em">Correo de la cuenta</label><input id="em" type="email" className="input" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" /></div>
-                <button className="btn btn-rojo" disabled={st.k === "enviando"}>{st.k === "enviando" ? "Enviando…" : "Enviar enlace"}</button>
-                {st.k === "error" && <p className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</p>}
-              </form>
-            )
-          ) : (
-            <>
-              {modo === "registro" && (
-                <p className="muted" data-testid="bienvenida-registro">
-                  Bienvenido a VANTS. Crea tu cuenta gratis en menos de un minuto, vincula tu perfil gamer y
-                  empieza a competir o armar tu propia comunidad.
-                </p>
-              )}
-              {modo === "registro" && (
-                <div className="field">
-                  <label className="flex items-start gap-3 small" style={{ cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      required
-                      checked={acepta}
-                      onChange={(e) => setAcepta(e.target.checked)}
-                      data-testid="checkbox-terminos"
-                      style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
-                    />
-                    <span>
-                      Acepto los{" "}
-                      <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline">Términos de Servicio</a>, la{" "}
-                      <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidad</a>{" "}
-                      y las normas de conducta y juego limpio de VANTS GAMES.
-                    </span>
-                  </label>
-                </div>
-              )}
-              {modo !== "registro" && (
-                <p className="muted">Accede con tu cuenta de VANTS.</p>
-              )}
-              <button
-                className="btn btn-rojo"
-                disabled={status === "cargando" || (modo === "registro" && !acepta)}
-                onClick={() => login({ signup: modo === "registro", returnTo: "/perfil" })}
-                data-testid={"button-" + modo}
-              >
-                {titulos[modo]}
-              </button>
-              <div className="flex flex-wrap gap-4 small">
-                {modo === "entrar" ? <Link href="/registro" className="underline muted">Crear cuenta</Link> : <Link href="/entrar" className="underline muted">Ya tengo cuenta</Link>}
-                <Link href="/recuperar" className="underline muted">Olvidé mi contraseña</Link>
+                {modo === "entrar" ? <Link href={"/registro" + qsReturn} className="underline muted">Crear cuenta</Link> : <Link href={"/entrar" + qsReturn} className="underline muted">Ya tengo cuenta</Link>}
               </div>
             </>
           )}
