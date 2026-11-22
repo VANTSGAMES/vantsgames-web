@@ -28,10 +28,12 @@ jobs:
           FORTNITE_API_KEY: ${{ secrets.FORTNITE_API_KEY }}
           VANTS_AUTH_PRIVATE_JWK: ${{ secrets.VANTS_AUTH_PRIVATE_JWK }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
           if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
           if [ -n "$VANTS_AUTH_PRIVATE_JWK" ]; then printf '%s' "$VANTS_AUTH_PRIVATE_JWK" | npx -y wrangler@4 secret put VANTS_AUTH_PRIVATE_JWK; fi
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then printf '%s' "$GOOGLE_OAUTH_CLIENT_SECRET" | npx -y wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET; fi
+          if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | npx -y wrangler@4 secret put RESEND_API_KEY; fi
       - name: Salud
         run: curl -fsS https://vants-integraciones.vants.workers.dev/salud
