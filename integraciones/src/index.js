@@ -20,6 +20,7 @@ import { rutasJuegos, equipoFaceit } from './juegos.js';
 import { rutasExtras } from './extras.js';
 import { rutasEpic } from './epic.js';
 import { rutasComms } from './comms.js';
+import { rutasAuth, verificarJwtDual } from './auth.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -29,13 +30,15 @@ function cors(env, req) {
   const origin = req.headers.get('origin') || '';
   const permitidos = String(env.SITE_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const ok = !origin || permitidos.includes(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin);
-  return {
+  const headers = {
     'Access-Control-Allow-Origin': ok && origin ? origin : permitidos[0] || '*',
     'Access-Control-Allow-Headers': 'authorization, content-type',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
+  if (ok && origin) headers['Access-Control-Allow-Credentials'] = 'true';
+  return headers;
 }
 function json(body, status, h) {
   return new Response(JSON.stringify(body), { status: status || 200, headers: { 'content-type': 'application/json; charset=utf-8', ...(h || {}) } });
@@ -51,40 +54,13 @@ async function cacheado(clave, ms, fn) {
 const lista = (s) => String(s || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
 
-// ---------------------------------------------------------------- Auth0 JWT
-let jwksCache = null;
-async function jwks(env) {
-  if (jwksCache && Date.now() - jwksCache.at < 3600_000) return jwksCache.keys;
-  const r = await fetch('https://' + env.AUTH0_DOMAIN + '/.well-known/jwks.json');
-  const j = await r.json();
-  jwksCache = { at: Date.now(), keys: j.keys || [] };
-  return jwksCache.keys;
-}
-function b64uBytes(s) {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
-}
-const b64uJson = (s) => JSON.parse(new TextDecoder().decode(b64uBytes(s)));
-// Verifica el JWT de Auth0 y devuelve los claims completos (sub + email
-// verificado, usado por los correos transaccionales).
+// ---------------------------------------------------------------- JWT dual (VANTS + Auth0)
+// Verifica el JWT (VANTS Identity RS256 o Auth0) y devuelve los claims completos
+// (sub + email verificado, usado por los correos transaccionales).
 async function usuarioClaims(req, env) {
   const a = req.headers.get('authorization') || '';
   if (!a.startsWith('Bearer ')) throw new Error('sin_sesion');
-  const partes = a.slice(7).split('.');
-  if (partes.length !== 3) throw new Error('jwt_malo');
-  const cab = b64uJson(partes[0]);
-  const cuerpo = b64uJson(partes[1]);
-  const llave = (await jwks(env)).find((k) => k.kid === cab.kid);
-  if (!llave) throw new Error('jwt_kid');
-  const pub = await crypto.subtle.importKey('jwk', llave, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
-  const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', pub, b64uBytes(partes[2]), new TextEncoder().encode(partes[0] + '.' + partes[1]));
-  if (!ok) throw new Error('jwt_firma');
-  if (cuerpo.iss !== 'https://' + env.AUTH0_DOMAIN + '/') throw new Error('jwt_iss');
-  if (cuerpo.exp && cuerpo.exp * 1000 < Date.now()) throw new Error('jwt_exp');
-  const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
-  if (env.AUTH0_AUDIENCE && !auds.includes(env.AUTH0_AUDIENCE)) throw new Error('jwt_aud');
-  return { sub: String(cuerpo.sub), email: typeof cuerpo.email === 'string' && cuerpo.email ? cuerpo.email : null, email_verified: cuerpo.email_verified !== false };
+  return verificarJwtDual(a.slice(7).trim(), env);
 }
 // Firma histórica: solo el sub (identidad). Los claims completos van arriba.
 async function usuario(req, env) {
@@ -415,6 +391,10 @@ async function rutas(req, env, url) {
       return json({ ok: false, error: 'cuenta_no_verificada', detalle: 'Verifica tu correo electrónico para participar en la comunidad.' }, 403);
     }
   }
+
+  // VANTS Identity: Google OIDC, Email OTP, JWKS y rotación de sesiones (/auth/*).
+  const ra = await rutasAuth(req, env, url, p, m, { json, usuario, usuarioClaims });
+  if (ra) return ra;
 
   // Protocolo de comunicaciones (webhooks Discord + alianzas B2B + soporte).
   const rm = await rutasComms(req, env, url, p, m, { json, usuario, usuarioClaims, notificar });
