@@ -736,3 +736,289 @@ export async function sendGoogleChatMessage(spaceName: string, text: string) {
     body: JSON.stringify({ text }),
   });
 }
+
+/* ---------------- YouTube Data API v3 (autorización incremental opcional) ---------------- */
+// Solo los 2 scopes mínimos necesarios para leer tu canal y subir clips/Shorts;
+// nunca se solicitan en el login principal (/auth/google/start).
+export const YOUTUBE_SCOPES = [
+  "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/youtube.upload",
+] as const;
+
+export interface YouTubeChannelInfo {
+  id: string;
+  title: string;
+  customUrl: string | null;
+  thumbnail: string | null;
+  subscriberCount: number | null;
+  videoCount: number | null;
+  uploadsPlaylistId: string | null;
+}
+
+export interface YouTubeVideoItem {
+  id: string;
+  title: string;
+  description: string;
+  thumbnail: string | null;
+  publishedAt: string;
+  url: string;
+  isShort: boolean;
+  durationSec: number | null;
+  viewCount: number | null;
+}
+
+let cachedYouTubeToken: string | null = null;
+let cachedYouTubeChannel: YouTubeChannelInfo | null = null;
+
+export function getConnectedYouTubeChannel(): YouTubeChannelInfo | null {
+  return cachedYouTubeChannel;
+}
+
+export function hasYouTubeAccessToken(): boolean {
+  return Boolean(cachedYouTubeToken);
+}
+
+function parseIsoDurationSec(iso?: string): number | null {
+  if (!iso) return null;
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return null;
+  return Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0);
+}
+
+async function ytFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
+  if (!cachedYouTubeToken) {
+    throw new Error("Conecta tu canal de YouTube para continuar.");
+  }
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${cachedYouTubeToken}`);
+  const res = await fetch(url, { ...init, headers });
+  const text = await res.text();
+  let json: any = {};
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    json = { raw: text };
+  }
+  if (!res.ok) {
+    if (res.status === 401) {
+      cachedYouTubeToken = null;
+      cachedYouTubeChannel = null;
+    }
+    const msg = json?.error?.message || `YouTube API HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+  return json as T;
+}
+
+/** Autorización incremental de YouTube (solo youtube.readonly + youtube.upload). */
+export async function connectYouTubeChannel(): Promise<YouTubeChannelInfo> {
+  await loadGoogleIdentityServices();
+
+  const token = await new Promise<string>((resolve, reject) => {
+    try {
+      const tokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_OAUTH_CLIENT_ID,
+        scope: YOUTUBE_SCOPES.join(" "),
+        include_granted_scopes: true,
+        prompt: "consent",
+        callback: (response: { access_token?: string; error?: string; error_description?: string }) => {
+          if (response.error || !response.access_token) {
+            reject(
+              new GoogleAuthClientError(
+                classifyGoogleOAuthError(
+                  response.error || "unknown",
+                  response.error_description || "",
+                  getCurrentHostname(),
+                ),
+              ),
+            );
+            return;
+          }
+          resolve(response.access_token);
+        },
+        error_callback: (err: { type?: string; message?: string }) => {
+          reject(
+            new GoogleAuthClientError(
+              classifyGoogleOAuthError(
+                err?.type || "unknown",
+                err?.message || "",
+                getCurrentHostname(),
+              ),
+            ),
+          );
+        },
+      });
+      tokenClient.requestAccessToken({ prompt: "consent" });
+    } catch (err: any) {
+      reject(
+        new GoogleAuthClientError(
+          classifyGoogleOAuthError("unknown", err?.message || "", getCurrentHostname()),
+        ),
+      );
+    }
+  });
+
+  cachedYouTubeToken = token;
+  const data = await ytFetch<{
+    items?: Array<{
+      id: string;
+      snippet?: { title?: string; customUrl?: string; thumbnails?: { default?: { url?: string }; medium?: { url?: string } } };
+      statistics?: { subscriberCount?: string; videoCount?: string };
+      contentDetails?: { relatedPlaylists?: { uploads?: string } };
+    }>;
+  }>("https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&mine=true");
+
+  const ch = data.items?.[0];
+  if (!ch) {
+    cachedYouTubeToken = null;
+    cachedYouTubeChannel = null;
+    throw new Error("Esta cuenta de Google no tiene un canal de YouTube activo.");
+  }
+
+  cachedYouTubeChannel = {
+    id: ch.id,
+    title: ch.snippet?.title || "Mi canal de YouTube",
+    customUrl: ch.snippet?.customUrl || null,
+    thumbnail: ch.snippet?.thumbnails?.medium?.url || ch.snippet?.thumbnails?.default?.url || null,
+    subscriberCount: ch.statistics?.subscriberCount != null ? Number(ch.statistics.subscriberCount) : null,
+    videoCount: ch.statistics?.videoCount != null ? Number(ch.statistics.videoCount) : null,
+    uploadsPlaylistId: ch.contentDetails?.relatedPlaylists?.uploads || null,
+  };
+  return cachedYouTubeChannel;
+}
+
+export async function disconnectYouTubeChannel(): Promise<void> {
+  const token = cachedYouTubeToken;
+  cachedYouTubeToken = null;
+  cachedYouTubeChannel = null;
+  if (token && window.google?.accounts?.oauth2?.revoke) {
+    await new Promise<void>((resolve) => {
+      try {
+        window.google.accounts.oauth2.revoke(token, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+}
+
+export async function listMyYouTubeVideos(maxResults = 12): Promise<YouTubeVideoItem[]> {
+  if (!cachedYouTubeChannel?.uploadsPlaylistId) return [];
+  const pl = await ytFetch<{
+    items?: Array<{
+      snippet?: {
+        title?: string;
+        description?: string;
+        publishedAt?: string;
+        thumbnails?: { high?: { url?: string }; medium?: { url?: string }; default?: { url?: string } };
+        resourceId?: { videoId?: string };
+      };
+    }>;
+  }>(
+    `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${encodeURIComponent(
+      cachedYouTubeChannel.uploadsPlaylistId,
+    )}&maxResults=${Math.min(25, Math.max(1, maxResults))}`,
+  );
+
+  const rawItems = (pl.items || []).filter((it) => Boolean(it.snippet?.resourceId?.videoId));
+  if (!rawItems.length) return [];
+
+  const ids = rawItems.map((it) => it.snippet!.resourceId!.videoId!).join(",");
+  const stats = await ytFetch<{
+    items?: Array<{
+      id: string;
+      contentDetails?: { duration?: string };
+      statistics?: { viewCount?: string };
+    }>;
+  }>(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails,statistics&id=${encodeURIComponent(ids)}`).catch(
+    () => ({ items: [] }),
+  );
+
+  const byId = new Map((stats.items || []).map((v) => [v.id, v]));
+  return rawItems.map((it) => {
+    const sn = it.snippet!;
+    const id = sn.resourceId!.videoId!;
+    const st = byId.get(id);
+    const dur = parseIsoDurationSec(st?.contentDetails?.duration);
+    const title = sn.title || "Vídeo de YouTube";
+    const isShort = (dur !== null && dur <= 61) || /#shorts?\b/i.test(title + " " + (sn.description || ""));
+    return {
+      id,
+      title,
+      description: sn.description || "",
+      thumbnail: sn.thumbnails?.high?.url || sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url || null,
+      publishedAt: sn.publishedAt || new Date().toISOString(),
+      url: isShort ? `https://www.youtube.com/shorts/${id}` : `https://www.youtube.com/watch?v=${id}`,
+      isShort,
+      durationSec: dur,
+      viewCount: st?.statistics?.viewCount != null ? Number(st.statistics.viewCount) : null,
+    };
+  });
+}
+
+export async function uploadVideoToYouTube(params: {
+  file: File;
+  title: string;
+  description: string;
+  tags?: string[];
+  privacyStatus?: "public" | "unlisted" | "private";
+  isShort?: boolean;
+}): Promise<{ id: string; url: string }> {
+  if (!cachedYouTubeToken) {
+    await connectYouTubeChannel();
+  }
+  const cleanTitle = params.title.trim().slice(0, 100) || "Clip VANTS GAMES #shorts";
+  const metadata = {
+    snippet: {
+      title: cleanTitle,
+      description: params.description.trim().slice(0, 4800),
+      tags: (params.tags || []).map((t) => t.trim()).filter(Boolean).slice(0, 20),
+      categoryId: "20", // Gaming
+      defaultLanguage: "es",
+    },
+    status: {
+      privacyStatus: params.privacyStatus || "unlisted",
+      selfDeclaredMadeForKids: false,
+    },
+  };
+
+  const initRes = await fetch(
+    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cachedYouTubeToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Length": String(params.file.size),
+        "X-Upload-Content-Type": params.file.type || "video/mp4",
+      },
+      body: JSON.stringify(metadata),
+    },
+  );
+  if (!initRes.ok) {
+    const errJson = await initRes.json().catch(() => ({}));
+    throw new Error(errJson?.error?.message || `No se pudo iniciar la subida a YouTube (HTTP ${initRes.status}).`);
+  }
+  const uploadUrl = initRes.headers.get("location");
+  if (!uploadUrl) {
+    throw new Error("YouTube no devolvió la URL de carga resumable.");
+  }
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": params.file.type || "video/mp4",
+    },
+    body: params.file,
+  });
+  const uploaded = (await putRes.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
+  if (!putRes.ok || !uploaded.id) {
+    throw new Error(uploaded?.error?.message || `Error al transferir el vídeo a YouTube (HTTP ${putRes.status}).`);
+  }
+
+  return {
+    id: uploaded.id,
+    url: params.isShort ? `https://www.youtube.com/shorts/${uploaded.id}` : `https://www.youtube.com/watch?v=${uploaded.id}`,
+  };
+}
+

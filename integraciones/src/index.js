@@ -27,6 +27,7 @@ import { rutasComunidadForo } from './comunidadForo.js';
 import { rutasComunidadMisiones } from './comunidadMisiones.js';
 import { rutasComunidadVotaciones } from './comunidadVotaciones.js';
 import { rutasGooglePro } from './googlePro.js';
+import { rutasVidiqSeo } from './vidiqSeo.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -409,6 +410,10 @@ async function rutas(req, env, url) {
   // Epic Games / Fortnite (vinculación OAuth y estadísticas)
   const re = await rutasEpic(req, env, url, p, m, { json, cacheado, usuario });
   if (re) return re;
+
+  // Optimización SEO de clips / Shorts vía vidIQ MCP
+  const rseo = await rutasVidiqSeo(req, env, url, p, m, { json, usuarioClaims });
+  if (rseo) return rseo;
 
   // Clips, foto de equipo y membresía
   const rx = await rutasExtras(req, env, url, p, m, { json, cacheado, usuario });
