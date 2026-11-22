@@ -470,7 +470,7 @@ export default function Home() {
             <div className="panel">
               {noticias.map((a) => (
                 <Link key={a.slug} href={"/noticias/" + a.slug} className="row grid-cols-1">
-                  <span className="small muted num">{new Date(a.publicado_at).toLocaleDateString("es-VE")}</span>
+                  <span className="small muted num">{a.publicado_at ? new Date(a.publicado_at).toLocaleDateString("es-VE") : ""}</span>
                   <span className="font-semibold">{a.titulo}</span>
                 </Link>
               ))}
