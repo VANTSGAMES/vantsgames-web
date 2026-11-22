@@ -1,4 +1,4 @@
-import { CuentasRegistradas, RosterOficialPagina, EquiposFaceitCircuito } from "./PerfilPublico";
+import { CuentasRegistradas, RosterOficialPagina } from "./PerfilPublico";
 import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQueries } from "@tanstack/react-query";
@@ -78,7 +78,6 @@ export function Equipos() {
           <Empty code={"equipos · " + (juego || "todos")} title={busqueda ? "Ningún equipo coincide con la búsqueda" : "No hay equipos en esta categoría"} />
         ) : <div className="grid-auto grid sm:grid-cols-2 lg:grid-cols-3">{vis.map((t) => <TeamTile key={t.slug} t={t} />)}</div>}
       </div>
-      {juego !== "valorant" && <Section title="Equipos en FACEIT" eyebrow="CS2 · plantillas"><EquiposFaceitCircuito /></Section>}
       <EquiposCTA />
     </>
   );

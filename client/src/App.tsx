@@ -43,7 +43,6 @@ const Perfil = lazy(() => import("./pages/Perfil"));
 const Acceso = lazy(() => import("./pages/Perfil").then((m) => ({ default: m.Acceso })));
 const Legal = lazy(() => import("./pages/Legal"));
 const RankingVants = lazy(() => import("./pages/Vants").then((m) => ({ default: m.RankingVants })));
-const EventosLista = lazy(() => import("./pages/Vants").then((m) => ({ default: m.EventosLista })));
 const Publicar = lazy(() => import("./pages/Vants").then((m) => ({ default: m.Publicar })));
 const CrearTorneo = lazy(() => import("./pages/CrearTorneo"));
 const Workspace = lazy(() => import("./pages/Workspace"));
@@ -52,6 +51,7 @@ const BuscadorEquipo = lazy(() => import("./pages/BuscadorEquipo"));
 const ForoComunidad = lazy(() => import("./pages/ForoComunidad"));
 const MisionesComunidad = lazy(() => import("./pages/MisionesComunidad"));
 const VotacionesComunidad = lazy(() => import("./pages/VotacionesComunidad"));
+const EventosComunidad = lazy(() => import("./pages/EventosComunidad"));
 
 /** URLs de la web anterior → equivalente en la nueva (enlaces externos, buscadores, Auth0/Stripe). */
 const ANTIGUAS: [string, string][] = [
@@ -109,9 +109,10 @@ function Rutas() {
           <Route path="/comunidad/foro"><Priv seccion="El foro"><ForoComunidad /></Priv></Route>
           <Route path="/comunidad/misiones"><Priv seccion="Las misiones semanales"><MisionesComunidad /></Priv></Route>
           <Route path="/comunidad/votaciones"><Priv seccion="Las votaciones"><VotacionesComunidad /></Priv></Route>
+          <Route path="/comunidad/eventos"><Priv seccion="Los eventos"><EventosComunidad /></Priv></Route>
           <Route path="/noticias"><Priv seccion="Las noticias"><Noticias /></Priv></Route>
           <Route path="/noticias/:slug"><Priv seccion="Esta noticia"><NoticiaDetalle /></Priv></Route>
-          <Route path="/eventos"><Priv seccion="Los eventos"><EventosLista /></Priv></Route>
+          <Route path="/eventos"><Priv seccion="Los eventos"><EventosComunidad /></Priv></Route>
           <Route path="/publicar"><Priv seccion="Publicar en VANTS"><Publicar /></Priv></Route>
           <Route path="/en-vivo"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
           <Route path="/directos"><Priv seccion="Los directos"><EnVivo /></Priv></Route>

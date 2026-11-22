@@ -20,6 +20,7 @@ import {
 } from "@/lib/forumHelpers";
 import type { WeeklyMissionsResponse } from "@/lib/missionsHelpers";
 import type { CommunityVotingResponse } from "@/lib/votingHelpers";
+import { eventTypeLabel, formatEventCountdown, type CommunityEventsResponse } from "@/lib/eventsHelpers";
 
 /* ---------------- Clips ---------------- */
 const CLIP_TABS = [
@@ -275,14 +276,20 @@ export function Comunidad() {
     queryFn: () => communityFetch<CommunityVotingResponse>("/api/community/voting"),
     staleTime: 30_000,
   });
+  const eventsQ = useQuery<CommunityEventsResponse>({
+    queryKey: ["community-events", "preview"],
+    queryFn: () => communityFetch<CommunityEventsResponse>("/api/community/events"),
+    staleTime: 30_000,
+  });
   const lfgItems = lfg.data?.listings || [];
   const forumItems = forum.data?.posts || [];
   const missionItems = missions.data?.missions || [];
   const pollItems = voting.data?.polls || [];
   const pickemItems = voting.data?.pickemMatches || [];
+  const eventItems = eventsQ.data?.events || [];
   return (
     <>
-      <PageHead eyebrow="Comunidad" title={<>Connect<span style={{ color: "var(--rojo)" }}>.</span></>} lead="Lo que pasa en VANTS: buscador de equipos y scrims, muro por juego, misiones semanales, votaciones Pick'em, anuncios y creadores." />
+      <PageHead eyebrow="Comunidad" title={<>Connect<span style={{ color: "var(--rojo)" }}>.</span></>} lead="Lo que pasa en VANTS: buscador de equipos y scrims, muro por juego, misiones semanales, votaciones Pick'em, eventos RSVP, anuncios y creadores." />
       <div className="wrap">
         <div className="grid gap-px sm:grid-cols-2 lg:grid-cols-4" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
           {[
@@ -290,7 +297,7 @@ export function Comunidad() {
             ["/comunidad/foro", "Muro / Foro", forum.isLoading ? "…" : forumItems.length + " hilos"],
             ["/comunidad/misiones", "Misiones Semanales", missions.isLoading ? "…" : missionItems.length + " retos · " + (missions.data?.summary.maxWeeklyXp || 0) + " XP"],
             ["/comunidad/votaciones", "Votaciones y Pick'em", voting.isLoading ? "…" : pollItems.length + " encuestas · " + pickemItems.length + " series"],
-            ["/eventos", "Eventos", "Showmatches y quedadas"],
+            ["/eventos", "Eventos y Showmatches", eventsQ.isLoading ? "…" : (eventsQ.data?.summary.totalUpcoming ?? 0) + " próximos · RSVP"],
             ["/noticias", "Noticias y anuncios", news.data ? news.data.data.total + " publicadas" : "…"],
             ["/en-vivo", "Twitch en vivo", creadores.data ? creadores.data.creadores.filter((c) => c.enVivo).length + " en directo" : "…"],
             ["/creadores", "Creadores", creadores.data ? creadores.data.creadores.length + " canales" : "…"],
@@ -409,6 +416,33 @@ export function Comunidad() {
                 </div>
                 <strong className="d-3">{p.title}</strong>
                 <div className="small muted line-clamp-2">{p.description}</div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Section>
+      <Section id="eventos-comunidad" eyebrow="Fase 5 · Eventos y Showmatches" title="Agenda con inscripción RSVP" more={{ to: "/eventos", label: "Ver agenda completa" }}>
+        {eventsQ.isLoading ? (
+          <Skel h={84} n={2} />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {eventItems.slice(0, 2).map((ev) => (
+              <Link
+                key={ev.id}
+                href="/eventos"
+                className="panel p-5 grid gap-2 hover:bg-[var(--grafito-2)] transition-colors"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="tag tag-rojo">{eventTypeLabel(ev.type)}</span>
+                    {ev.gameSlug === "general" ? <span className="tag">General</span> : <GameTag g={ev.gameSlug} />}
+                  </div>
+                  <span className="small muted num">{formatEventCountdown(ev.startsAt)}</span>
+                </div>
+                <strong className="d-3">{ev.title}</strong>
+                <div className="small muted num">
+                  {ev.confirmedCount} / {ev.capacity} confirmados · {ev.location}
+                </div>
               </Link>
             ))}
           </div>

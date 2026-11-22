@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { PanelFaceit, EquipoFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
+import { PanelFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
 import { MisEquiposPanel, MisInscripciones, imagenEquipo, mensajeError } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
 import { PLANES } from "./Membresias";
 import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
-import { ResumenLogros, PanelValorantPerfil, RiotIdForm, VincularEquipoFaceit } from "./Juegos";
+import { ResumenLogros, PanelValorantPerfil, RiotIdForm } from "./Juegos";
 import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -639,7 +639,7 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   soporte: { t: "Soporte", el: Soporte },
   membresia: { t: "Membresía", el: Membresia },
   estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-8"><EstadisticasFaceit /><div className="wrap grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div><FortnitePropio /></div> },
-  equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /><div className="grid gap-3"><h2 className="d-3">Equipo en FACEIT</h2><EquipoFaceit pie={(actual) => <VincularEquipoFaceit actual={actual} />} /></div></div> },
+  equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /></div> },
   torneos: { t: "Mis torneos", el: MisInscripciones },
   clips: { t: "Mis clips", el: () => <div className="wrap"><MiBiblioteca /></div> },
 };
