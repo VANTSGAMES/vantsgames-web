@@ -47,6 +47,14 @@ import {
   submitPickemPrediction,
   updatePollStatus,
 } from "../src/db/communityVoting.ts";
+import {
+  cancelEventRsvp,
+  createCommunityEvent,
+  getEventsOverview,
+  toggleEventCheckIn,
+  updateCommunityEventStatus,
+  upsertEventRsvp,
+} from "../src/db/communityEvents.ts";
 import { validateLfgApplication, validateLfgDraft } from "../client/src/lib/lfgHelpers.ts";
 import {
   isValidForumReaction,
@@ -55,6 +63,7 @@ import {
 } from "../client/src/lib/forumHelpers.ts";
 import { validateMissionProgressNote } from "../client/src/lib/missionsHelpers.ts";
 import { validateCustomPollDraft } from "../client/src/lib/votingHelpers.ts";
+import { validateEventDraft, validateRsvpRoleNote } from "../client/src/lib/eventsHelpers.ts";
 
 /**
  * Proxy de desarrollo/preview hacia la API de Vantsgames (Cloudflare Worker)
@@ -996,6 +1005,177 @@ export async function registerRoutes(httpServer: Server, app: Express): Promise<
     } catch (error: any) {
       console.error("PATCH /api/community/pickem/:matchId failed:", error);
       res.status(500).json({ error: "No se pudo actualizar la serie Pick'em." });
+    }
+  });
+
+  // ---------------- Comunidad · Fase 5: Eventos y Showmatches (RSVP) ----------------
+  app.get("/api/community/events", optionalAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      let viewerUserId: number | null = null;
+      const viewerIsModerator = isCommunityModerator(req.user?.email);
+      if (req.user?.uid) {
+        const viewer = await resolveCommunityUser(
+          req.user.uid,
+          req.user.email || `${req.user.uid}@users.vants.cc`,
+          req.user.name ?? null,
+          req.user.picture ?? null,
+        );
+        viewerUserId = viewer.id;
+      }
+
+      const overview = await getEventsOverview({ viewerUserId, viewerIsModerator });
+      res.json(overview);
+    } catch (error: any) {
+      console.error("GET /api/community/events failed:", error);
+      res.status(500).json({ error: "No se pudieron cargar los eventos y showmatches." });
+    }
+  });
+
+  app.post("/api/community/events/:id/rsvp", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) return res.status(401).json({ error: "Inicia sesión para confirmar tu asistencia." });
+
+      const eventId = String(req.params.id || "").trim();
+      if (!eventId) return res.status(400).json({ error: "ID de evento inválido." });
+
+      const noteCheck = validateRsvpRoleNote(req.body?.roleNote);
+      if (!noteCheck.ok) return res.status(400).json({ error: noteCheck.error });
+
+      const email = req.user?.email || `${uid}@users.vants.cc`;
+      const user = await resolveCommunityUser(uid, email, req.user?.name ?? null, req.user?.picture ?? null);
+      const userNick =
+        (user.displayName || req.user?.name || email.split("@")[0] || "Jugador").trim().slice(0, 60);
+
+      const result = await upsertEventRsvp({
+        eventId,
+        userId: user.id,
+        userNick,
+        roleNote: noteCheck.roleNote,
+        viewerIsModerator: isCommunityModerator(req.user?.email),
+      });
+      if (!result.ok) return res.status(result.status).json({ error: result.error });
+      res.json({ rsvpStatus: result.status, ...result.overview });
+    } catch (error: any) {
+      console.error("POST /api/community/events/:id/rsvp failed:", error);
+      res.status(500).json({ error: "No se pudo confirmar tu inscripción." });
+    }
+  });
+
+  app.delete("/api/community/events/:id/rsvp", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) return res.status(401).json({ error: "Inicia sesión para cancelar tu asistencia." });
+
+      const eventId = String(req.params.id || "").trim();
+      if (!eventId) return res.status(400).json({ error: "ID de evento inválido." });
+
+      const email = req.user?.email || `${uid}@users.vants.cc`;
+      const user = await resolveCommunityUser(uid, email, req.user?.name ?? null, req.user?.picture ?? null);
+
+      const result = await cancelEventRsvp({
+        eventId,
+        userId: user.id,
+        viewerIsModerator: isCommunityModerator(req.user?.email),
+      });
+      if (!result.ok) return res.status(result.status).json({ error: result.error });
+      res.json(result.overview);
+    } catch (error: any) {
+      console.error("DELETE /api/community/events/:id/rsvp failed:", error);
+      res.status(500).json({ error: "No se pudo cancelar tu inscripción." });
+    }
+  });
+
+  app.post("/api/community/events/:id/checkin", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) return res.status(401).json({ error: "Inicia sesión para realizar check-in." });
+
+      const eventId = String(req.params.id || "").trim();
+      if (!eventId) return res.status(400).json({ error: "ID de evento inválido." });
+
+      const email = req.user?.email || `${uid}@users.vants.cc`;
+      const user = await resolveCommunityUser(uid, email, req.user?.name ?? null, req.user?.picture ?? null);
+
+      const result = await toggleEventCheckIn({
+        eventId,
+        userId: user.id,
+        viewerIsModerator: isCommunityModerator(req.user?.email),
+      });
+      if (!result.ok) return res.status(result.status).json({ error: result.error });
+      res.json({ checkedIn: result.checkedIn, ...result.overview });
+    } catch (error: any) {
+      console.error("POST /api/community/events/:id/checkin failed:", error);
+      res.status(500).json({ error: "No se pudo actualizar tu check-in." });
+    }
+  });
+
+  app.post("/api/community/events", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) return res.status(401).json({ error: "Inicia sesión para continuar." });
+      if (!isCommunityModerator(req.user?.email)) {
+        return res.status(403).json({ error: "Solo administradores u owners pueden crear eventos oficiales." });
+      }
+
+      const validation = validateEventDraft({
+        title: req.body?.title,
+        type: req.body?.type,
+        gameSlug: req.body?.gameSlug,
+        modality: req.body?.modality,
+        location: req.body?.location,
+        streamUrl: req.body?.streamUrl,
+        description: req.body?.description,
+        startsAt: req.body?.startsAt,
+        endsAt: req.body?.endsAt,
+        capacity: req.body?.capacity,
+        featured: req.body?.featured,
+      });
+      if (!validation.ok) return res.status(400).json({ error: validation.error });
+
+      const email = req.user?.email || `${uid}@users.vants.cc`;
+      const user = await resolveCommunityUser(uid, email, req.user?.name ?? null, req.user?.picture ?? null);
+      const hostNick =
+        (user.displayName || req.user?.name || "Organización VANTS").trim().slice(0, 60);
+
+      const result = await createCommunityEvent({
+        userId: user.id,
+        hostNick,
+        draft: validation.data,
+      });
+      res.status(201).json(result.overview);
+    } catch (error: any) {
+      console.error("POST /api/community/events failed:", error);
+      res.status(500).json({ error: "No se pudo publicar el evento." });
+    }
+  });
+
+  app.patch("/api/community/events/:id", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const uid = req.user?.uid;
+      if (!uid) return res.status(401).json({ error: "Inicia sesión para continuar." });
+      if (!isCommunityModerator(req.user?.email)) {
+        return res.status(403).json({ error: "Solo administradores u owners pueden gestionar eventos." });
+      }
+
+      const eventId = String(req.params.id || "").trim();
+      const rawStatus = String(req.body?.status || "").trim().toLowerCase();
+      if (rawStatus !== "open" && rawStatus !== "closed" && rawStatus !== "cancelled") {
+        return res.status(400).json({ error: "Estado inválido. Usa 'open', 'closed' o 'cancelled'." });
+      }
+
+      const email = req.user?.email || `${uid}@users.vants.cc`;
+      const user = await resolveCommunityUser(uid, email, req.user?.name ?? null, req.user?.picture ?? null);
+      const result = await updateCommunityEventStatus({
+        eventId,
+        status: rawStatus,
+        viewerUserId: user.id,
+      });
+      if (!result.ok) return res.status(result.status).json({ error: result.error });
+      res.json(result.overview);
+    } catch (error: any) {
+      console.error("PATCH /api/community/events/:id failed:", error);
+      res.status(500).json({ error: "No se pudo actualizar el estado del evento." });
     }
   });
 

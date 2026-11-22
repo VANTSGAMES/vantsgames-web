@@ -24,7 +24,7 @@ export const NAV: NavGroup[] = [
     { label: "Clips destacados", to: "/clips" },
     { label: "Directos Twitch & Kick", to: "/directos", hint: "Canales de la comunidad en vivo" },
     { label: "Noticias y anuncios", to: "/noticias" },
-    { label: "Eventos", to: "/eventos" },
+    { label: "Eventos y Showmatches", to: "/eventos", hint: "Inscripción RSVP, lista de espera y check-in en vivo" },
   ]},
   { label: "Planes", base: "/membresias", links: [
     { label: "Membresías PRO y CREATOR", to: "/membresias", hint: "Juega con ventaja" },

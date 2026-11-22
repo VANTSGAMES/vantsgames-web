@@ -332,12 +332,15 @@ function CrearEquipo({ onOk }: { onOk: (slug: string) => void }) {
   return (
     <form onSubmit={submit} className="panel panel-pad grid gap-3 content-start" data-testid="form-crear-equipo">
       <h3 className="d-3">Crear equipo</h3>
-      <p className="small muted">Serás el capitán. Recibirás un código para invitar a tus compañeros.</p>
-      <div className="field"><label htmlFor="ce-n">Nombre</label><input id="ce-n" className="input" required minLength={2} maxLength={32} value={f.nombre} onChange={set("nombre")} /></div>
+      <p className="small muted">Serás el capitán y recibirás un código para invitar a tus compañeros. Si tu equipo compite en FACEIT, selecciona <strong>CS2</strong> y escribe el nombre de tu equipo.</p>
+      <div className="field"><label htmlFor="ce-n">Nombre del equipo</label><input id="ce-n" className="input" required minLength={2} maxLength={32} placeholder="Ej. VANTS Crimson" value={f.nombre} onChange={set("nombre")} /></div>
       <div className="grid grid-cols-2 gap-3">
-        <div className="field"><label htmlFor="ce-t">Tag</label><input id="ce-t" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" value={f.tag} onChange={set("tag")} /></div>
+        <div className="field"><label htmlFor="ce-t">Tag</label><input id="ce-t" className="input" required maxLength={4} pattern="[A-Za-z0-9]{2,4}" placeholder="VNT" value={f.tag} onChange={set("tag")} /></div>
         <div className="field"><label htmlFor="ce-j">Juego</label><select id="ce-j" className="input" value={f.juego} onChange={set("juego")}>{opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}</select></div>
       </div>
+      {f.juego === "cs2" && (
+        <p className="text-xs muted">Equipo de CS2 (compatible con torneos VANTS y competición en FACEIT).</p>
+      )}
       <div className="field"><label htmlFor="ce-r">Región</label><input id="ce-r" className="input" maxLength={40} value={f.region} onChange={set("region")} /></div>
       <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-crear-equipo">{st.k === "enviando" ? "Creando…" : "Crear equipo"}</button>
       {st.k === "error" && <Aviso k="error">{st.m}</Aviso>}
@@ -485,7 +488,7 @@ export function MisEquiposPanel() {
   return (
     <div className="grid gap-6" data-testid="mis-equipos">
       {q.isLoading ? <Skel n={2} /> : q.error ? <ErrorBox error={q.error} what="tus equipos" onRetry={() => q.refetch()} /> : eqs.length === 0 ? (
-        <Empty code="equipos · 0" title="Todavía no tienes equipo" text="Crea uno y comparte el código con tus compañeros, o únete con el código que te pase tu capitán. Puedes tener un equipo de VALORANT y otro de CS2." />
+        <Empty code="equipos · 0" title="Todavía no tienes equipo" text="Crea tu equipo eligiendo el juego (para equipos de FACEIT selecciona CS2) y escribe su nombre, o únete con el código que te pase tu capitán." />
       ) : eqs.map((e) => <TarjetaMiEquipo key={e.slug} e={e} refrescar={refrescar} />)}
       <div className="grid gap-6 md:grid-cols-2">
         <CrearEquipo onOk={ok} />

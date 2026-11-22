@@ -238,6 +238,51 @@ export const pickemPredictions = pgTable(
   }),
 );
 
+export const communityEvents = pgTable("community_events", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // "showmatch" | "scrim_abierta" | "quedada" | "watchparty" | "torneo_relampago"
+  gameSlug: text("game_slug").notNull().default("general"),
+  modality: text("modality").notNull().default("online"), // "online" | "presencial" | "hibrido"
+  location: text("location").notNull(),
+  streamUrl: text("stream_url"),
+  description: text("description").notNull(),
+  startsAt: timestamp("starts_at").notNull(),
+  endsAt: timestamp("ends_at"),
+  capacity: integer("capacity").notNull().default(20),
+  featured: boolean("featured").notNull().default(false),
+  status: text("status").notNull().default("open"), // "open" | "closed" | "cancelled"
+  hostNick: text("host_nick").notNull(),
+  createdByUserId: integer("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const communityEventRsvps = pgTable(
+  "community_event_rsvps",
+  {
+    id: serial("id").primaryKey(),
+    eventId: text("event_id")
+      .references(() => communityEvents.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: integer("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    userNick: text("user_nick").notNull(),
+    status: text("status").notNull().default("confirmed"), // "confirmed" | "waitlist"
+    roleNote: text("role_note"),
+    checkedIn: boolean("checked_in").notNull().default(false),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    uniqueEventUserRsvp: uniqueIndex("community_event_rsvps_event_user_idx").on(
+      t.eventId,
+      t.userId,
+    ),
+  }),
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   tacticalNotes: many(tacticalNotes),
   workspaceLinks: many(workspaceLinks),
@@ -250,6 +295,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   missionProgress: many(missionProgress),
   communityPollVotes: many(communityPollVotes),
   pickemPredictions: many(pickemPredictions),
+  communityEventRsvps: many(communityEventRsvps),
 }));
 
 export const tacticalNotesRelations = relations(tacticalNotes, ({ one }) => ({
@@ -360,6 +406,21 @@ export const pickemPredictionsRelations = relations(pickemPredictions, ({ one })
   }),
 }));
 
+export const communityEventsRelations = relations(communityEvents, ({ many }) => ({
+  rsvps: many(communityEventRsvps),
+}));
+
+export const communityEventRsvpsRelations = relations(communityEventRsvps, ({ one }) => ({
+  event: one(communityEvents, {
+    fields: [communityEventRsvps.eventId],
+    references: [communityEvents.id],
+  }),
+  user: one(users, {
+    fields: [communityEventRsvps.userId],
+    references: [users.id],
+  }),
+}));
+
 export type UserRow = typeof users.$inferSelect;
 export type TacticalNoteRow = typeof tacticalNotes.$inferSelect;
 export type WorkspaceLinkRow = typeof workspaceLinks.$inferSelect;
@@ -374,3 +435,5 @@ export type CommunityPollRow = typeof communityPolls.$inferSelect;
 export type CommunityPollVoteRow = typeof communityPollVotes.$inferSelect;
 export type PickemMatchRow = typeof pickemMatches.$inferSelect;
 export type PickemPredictionRow = typeof pickemPredictions.$inferSelect;
+export type CommunityEventRow = typeof communityEvents.$inferSelect;
+export type CommunityEventRsvpRow = typeof communityEventRsvps.$inferSelect;
