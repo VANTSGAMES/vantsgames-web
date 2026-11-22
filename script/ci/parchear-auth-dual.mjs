@@ -119,6 +119,36 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 4) Proxy estándar OpenID Connect Discovery (/.well-known/openid-configuration, /.well-known/jwks.json),
+  //    Google Workspace Pro (/pro/*) y Google Maps Config (/maps/config) hacia env.VANTS_INT
+  if (!c.includes("/* VANTS_WELL_KNOWN_OIDC_V1 */")) {
+    const OLD_PROXY = `    if (__redir301.pathname.startsWith("/auth/") && _vantsInt) {
+      return _vantsInt.fetch(request);
+    }`;
+    const NEW_PROXY = `    /* VANTS_WELL_KNOWN_OIDC_V1 */
+    if (
+      _vantsInt &&
+      (__redir301.pathname.startsWith("/auth/") ||
+        __redir301.pathname === "/.well-known/openid-configuration" ||
+        __redir301.pathname === "/.well-known/jwks.json" ||
+        __redir301.pathname.startsWith("/pro/") ||
+        __redir301.pathname === "/maps/config")
+    ) {
+      return _vantsInt.fetch(request);
+    }`;
+    if (c.includes(OLD_PROXY)) {
+      c = c.replace(OLD_PROXY, NEW_PROXY);
+    }
+  }
+
+  // 5) CSP style-src para Google Identity Services (https://accounts.google.com/gsi/style)
+  if (!c.includes("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;")) {
+    c = c.replace(
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;",
+    );
+  }
+
   return c;
 }
 

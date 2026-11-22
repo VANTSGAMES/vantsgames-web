@@ -2,8 +2,21 @@ import {
   classifyGoogleOAuthError,
   type AuthErrorDetail,
 } from "./googleOAuthErrors";
+import { AUTH_ENABLED } from "./auth";
+import { getAuthToken } from "./api";
 
 export type { AuthErrorDetail };
+
+const INT_ORIGIN: string = (
+  (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev"
+).replace(/\/$/, "");
+
+function resolveProUrl(path: string): string {
+  if (AUTH_ENABLED && path.startsWith("/api/pro/")) {
+    return INT_ORIGIN + path.slice(4);
+  }
+  return path;
+}
 
 export interface WorkspaceUser {
   uid: string;
@@ -273,16 +286,17 @@ export async function signOutGoogleWorkspace(): Promise<void> {
   }
 }
 
-/** Helper para llamar a /api/pro/* en nuestro backend Express + Cloud SQL usando el token de acceso de Google OAuth 2.0. */
+/** Helper para llamar a /api/pro/* (Cloudflare D1 en producción / Express en desarrollo) con token de Google OAuth 2.0 o VANTS Identity. */
 export async function proApi<T>(
   path: string,
   opts: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown } = {},
 ): Promise<T> {
-  if (!currentUser || !cachedAccessToken) {
+  const token = cachedAccessToken || (await getAuthToken());
+  if (!token) {
     throw new Error("Inicia sesión con Google para guardar en tu espacio Pro.");
   }
   const headers: Record<string, string> = {
-    Authorization: `Bearer ${cachedAccessToken}`,
+    Authorization: `Bearer ${token}`,
     Accept: "application/json",
   };
   const init: RequestInit = { method: opts.method || "GET", headers };
@@ -290,10 +304,12 @@ export async function proApi<T>(
     headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(opts.body);
   }
-  const res = await fetch(path, init);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error((data as any).error || `Error ${res.status}`);
+  const res = await fetch(resolveProUrl(path), init);
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const isJson = contentType.includes("application/json");
+  const data = isJson ? await res.json().catch(() => ({})) : {};
+  if (!res.ok || !isJson) {
+    throw new Error((data as any).error || (!isJson ? "Respuesta inválida del servidor Pro." : `Error ${res.status}`));
   }
   return data as T;
 }
