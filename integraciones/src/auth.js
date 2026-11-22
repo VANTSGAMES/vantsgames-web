@@ -453,6 +453,33 @@ export async function verificarEstadoOidc(token, env) {
 }
 
 // ---------------------------------------------------------------- identidad canónica & sesiones
+async function sincronizarPerfilInicial(db, canonicalSub, { email, name, avatarUrl }) {
+  try {
+    const nick = String(name || (email ? String(email).split('@')[0] : '') || '').trim().slice(0, 40);
+    if (nick) {
+      await db
+        .prepare(
+          "INSERT INTO perfiles_publicos (auth0_sub, nickname, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(auth0_sub) DO UPDATE SET nickname = COALESCE(perfiles_publicos.nickname, excluded.nickname)",
+        )
+        .bind(canonicalSub, nick)
+        .run()
+        .catch(() => null);
+    }
+    if (avatarUrl && /^https:\/\//.test(avatarUrl) && !/cdn\.auth0\.com|gravatar\.com/.test(avatarUrl)) {
+      const pid = (await sha256Hex(canonicalSub)).slice(0, 16);
+      await db
+        .prepare(
+          "INSERT OR IGNORE INTO integ_foto (pid, mime, datos, url, actualizado) VALUES (?, NULL, NULL, ?, datetime('now'))",
+        )
+        .bind(pid, avatarUrl)
+        .run()
+        .catch(() => null);
+    }
+  } catch {
+    // Ignorar en entornos de test con mock parcial de D1
+  }
+}
+
 export async function resolverSubCanonico(db, { provider, providerSub, email, name, avatarUrl }) {
   await asegurarAuth(db);
   const normEmail = email ? String(email).trim().toLowerCase() : null;
@@ -469,6 +496,7 @@ export async function resolverSubCanonico(db, { provider, providerSub, email, na
       .bind(normEmail, name || null, avatarUrl || null, provider, pSub)
       .run();
     if (normEmail) await guardarEmailSub(db, existing.canonical_sub, normEmail);
+    await sincronizarPerfilInicial(db, existing.canonical_sub, { email: normEmail, name, avatarUrl });
     return existing.canonical_sub;
   }
 
@@ -494,6 +522,7 @@ export async function resolverSubCanonico(db, { provider, providerSub, email, na
     .run();
 
   if (normEmail) await guardarEmailSub(db, canonicalSub, normEmail);
+  await sincronizarPerfilInicial(db, canonicalSub, { email: normEmail, name, avatarUrl });
   return canonicalSub;
 }
 

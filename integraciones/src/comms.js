@@ -12,8 +12,14 @@
  * legal) y hola@vants.cc.
  */
 import { enviarEmail, plantillaEmail, guardarEmailSub, emailDe } from './email.js';
+import { invalidarIdentidades } from './perfiles.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function sha16(s) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(b)].slice(0, 8).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
 
 /** Envía a un webhook de Discord por destino. Sin secret → no-op silencioso. */
 export async function webhookDiscord(env, destino, payload) {
@@ -33,8 +39,10 @@ export async function webhookDiscord(env, destino, payload) {
 }
 
 async function nickDe(env, sub) {
-  const r = await env.DB.prepare('SELECT nick FROM players WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
-  return (r && r.nick) || null;
+  const perf = await env.DB.prepare('SELECT nickname FROM perfiles_publicos WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+  if (perf && perf.nickname) return perf.nickname;
+  const r = await env.DB.prepare('SELECT display_name, username FROM players WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+  return (r && (r.display_name || r.username)) || null;
 }
 
 async function contarRegistros(env) {
@@ -57,20 +65,85 @@ async function limitePorIp(env, req, prefijo, max, ventanaMin = 60) {
 
 export async function rutasComms(req, env, url, p, m, H) {
   /* POST /int/registro — lo llama el cliente al iniciar sesión. La primera
-   * vez de cada usuario dispara la bienvenida al canal privado de registros
-   * (tono cercano) y marca el estado de verificación de su correo. */
+   * vez de cada usuario inicializa su perfil público y foto de Google, envía
+   * el correo oficial de bienvenida vía Resend, crea notificación in-app y
+   * dispara la bienvenida al canal privado de Discord. */
   if (p === '/registro' && m === 'POST') {
     const claims = await H.usuarioClaims(req, env);
     const sub = claims.sub;
+    if (claims.email) await guardarEmailSub(env.DB, sub, claims.email);
+
+    const nickInicial = (await nickDe(env, sub)) || claims.name || (claims.email ? claims.email.split('@')[0] : 'jugador');
+    await env.DB.prepare(
+      `INSERT INTO perfiles_publicos (auth0_sub, nickname, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(auth0_sub) DO UPDATE SET nickname = COALESCE(perfiles_publicos.nickname, excluded.nickname)`,
+    ).bind(sub, String(nickInicial).slice(0, 40)).run().catch(() => null);
+
+    if (claims.picture && /^https:\/\//.test(claims.picture) && !/cdn\.auth0\.com|gravatar\.com/.test(claims.picture)) {
+      const pid = await sha16(sub);
+      await env.DB.prepare(
+        "CREATE TABLE IF NOT EXISTS integ_foto (pid TEXT PRIMARY KEY, mime TEXT, datos TEXT, url TEXT, actualizado TEXT NOT NULL DEFAULT (datetime('now')))",
+      ).run().catch(() => null);
+      await env.DB.prepare(
+        "INSERT OR IGNORE INTO integ_foto (pid, mime, datos, url, actualizado) VALUES (?, NULL, NULL, ?, datetime('now'))",
+      ).bind(pid, claims.picture).run().catch(() => null);
+    }
+
     const clave = 'registro_visto_' + sub;
     const previo = await env.DB.prepare('SELECT valor FROM integ_estado WHERE clave = ?').bind(clave).first().catch(() => null);
     if (previo) return H.json({ ok: true, primero: false });
+
+    invalidarIdentidades();
     const verificado = claims.email_verified !== false;
     await env.DB.prepare('INSERT INTO integ_estado (clave, valor) VALUES (?, ?)').bind(clave, verificado ? 'verificado' : 'pendiente').run().catch(() => null);
-    if (claims.email) await guardarEmailSub(env.DB, sub, claims.email);
     const total = await contarRegistros(env);
     const fundador = total <= 500; // etapa inicial: reconocimiento de fundadores
-    const nick = await nickDe(env, sub) || (claims.email ? claims.email.split('@')[0] : 'jugador');
+    const nick = nickInicial;
+
+    // 1) Correo oficial de bienvenida al jugador vía Resend (reemplaza bienvenida de Auth0)
+    let emailEnviado = false;
+    if (claims.email) {
+      const resEmail = await enviarEmail(env, {
+        to: claims.email,
+        asunto: '¡Bienvenido a la arena, ' + nick + '! — VANTS GAMES',
+        html: plantillaEmail({
+          base: env.SITE_URL || 'https://vants.cc',
+          titulo: 'Bienvenido a VANTS GAMES',
+          saludo: 'Hola ' + nick + ',',
+          parrafos: [
+            'Tu cuenta oficial de VANTS GAMES ya está activa. Desde hoy puedes competir en torneos de 11 títulos, subir en VANTS Ranked, reservar cupo en Eventos y Showmatches y conectar tus cuentas de FACEIT, VALORANT, Fortnite, Discord, Twitch y Steam.',
+            fundador
+              ? 'Además, formas parte de los primeros 500 jugadores registrados: tienes reconocido el estatus de Miembro FUNDADOR de la etapa inicial.'
+              : 'Completa tu ficha de jugador y vincula tus cuentas de juego desde tu perfil para desbloquear tus insignias y estadísticas en vivo.',
+          ],
+          datos: [
+            ['Jugador', nick],
+            ['Cuenta', claims.email],
+            ['Estatus', fundador ? 'Miembro FUNDADOR · Etapa inicial' : 'Jugador verificado'],
+            ['Registro N.º', '#' + String(total)],
+          ],
+          cta: { texto: 'Completar mi perfil', url: '/perfil/cuentas' },
+          planes: true,
+        }),
+      }).catch(() => null);
+      emailEnviado = Boolean(resEmail && resEmail.ok);
+    }
+
+    // 2) Notificación de bienvenida in-app en la campana del jugador
+    if (H.notificar) {
+      await H.notificar(
+        env,
+        sub,
+        'bienvenida',
+        '¡Bienvenido a VANTS GAMES, ' + nick + '!',
+        fundador
+          ? 'Eres Miembro FUNDADOR (#' + total + '). Vincula tus cuentas de FACEIT, VALORANT y Fortnite en tu perfil.'
+          : 'Vincula tus cuentas de FACEIT, VALORANT y Fortnite desde tu perfil para activar tus estadísticas e insignias.',
+        '/perfil/cuentas',
+      ).catch(() => null);
+    }
+
+    // 3) Webhook a Discord (#registros-nuevos-y-sugerencias)
     await webhookDiscord(env, 'registros', {
       content: '🎮 ¡Bienvenido a la arena, **' + nick + '**!' + (fundador ? ' 🏆 *Miembro FUNDADOR de la etapa inicial*' : ''),
       embeds: [{
@@ -85,12 +158,13 @@ export async function rutasComms(req, env, url, p, m, H) {
         footer: { text: 'VANTS GAMES · registros-nuevos-y-sugerencias' },
       }],
     });
-    // Aviso in-app al equipo
+
+    // 4) Aviso in-app al equipo de owners
     const owners = await env.DB.prepare("SELECT auth0_sub FROM players WHERE role = 'owner'").all().catch(() => ({ results: [] }));
     for (const o of owners.results || []) {
       await H.notificar(env, o.auth0_sub, 'registro', 'Nuevo jugador registrado: ' + nick, verificado ? 'Cuenta verificada ✅' : 'Correo sin verificar ⏳', '/sala').catch(() => null);
     }
-    return H.json({ ok: true, primero: true, fundador, verificado });
+    return H.json({ ok: true, primero: true, fundador, verificado, emailEnviado });
   }
 
   /* POST /int/sugerencia — sugerencias de la comunidad (auth + verificado). */
