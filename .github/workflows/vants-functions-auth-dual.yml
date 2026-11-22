@@ -1,0 +1,111 @@
+name: "Functions · parche verificación JWT dual (vants-functions)"
+
+# Aplica verificación JWT dual (VANTS Identity RS256 + Auth0) al Worker live
+# `vants-functions` (/fn/linker/* y /fn/stripe-checkout/*) conservando intactos
+# todos sus bindings, vars y secretos, con prueba en seco y rollback automático.
+on:
+  workflow_dispatch:
+
+concurrency: { group: vants-functions-auth-dual, cancel-in-progress: false }
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+      CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants-functions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      - name: Descargar código y ajustes actuales de vants-functions
+        run: |
+          set -euo pipefail
+          mkdir -p fn && cd fn
+          H="Authorization: Bearer $TOKEN"
+          curl -fsS -H "$H" "$CF/settings" > settings.json
+          curl -fsS -H "$H" "$CF/deployments" > deployments.json
+          V=$(jq -r '.result.deployments[0].versions[0].version_id' deployments.json)
+          echo "ANTERIOR=$V" >> "$GITHUB_ENV"
+          curl -fsS -H "$H" "$CF/versions/$V" > version.json
+          curl -fsS -D h.txt -H "$H" "$CF/content/v2" -o contenido.bin
+          node -e '
+            const fs=require("fs");
+            const ct=fs.readFileSync("h.txt","utf8").match(/boundary=([^\r\n;]+)/i)[1].trim();
+            const b=fs.readFileSync("contenido.bin"); const sep=Buffer.from("--"+ct);
+            let i=b.indexOf(sep), n=0;
+            while(i>=0){ const j=b.indexOf(sep,i+sep.length); if(j<0)break;
+              const p=b.subarray(i+sep.length+2,j-2); const k=p.indexOf("\r\n\r\n");
+              const cab=p.subarray(0,k).toString(); const nm=(cab.match(/name="([^"]+)"/)||[])[1];
+              if(nm==="worker.js"){ fs.mkdirSync("src",{recursive:true}); fs.writeFileSync("src/worker.js",p.subarray(k+4)); n++; }
+              i=j; }
+            if(!n) { console.error("worker.js no encontrado en vants-functions"); process.exit(1); }'
+          node --input-type=module --check < src/worker.js
+          node -e '
+            const fs = require("fs");
+            const set = JSON.parse(fs.readFileSync("settings.json", "utf8")).result;
+            const ver = JSON.parse(fs.readFileSync("version.json", "utf8")).result;
+            const vars = {}, d1 = [];
+            for (const b of set.bindings || []) {
+              if (b.type === "plain_text") vars[b.name] = b.text;
+              else if (b.type === "json") vars[b.name] = b.json;
+              else if (b.type === "d1") d1.push({ binding: b.name, database_id: b.database_id || b.id });
+              else if (b.type === "secret_text" || b.type === "secret_key") {}
+              else throw new Error("Binding no soportado en vants-functions: " + b.type + ":" + b.name);
+            }
+            const rt = (ver && ver.resources && ver.resources.script_runtime) || {};
+            const cfg = {
+              name: "vants-functions",
+              main: "src/worker.js",
+              no_bundle: true,
+              compatibility_date: set.compatibility_date || rt.compatibility_date || "2026-09-22",
+              compatibility_flags: set.compatibility_flags || rt.compatibility_flags || ["nodejs_compat"],
+              workers_dev: true,
+              keep_vars: false,
+              vars,
+              d1_databases: d1,
+            };
+            fs.writeFileSync("wrangler.json", JSON.stringify(cfg, null, 2));
+          '
+          jq '{name, compatibility_date, compatibility_flags, vars: (.vars|keys), d1_databases}' wrangler.json
+          jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
+          echo "bindings: $(cat bindings-antes.txt)"; echo "version anterior: $V"
+
+      - name: Aplicar parche de verificación JWT dual (3 verificadores)
+        working-directory: fn
+        run: |
+          set -euo pipefail
+          node ../script/ci/parchear-auth-dual.mjs --functions src/worker.js
+          node --input-type=module --check < src/worker.js
+          grep -c "VANTS_FN_DUAL_1" src/worker.js
+          grep -c "VANTS_FN_DUAL_2" src/worker.js
+          grep -c "VANTS_FN_DUAL_3" src/worker.js
+
+      - name: Prueba en seco
+        working-directory: fn
+        run: npx -y wrangler@4 deploy --dry-run --outdir seco
+
+      - name: Deploy de vants-functions (verificación dual)
+        working-directory: fn
+        run: npx -y wrangler@4 deploy
+
+      - name: Verificación (y vuelta atrás si falla)
+        working-directory: fn
+        run: |
+          set -u
+          ok=1
+          sleep 6
+          D=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/settings" | jq -r '[.result.bindings[].name]|sort|join(",")')
+          [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
+          c=$(curl -s -o /dev/null -w '%{http_code}' https://vants-functions.vants.workers.dev/fn/linker/api/status)
+          [ "$c" = 200 ] || { echo "/fn/linker/api/status -> $c"; ok=0; }
+          if [ $ok = 1 ]; then echo "vants-functions OK (verificación dual activa)"; exit 0; fi
+          echo "Fallo: vuelvo a la versión $ANTERIOR"
+          npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback vants-functions-auth-dual" -y
+          exit 1
