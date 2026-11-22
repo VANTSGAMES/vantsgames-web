@@ -11,9 +11,10 @@ import { Link, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api, pub } from "@/lib/api";
-import { useAuth, AUTH_ENABLED, AUTH0_DOMAIN, AUTH0_CLIENT_ID } from "@/lib/auth";
+import { useAuth, AUTH_ENABLED, AUTH_PROVIDER, AUTH0_DOMAIN, AUTH0_CLIENT_ID } from "@/lib/auth";
 import { PERFIL_LINKS } from "@/lib/nav";
 import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 
 type Estado = "conectada" | "desconectada" | "pendiente" | "error";
 const PROVEEDORES = [
@@ -660,12 +661,28 @@ export default function Perfil() {
 }
 
 /* ---------------- Acceso ---------------- */
+const OTP_ERR: Record<string, string> = {
+  email_invalido: "Escribe un correo electrónico válido.",
+  demasiados_intentos: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+  email_no_configurado: "El acceso por código de correo no está habilitado todavía. Usa Google para entrar.",
+  codigo_invalido: "Introduce el código de 6 dígitos que enviamos a tu correo.",
+  codigo_expirado: "El código caducó (10 min). Solicita uno nuevo.",
+  codigo_incorrecto: "Código incorrecto. Revisa tu bandeja o solicita uno nuevo.",
+};
+
 export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) {
-  const { status, login } = useAuth();
+  const { status, login, loginWithGoogle, startEmailOtp, verifyEmailOtp } = useAuth();
   const [email, setEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpStep, setOtpStep] = useState<"email" | "code">("email");
   const [acepta, setAcepta] = useState(false);
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
-  const titulos = { entrar: "Iniciar sesión", registro: "Crear cuenta", recuperar: "Recuperar contraseña" };
+  const authErrorParam = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("auth_error") : null;
+  const titulos = {
+    entrar: "Iniciar sesión",
+    registro: "Crear cuenta",
+    recuperar: AUTH_PROVIDER === "vants" ? "Acceder con código" : "Recuperar contraseña",
+  };
   const recuperar = async (e: FormEvent) => {
     e.preventDefault();
     setSt({ k: "enviando" });
@@ -682,6 +699,30 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
       setSt({ k: "error", m: "No se pudo enviar el correo (" + (err.message || "error") + ")." });
     }
   };
+  const enviarOtp = async (e: FormEvent) => {
+    e.preventDefault();
+    setSt({ k: "enviando" });
+    try {
+      await startEmailOtp(email);
+      setOtpStep("code");
+      setSt({ k: "idle" });
+    } catch (err: any) {
+      const code = String(err?.message || "error");
+      setSt({ k: "error", m: OTP_ERR[code] || "No se pudo enviar el código (" + code + ")." });
+    }
+  };
+  const confirmarOtp = async (e: FormEvent) => {
+    e.preventDefault();
+    setSt({ k: "enviando" });
+    try {
+      await verifyEmailOtp(email, otpCode);
+      setSt({ k: "ok" });
+    } catch (err: any) {
+      const code = String(err?.message || "error");
+      setSt({ k: "error", m: OTP_ERR[code] || "No se pudo verificar el código (" + code + ")." });
+    }
+  };
+  const bloqueadoRegistro = modo === "registro" && !acepta;
   return (
     <>
       <PageHead eyebrow="Cuenta" title={titulos[modo]} />
@@ -691,8 +732,87 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
             <><p>Ya tienes la sesión iniciada.</p><Link href="/perfil" className="btn btn-rojo w-fit">Ir a mi perfil</Link></>
           ) : !AUTH_ENABLED || status === "no_disponible" ? (
             <>
-              <p className="muted">El acceso usa la identidad de VANTS (Auth0) y solo funciona en el dominio registrado de la plataforma. En esta vista previa no se puede iniciar sesión y no se muestra ningún dato privado.</p>
+              <p className="muted">El acceso usa la identidad de VANTS y solo funciona en el dominio registrado de la plataforma. En esta vista previa no se puede iniciar sesión y no se muestra ningún dato privado.</p>
               <p className="small" style={{ color: "var(--gris-3)" }}>Estado del servicio de identidad: no disponible en este entorno.</p>
+            </>
+          ) : AUTH_PROVIDER === "vants" ? (
+            <>
+              {authErrorParam && (
+                <p className="small" style={{ color: "#ff5468" }} role="alert">
+                  No se completó el acceso con Google ({authErrorParam}). Inténtalo de nuevo.
+                </p>
+              )}
+              {modo === "registro" && (
+                <>
+                  <p className="muted" data-testid="bienvenida-registro">
+                    Bienvenido a VANTS. Crea tu cuenta gratis en menos de un minuto, vincula tu perfil gamer y
+                    empieza a competir o armar tu propia comunidad.
+                  </p>
+                  <div className="field">
+                    <label className="flex items-start gap-3 small" style={{ cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        required
+                        checked={acepta}
+                        onChange={(e) => setAcepta(e.target.checked)}
+                        data-testid="checkbox-terminos"
+                        style={{ width: 18, height: 18, accentColor: "var(--rojo)" }}
+                      />
+                      <span>
+                        Acepto los{" "}
+                        <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline">Términos de Servicio</a>, la{" "}
+                        <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidad</a>{" "}
+                        y las normas de conducta y juego limpio de VANTS GAMES.
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+              {modo !== "registro" && (
+                <p className="muted">Accede con Google o recibe un código de 6 dígitos en tu correo (sin contraseña).</p>
+              )}
+              <GoogleSignInButton
+                onClick={() => loginWithGoogle("/perfil")}
+                disabled={status === "cargando" || bloqueadoRegistro}
+                label={modo === "registro" ? "Registrarse con Google" : "Continuar con Google"}
+              />
+              <div className="flex items-center gap-3 small muted">
+                <span className="h-px flex-1" style={{ background: "var(--linea-suave)" }} />
+                <span>o con correo electrónico</span>
+                <span className="h-px flex-1" style={{ background: "var(--linea-suave)" }} />
+              </div>
+              {otpStep === "email" ? (
+                <form onSubmit={enviarOtp} className="grid gap-3">
+                  <div className="field">
+                    <label htmlFor="otp-em">Correo electrónico</label>
+                    <input id="otp-em" type="email" className="input" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="tu@correo.com" />
+                  </div>
+                  <button className="btn btn-rojo" disabled={st.k === "enviando" || bloqueadoRegistro} data-testid="button-otp-enviar">
+                    {st.k === "enviando" ? "Enviando código…" : "Enviar código de acceso"}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={confirmarOtp} className="grid gap-3">
+                  <p className="small muted">Enviamos un código de 6 dígitos a <strong>{email}</strong>.</p>
+                  <div className="field">
+                    <label htmlFor="otp-code">Código de 6 dígitos</label>
+                    <input id="otp-code" type="text" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} className="input num" required value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="123456" autoComplete="one-time-code" />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button className="btn btn-rojo" disabled={st.k === "enviando"} data-testid="button-otp-verificar">
+                      {st.k === "enviando" ? "Verificando…" : "Confirmar código"}
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => { setOtpStep("email"); setOtpCode(""); setSt({ k: "idle" }); }}>
+                      Cambiar correo
+                    </button>
+                  </div>
+                </form>
+              )}
+              {st.k === "error" && <p className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</p>}
+              <div className="flex flex-wrap gap-4 small">
+                {modo === "entrar" ? <Link href="/registro" className="underline muted">Crear cuenta</Link> : <Link href="/entrar" className="underline muted">Ya tengo cuenta</Link>}
+              </div>
             </>
           ) : modo === "recuperar" ? (
             st.k === "ok" ? <p role="status">Si la dirección corresponde a una cuenta, recibirás un correo para restablecer la contraseña.</p> : (
