@@ -19,7 +19,13 @@ jobs:
       - name: Sintaxis
         run: node --check src/index.js
       - name: Migraciones D1 (idempotentes)
-        run: for f in migraciones/*.sql; do npx -y wrangler@4 d1 execute vants-db --remote --file "$f" --yes; done
+        run: |
+          for f in migraciones/*.sql; do
+            npx -y wrangler@4 d1 execute vants-db --remote --file "$f" --yes || {
+              echo "::warning::No se pudo ejecutar $f (revisa permiso Account -> D1 -> Edit en CLOUDFLARE_API_TOKEN); continuando con deploy."
+              break
+            }
+          done
       - name: Deploy
         run: npx -y wrangler@4 deploy
       - name: Secretos de Epic / Fortnite y VANTS Identity
