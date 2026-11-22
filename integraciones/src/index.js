@@ -21,6 +21,7 @@ import { rutasExtras } from './extras.js';
 import { rutasEpic } from './epic.js';
 import { rutasComms } from './comms.js';
 import { rutasAuth, verificarJwtDual } from './auth.js';
+import { rutasEventosRsvp } from './eventosRsvp.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -33,7 +34,7 @@ function cors(env, req) {
   const headers = {
     'Access-Control-Allow-Origin': ok && origin ? origin : permitidos[0] || '*',
     'Access-Control-Allow-Headers': 'authorization, content-type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -413,6 +414,10 @@ async function rutas(req, env, url) {
   if (rj) return rj;
 
   // Ranking, equipos, eventos, logros, inscripciones y publicación (owner)
+  // Fase 5: Eventos y Showmatches con RSVP, lista de espera y check-in
+  const rev = await rutasEventosRsvp(req, env, url, p, m, { json, usuarioClaims });
+  if (rev) return rev;
+
   const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, usuarioClaims, perfilFaceit, notificar, discord });
   if (rc) return rc;
 

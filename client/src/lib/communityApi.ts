@@ -15,6 +15,18 @@ export async function getActiveCommunityToken(): Promise<string | null> {
   return getWorkspaceAccessToken();
 }
 
+const INT_ORIGIN: string = (
+  (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev"
+).replace(/\/$/, "");
+
+function resolveCommunityUrl(path: string): string {
+  // En producción (Cloudflare Workers), Fase 5 Eventos RSVP vive en vants-integraciones + D1.
+  if (AUTH_ENABLED && path.startsWith("/api/community/events")) {
+    return INT_ORIGIN + path.slice(4);
+  }
+  return path;
+}
+
 export async function communityFetch<T>(
   path: string,
   opts: { method?: "GET" | "POST" | "PATCH" | "DELETE"; body?: unknown; requireAuth?: boolean } = {},
@@ -36,10 +48,14 @@ export async function communityFetch<T>(
     init.body = JSON.stringify(opts.body);
   }
 
-  const res = await fetch(path, init);
-  const data = await res.json().catch(() => ({}));
+  const res = await fetch(resolveCommunityUrl(path), init);
+  const ct = res.headers.get("content-type") || "";
+  const data = ct.includes("application/json") ? await res.json().catch(() => null) : null;
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error || `Error ${res.status}`);
+    throw new Error((data as { error?: string } | null)?.error || `Error ${res.status}`);
+  }
+  if (!data || typeof data !== "object") {
+    throw new Error("Respuesta inválida del servidor de comunidad.");
   }
   return data as T;
 }
