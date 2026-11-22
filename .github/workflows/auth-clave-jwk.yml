@@ -17,10 +17,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
 
-      - name: Generar y guardar VANTS_AUTH_PRIVATE_JWK (idempotente)
+      - name: Generar y guardar VANTS_AUTH_PRIVATE_JWK + sincronizar GOOGLE_OAUTH_CLIENT_SECRET
         working-directory: integraciones
         env:
           EXISTING_JWK: ${{ secrets.VANTS_AUTH_PRIVATE_JWK }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GH_TOKEN: ${{ secrets.VANTS_GH_PAT_SECRETS }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
@@ -48,8 +49,15 @@ jobs:
             fi
             echo "Clave RSA-2048 generada y guardada en Cloudflare y GitHub Secrets (kid: vants-rs256-2026-1)."
           fi
+          if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then
+            echo "Sincronizando GOOGLE_OAUTH_CLIENT_SECRET a vants-integraciones..."
+            printf '%s' "$GOOGLE_OAUTH_CLIENT_SECRET" | npx -y wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET
+          fi
 
-      - name: Verificar endpoint público JWKS
+      - name: Verificar endpoints públicos JWKS y Google OIDC
         run: |
           set -euo pipefail
-          curl -fsS https://vants-integraciones.vants.workers.dev/auth/.well-known/jwks.json | jq '{keys: (.keys | length), kid: .keys[0].kid, kty: .keys[0].kty, alg: .keys[0].alg}'
+          curl -fsS https://vants.cc/auth/.well-known/jwks.json | jq '{keys: (.keys | length), kid: .keys[0].kid, kty: .keys[0].kty, alg: .keys[0].alg}'
+          gs=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' https://vants.cc/auth/google/start)
+          echo "/auth/google/start -> $gs"
+          case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) exit 1 ;; esac
