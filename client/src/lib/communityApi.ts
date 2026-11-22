@@ -20,8 +20,8 @@ const INT_ORIGIN: string = (
 ).replace(/\/$/, "");
 
 function resolveCommunityUrl(path: string): string {
-  // En producción (Cloudflare Workers), Fase 5 Eventos RSVP vive en vants-integraciones + D1.
-  if (AUTH_ENABLED && path.startsWith("/api/community/events")) {
+  // En producción (Cloudflare Workers), toda la API de comunidad vive en vants-integraciones + D1.
+  if (AUTH_ENABLED && /^\/api\/community\/(events|lfg|forum|missions|voting|polls|pickem)(\/|\?|$)/.test(path)) {
     return INT_ORIGIN + path.slice(4);
   }
   return path;
