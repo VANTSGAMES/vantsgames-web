@@ -30,7 +30,8 @@ const TIPOS = ["Patrocinio", "Torneo corporativo", "Publicidad", "Alianza"];
 
 function ModalAlianza({ abierta, onCerrar }: { abierta: boolean; onCerrar: () => void }) {
   const [f, setF] = useState({ empresa: "", contacto: "", email: "", web: "", tipo: TIPOS[0], mensaje: "" });
-  const [enviado, setEnviado] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [enviado, setEnviado] = useState<null | "ok" | "mailto">(null);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -49,28 +50,34 @@ function ModalAlianza({ abierta, onCerrar }: { abierta: boolean; onCerrar: () =>
 
   if (!abierta) return null;
 
-  const enviar = (e: FormEvent) => {
-    e.preventDefault();
+  const mailto = () => {
     const cuerpo = [
-      "Solicitud de alianza comercial — VANTS GAMES",
-      "",
-      "Empresa/marca: " + f.empresa,
-      "Contacto: " + f.contacto,
-      "Correo: " + f.email,
-      "Web/redes: " + (f.web || "—"),
-      "Tipo de interés: " + f.tipo,
-      "",
-      "Mensaje:",
-      f.mensaje,
+      "Solicitud de alianza comercial — VANTS GAMES", "",
+      "Empresa/marca: " + f.empresa, "Contacto: " + f.contacto, "Correo: " + f.email,
+      "Web/redes: " + (f.web || "—"), "Tipo de interés: " + f.tipo, "", "Mensaje:", f.mensaje,
     ].join("\n");
     window.open(
-      "mailto:contacto@vants.cc?subject=" +
-        encodeURIComponent("[Alianza] " + f.empresa + " · " + f.tipo) +
-        "&body=" +
-        encodeURIComponent(cuerpo),
+      "mailto:contacto@vants.cc?subject=" + encodeURIComponent("[Alianza] " + f.empresa + " · " + f.tipo) + "&body=" + encodeURIComponent(cuerpo),
       "_blank",
     );
-    setEnviado(true);
+    setEnviado("mailto");
+  };
+
+  const enviar = async (e: FormEvent) => {
+    e.preventDefault();
+    setEnviando(true);
+    try {
+      const { api } = await import("@/lib/api");
+      await api("/int/empresas/alianza", {
+        method: "POST",
+        body: { empresa: f.empresa, contacto: f.contacto, email: f.email, web: f.web, tipo: f.tipo, mensaje: f.mensaje },
+      });
+      setEnviado("ok");
+    } catch {
+      mailto(); // respaldo: el correo oficial sigue siendo el canal
+    } finally {
+      setEnviando(false);
+    }
   };
 
   const campo = "field";
@@ -85,13 +92,23 @@ function ModalAlianza({ abierta, onCerrar }: { abierta: boolean; onCerrar: () =>
           <button type="button" className="btn btn-sm btn-ghost" onClick={onCerrar} aria-label="Cerrar formulario">✕</button>
         </div>
         {enviado ? (
-          <div className="grid gap-3" role="status">
+          <div className="grid gap-3" role="status" data-testid="alianza-resultado">
             <p className="muted small">
-              Se abrió tu cliente de correo con la solicitud lista para enviar a <strong>contacto@vants.cc</strong>.
-              Si no se abrió, escríbenos directamente con los datos del formulario.
+              {enviado === "ok" ? (
+                <>
+                  <strong style={{ color: "var(--blanco)" }}>Agradecemos su propuesta.</strong> Nuestro equipo comercial
+                  la evaluará y se pondrá en contacto en un plazo máximo de 5 días hábiles. Envió un acuse de recibo a{" "}
+                  <strong style={{ color: "var(--blanco)" }}>{f.email}</strong>.
+                </>
+              ) : (
+                <>
+                  Se abrió su cliente de correo con la solicitud lista para enviar a <strong>contacto@vants.cc</strong>.
+                  Si no se abrió, escríbanos directamente con los datos del formulario.
+                </>
+              )}
             </p>
             <div className="flex gap-2">
-              <button type="button" className="btn btn-sm" onClick={() => setEnviado(false)}>Editar datos</button>
+              <button type="button" className="btn btn-sm" onClick={() => setEnviado(null)}>Editar datos</button>
               <button type="button" className="btn btn-sm btn-rojo" onClick={onCerrar}>Listo</button>
             </div>
           </div>
@@ -127,7 +144,7 @@ function ModalAlianza({ abierta, onCerrar }: { abierta: boolean; onCerrar: () =>
               <label htmlFor="al-mensaje">Mensaje *</label>
               <textarea id="al-mensaje" className="input" required maxLength={1500} rows={4} placeholder="Cuéntanos qué quieres lograr con VANTS GAMES…" value={f.mensaje} onChange={(e) => setF({ ...f, mensaje: e.target.value })} />
             </div>
-            <button type="submit" className="btn btn-rojo" data-testid="btn-enviar-alianza">Enviar solicitud</button>
+            <button type="submit" className="btn btn-rojo" disabled={enviando} data-testid="btn-enviar-alianza">{enviando ? "Enviando…" : "Enviar solicitud"}</button>
             <p className="muted small">La solicitud llega al equipo comercial de VANTS. Requiere registro legal de empresa/marca, portafolio relevante y validación oficial.</p>
           </form>
         )}

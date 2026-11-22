@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import type { Article, Paged, Stream, YtVideo, Creator } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
 import { VideoTile, StreamTile } from "@/components/domain";
@@ -425,6 +426,65 @@ export function Comunidad() {
           {news.isLoading ? <Skel n={3} /> : (news.data?.data.items || []).length === 0 ? <Empty code="noticias · 0" title="Sin anuncios publicados" /> : news.data!.data.items.map((a) => <Link key={a.slug} href={"/noticias/" + a.slug} className="row grid-cols-[120px_1fr]"><span className="small muted num">{fecha(a.publicado_at)}</span><span className="font-semibold">{a.titulo}</span></Link>)}
         </div>
       </Section>
+      <Sugerencias />
     </>
+  );
+}
+
+/* ---------------- Sugerencias de la comunidad ---------------- */
+function Sugerencias() {
+  const [mensaje, setMensaje] = useState("");
+  const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
+  const { status } = useAuth();
+  useEffect(() => { setSt({ k: "idle" }); }, [status]);
+  const enviar = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mensaje.trim().length < 10) { setSt({ k: "error", m: "Cuéntanos un poco más (mínimo 10 caracteres)." }); return; }
+    setSt({ k: "enviando" });
+    try {
+      const { api } = await import("@/lib/api");
+      await api("/int/sugerencia", { method: "POST", auth: true, body: { mensaje: mensaje.trim() } });
+      setSt({ k: "ok" });
+      setMensaje("");
+    } catch (err: any) {
+      const codigo = err?.code || "";
+      setSt({
+        k: "error",
+        m: codigo === "cuenta_no_verificada"
+          ? "Verifica tu correo electrónico para participar en la comunidad."
+          : codigo === "sin_sesion"
+            ? "Inicia sesión para enviar sugerencias."
+            : "No se pudo enviar ahora mismo. Inténtalo de nuevo.",
+      });
+    }
+  };
+  return (
+    <Section id="sugerencias" eyebrow="Mejora la arena" title={<>Sugerencias de la <span style={{ color: "var(--rojo)" }}>comunidad</span></>}>
+      <div className="panel panel-pad chamfer grid gap-3 max-w-2xl" data-testid="sugerencias">
+        <p className="muted small">
+          ¿Qué agregarías a VANTS? Las sugerencias llegan directo al canal privado del equipo.
+          Los mejores pedidos se convierten en misiones, torneos o funciones de la plataforma.
+        </p>
+        <form className="grid gap-3" onSubmit={enviar}>
+          <textarea
+            className="input"
+            rows={3}
+            maxLength={1000}
+            placeholder="Ej.: torneos nocturnos de Clash Royale los viernes…"
+            value={mensaje}
+            onChange={(e) => setMensaje(e.target.value)}
+            data-testid="sugerencia-texto"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="btn btn-sm btn-rojo" disabled={st.k === "enviando"} data-testid="btn-sugerencia">
+              {st.k === "enviando" ? "Enviando…" : "Enviar sugerencia"}
+            </button>
+            <span className="small muted num">{mensaje.length}/1000</span>
+          </div>
+        </form>
+        {st.k === "ok" && <p className="small" style={{ color: "var(--ok)" }} role="status" data-testid="sugerencia-ok">¡Gracias! Tu sugerencia ya está con el equipo. 🎮</p>}
+        {st.k === "error" && <p className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</p>}
+      </div>
+    </Section>
   );
 }

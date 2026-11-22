@@ -9,7 +9,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Auth0Client, User } from "@auth0/auth0-spa-js";
-import { setTokenProvider } from "./api";
+import { setTokenProvider, api } from "./api";
 
 const DOMAIN = (import.meta.env.VITE_AUTH0_DOMAIN as string) || "vants.eu.auth0.com";
 const CLIENT_ID = (import.meta.env.VITE_AUTH0_CLIENT_ID as string) || "oaOmNizh7HrASWfmfM29bN284IMJvqPG";
@@ -71,6 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (ok) {
           setUser((await c.getUser()) || null);
           setStatus("autenticado");
+          // Protocolo de comunicaciones: primera vez del usuario → bienvenida
+          // al canal privado de registros (el endpoint es idempotente).
+          api("/int/registro", { method: "POST", auth: true, body: {} }).catch(() => {});
         } else setStatus("anonimo");
       } catch {
         if (vivo) setStatus("error");

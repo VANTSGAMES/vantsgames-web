@@ -19,6 +19,7 @@ import { rutasComunidad, refrescarRanking, guardarRanking } from './comunidad.js
 import { rutasJuegos, equipoFaceit } from './juegos.js';
 import { rutasExtras } from './extras.js';
 import { rutasEpic } from './epic.js';
+import { rutasComms } from './comms.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -83,7 +84,7 @@ async function usuarioClaims(req, env) {
   if (cuerpo.exp && cuerpo.exp * 1000 < Date.now()) throw new Error('jwt_exp');
   const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
   if (env.AUTH0_AUDIENCE && !auds.includes(env.AUTH0_AUDIENCE)) throw new Error('jwt_aud');
-  return { sub: String(cuerpo.sub), email: typeof cuerpo.email === 'string' && cuerpo.email ? cuerpo.email : null };
+  return { sub: String(cuerpo.sub), email: typeof cuerpo.email === 'string' && cuerpo.email ? cuerpo.email : null, email_verified: cuerpo.email_verified !== false };
 }
 // Firma histórica: solo el sub (identidad). Los claims completos van arriba.
 async function usuario(req, env) {
@@ -361,6 +362,7 @@ async function rutas(req, env, url) {
         faceit: !!env.FACEIT_API_KEY, twitch: !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
         kick: !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET), discord: !!env.DISCORD_BOT_TOKEN, db: !!env.DB,
         epic: !!(env.EPIC_CLIENT_ID && env.EPIC_CLIENT_SECRET), fortnite: !!env.FORTNITE_API_KEY,
+        webhooks_discord: ['REGISTROS', 'COMUNIDAD', 'B2B', 'TICKETS'].filter((k) => env['DISCORD_WEBHOOK_' + k]).length,
       },
     });
   }
@@ -403,6 +405,20 @@ async function rutas(req, env, url) {
     if (!f) return json({ ok: false, error: 'no_encontrado' }, 404);
     return json({ ok: true, ...f, actual: await partidaActual(env, id) });
   }
+
+  // Escritura comunitaria: exige cuenta con correo verificado (Términos §2:
+  // sin verificación no hay rol ni permisos de interacción comunitaria).
+  const ESCRITURA_COMUNIDAD = ['/torneos/crear', '/clips', '/clips/subir', '/clips/borrar', '/clips/editar', '/sugerencia', '/soporte/ticket'];
+  if (m === 'POST' && ESCRITURA_COMUNIDAD.includes(p)) {
+    const c = await usuarioClaims(req, env).catch(() => null);
+    if (c && c.email_verified === false) {
+      return json({ ok: false, error: 'cuenta_no_verificada', detalle: 'Verifica tu correo electrónico para participar en la comunidad.' }, 403);
+    }
+  }
+
+  // Protocolo de comunicaciones (webhooks Discord + alianzas B2B + soporte).
+  const rm = await rutasComms(req, env, url, p, m, { json, usuario, usuarioClaims, notificar });
+  if (rm) return rm;
 
   // Epic Games / Fortnite (vinculación OAuth y estadísticas)
   const re = await rutasEpic(req, env, url, p, m, { json, cacheado, usuario });

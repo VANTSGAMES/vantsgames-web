@@ -10,7 +10,8 @@
 //   máximo (todos los planes) sin caducidad.
 
 import { esOwner } from './comunidad.js';
-import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js';
+import { webhookDiscord } from './comms.js';
+import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js'
 import { rutasInsignias, invalidarInsignias } from './insignias.js';
 
 const INT_URL = 'https://vants-integraciones.vants.workers.dev';
@@ -515,6 +516,10 @@ export async function rutasExtras(req, env, url, p, m, H) {
       'INSERT INTO integ_clips (id, auth0_sub, nick, url, plataforma, embed, miniatura, titulo, juego, publico, video) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(auth0_sub, url) DO NOTHING'
     ).bind(id, sub, await nickDe(env.DB, sub), limpio, info.plataforma, info.embed, miniatura, titulo || 'Clip de ' + (info.plataforma === 'faceit' ? 'FACEIT' : info.plataforma), juego === 'otro' && juegoDet ? juegoDet : juego, b.publico === false ? 0 : 1, video).run();
     if (!r.meta || !r.meta.changes) return H.json({ ok: false, error: 'clip_repetido' }, 409);
+    // Comunidad: aviso del clip publicado al canal de creadores.
+    await webhookDiscord(env, 'comunidad', {
+      embeds: [{ title: '🎬 Nuevo clip: ' + (titulo || 'Clip'), description: 'Por **' + (await nickDe(env.DB, sub) || 'un jugador') + '** · ' + info.plataforma, url: limpio, color: 0xff0d2e, footer: { text: 'VANTS GAMES · comunidad-y-creadores' } }],
+    }).catch(() => null);
     return H.json({ ok: true, id });
   }
 
