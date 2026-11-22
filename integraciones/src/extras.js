@@ -429,7 +429,7 @@ export async function rutasExtras(req, env, url, p, m, H) {
     if (!ident) return H.json({ ok: false, error: 'sin_perfil' }, 409);
     const ins = await evaluar(env, ident).catch(() => null);
     const conseguidas = new Set([...(((ins && ins.conseguidas) || [])), 'MEMBER']);
-    const codigos = pedidas.filter((c) => consiguidas.has(c));
+    const codigos = pedidas.filter((c) => conseguidas.has(c));
     const nick = await nickDe(env.DB, sub);
     await env.DB.prepare(
       "INSERT INTO perfiles_publicos (auth0_sub, nickname, vitrina, updated_at) VALUES (?, ?, ?, datetime('now')) ON CONFLICT(auth0_sub) DO UPDATE SET vitrina = excluded.vitrina, updated_at = datetime('now')"
