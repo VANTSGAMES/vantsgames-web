@@ -33,16 +33,65 @@ jobs:
       - name: Horarios
         run: |
           curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/schedules" | jq -c .result
-      - name: Código actual (módulos)
+      - name: Inspección de verificación JWT en vants y vants-functions (solo lectura, sin secretos)
         run: |
-          mkdir -p codigo
-          curl -fsS -D h.txt -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants/content/v2" -o codigo/contenido.bin
-          cat h.txt | grep -i content-type; ls -la codigo
-          grep -a -o 'name="[^"]*"' codigo/contenido.bin | sort -u | head -50
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vants-codigo
-          retention-days: 2
-          path: |
-            codigo/
-            s.json
+          set -euo pipefail
+          node -e '
+            const fs = require("fs");
+            async function inspectWorker(name) {
+              const r = await fetch(`${process.env.CF}/scripts/${name}/content/v2`, {
+                headers: { Authorization: "Bearer " + process.env.TOKEN }
+              });
+              const ct = r.headers.get("content-type") || "";
+              const m = ct.match(/boundary=([^\r\n;]+)/i);
+              const buf = Buffer.from(await r.arrayBuffer());
+              const files = [];
+              if (m) {
+                const sep = Buffer.from("--" + m[1].trim());
+                let i = buf.indexOf(sep);
+                while (i >= 0) {
+                  const j = buf.indexOf(sep, i + sep.length);
+                  if (j < 0) break;
+                  const part = buf.subarray(i + sep.length + 2, j - 2);
+                  const k = part.indexOf("\r\n\r\n");
+                  if (k > 0) {
+                    const hdr = part.subarray(0, k).toString("utf8");
+                    const nm = (hdr.match(/name="([^"]+)"/) || [])[1] || "";
+                    if (nm.endsWith(".js") || nm.endsWith(".mjs")) {
+                      files.push({ nm, src: part.subarray(k + 4).toString("utf8") });
+                    }
+                  }
+                  i = j;
+                }
+              } else {
+                files.push({ nm: name + ".js", src: buf.toString("utf8") });
+              }
+              console.log("=== WORKER:", name, "modules:", files.map(f => f.nm).join(", "));
+              for (const f of files) {
+                const lines = f.src.split(/\r?\n/);
+                const hits = [];
+                for (let idx = 0; idx < lines.length; idx++) {
+                  if (/jwks|AUTH0_DOMAIN|auth0|\/auth\/|verifyJwt|verificarJwt|fetchJwks|issuer|vants\.eu\.auth0/i.test(lines[idx])) {
+                    hits.push(idx);
+                  }
+                }
+                console.log(`-- ${f.nm}: ${lines.length} lines, ${hits.length} auth hits`);
+                const printed = new Set();
+                for (const h of hits.slice(0, 25)) {
+                  const a = Math.max(0, h - 3), b = Math.min(lines.length - 1, h + 5);
+                  for (let k = a; k <= b; k++) {
+                    if (printed.has(k)) continue;
+                    printed.add(k);
+                    console.log(`${k + 1}: ${lines[k].slice(0, 220)}`);
+                  }
+                  console.log("---");
+                }
+              }
+            }
+            (async () => {
+              await inspectWorker("vants");
+              await inspectWorker("vants-functions");
+            })();
+          '
+          echo "=== settings vants-functions (bindings sin secretos) ==="
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-functions/settings" | jq '{compatibility_date, bindings: [.result.bindings[] | del(.text, .json)]}'
