@@ -1,0 +1,55 @@
+name: "Auth · generar clave RS256 (una sola vez)"
+
+# Genera la clave privada RSA-2048 (JWK) de VANTS Identity sin imprimirla jamás
+# en logs ni artefactos, la carga como secreto VANTS_AUTH_PRIVATE_JWK en el
+# Worker `vants-integraciones` y la guarda en GitHub Secrets (via VANTS_GH_PAT_SECRETS).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clave:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      - name: Generar y guardar VANTS_AUTH_PRIVATE_JWK (idempotente)
+        working-directory: integraciones
+        env:
+          EXISTING_JWK: ${{ secrets.VANTS_AUTH_PRIVATE_JWK }}
+          GH_TOKEN: ${{ secrets.VANTS_GH_PAT_SECRETS }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+        run: |
+          set -euo pipefail
+          if [ -n "$EXISTING_JWK" ]; then
+            echo "VANTS_AUTH_PRIVATE_JWK ya existe en GitHub Secrets; sincronizando a Cloudflare..."
+            printf '%s' "$EXISTING_JWK" | npx -y wrangler@4 secret put VANTS_AUTH_PRIVATE_JWK
+          else
+            JWK=$(node -e '
+              (async () => {
+                const pair = await crypto.subtle.generateKey(
+                  { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1,0,1]), hash: "SHA-256" },
+                  true,
+                  ["sign", "verify"]
+                );
+                const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+                process.stdout.write(JSON.stringify({ ...jwk, kid: "vants-rs256-2026-1", alg: "RS256", use: "sig" }));
+              })();
+            ')
+            echo "::add-mask::$JWK"
+            printf '%s' "$JWK" | npx -y wrangler@4 secret put VANTS_AUTH_PRIVATE_JWK
+            if [ -n "$GH_TOKEN" ]; then
+              printf '%s' "$JWK" | gh secret set VANTS_AUTH_PRIVATE_JWK -R VANTSGAMES/vantsgames-web
+            fi
+            echo "Clave RSA-2048 generada y guardada en Cloudflare y GitHub Secrets (kid: vants-rs256-2026-1)."
+          fi
+
+      - name: Verificar endpoint público JWKS
+        run: |
+          set -euo pipefail
+          curl -fsS https://vants-integraciones.vants.workers.dev/auth/.well-known/jwks.json | jq '{keys: (.keys | length), kid: .keys[0].kid, kty: .keys[0].kty, alg: .keys[0].alg}'
