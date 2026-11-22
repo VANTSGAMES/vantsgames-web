@@ -143,6 +143,12 @@ async function construirEstadoCuota(env, sub, mem, quotaStore, now) {
       globalLimite: globalCap,
       globalDisponible: vidiqRestantesGlobal > 0,
     },
+    creditosVants: {
+      usados: usoUser.vidiq_usados,
+      limite: cfg.vidiqPerDay,
+      restantes: vidiqRestantes,
+      globalDisponible: vidiqRestantesGlobal > 0,
+    },
   };
 }
 
