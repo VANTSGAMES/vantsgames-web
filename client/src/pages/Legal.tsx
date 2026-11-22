@@ -5,7 +5,7 @@ import terminos from "@/content/terminos.html?raw";
 
 /** Textos legales vigentes, migrados como contenido estático. */
 const DOCS = {
-  privacidad: { t: "Política de privacidad", fecha: "18 de octubre de 2026", html: privacidad },
+  privacidad: { t: "Política de privacidad", fecha: "22 de noviembre de 2026", html: privacidad },
   terminos: { t: "Términos de Servicio — VANTS GAMES", fecha: "Noviembre 2026", html: terminos },
 };
 
