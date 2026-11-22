@@ -259,9 +259,9 @@ type ClipSeoResponse = {
 };
 
 const VIDIQ_REASON_MSG: Record<string, string> = {
-  requiere_membresia: "Plan Gratis: aplicamos SEO local VANTS (0 créditos). Activa PASE S4, VANTS PRO o CREATOR para desbloquear títulos IA vidIQ cada día.",
-  limite_diario_usuario: "Has usado tu cupo diario de vidIQ. Aplicamos SEO local VANTS gratis hasta las 00:00 UTC.",
-  limite_diario_global: "Cupo global diario de créditos vidIQ cubierto por hoy. Aplicamos SEO local VANTS gratis hasta mañana.",
+  requiere_membresia: "Plan Gratis: aplicamos SEO VANTS básico (0 créditos). Activa PASE S4, VANTS PRO o CREATOR para recibir Créditos VANTS IA cada día.",
+  limite_diario_usuario: "Has usado todos tus Créditos VANTS IA de hoy. Aplicamos SEO VANTS básico gratis hasta las 00:00 UTC.",
+  limite_diario_global: "Cupo global diario de Créditos VANTS IA cubierto por hoy. Aplicamos SEO VANTS básico gratis hasta mañana.",
 };
 
 export function SubirClip() {
@@ -355,7 +355,7 @@ export function SubirClip() {
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-subir-clip">
-      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube un clip de Razer Cortex o tu PC (hasta 50,5 MB). Puedes optimizar el título con vidIQ y publicarlo también en YouTube Shorts.</p></div>
+      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube cualquier clip de tu PC (hasta 50,5 MB). Optimiza el título con <strong>VANTS IA</strong> y publícalo también en YouTube Shorts.</p></div>
       <div className="grid gap-4 sm:grid-cols-2 min-w-0">
         <div className="field sm:col-span-2 min-w-0">
           <label htmlFor="clip-archivo">Vídeo</label>
@@ -371,16 +371,16 @@ export function SubirClip() {
 
       <div className="flex items-center gap-2 flex-wrap">
         <button type="button" className="btn btn-sm btn-ghost" onClick={optimizarConVidiq} disabled={seoCargando || !juego} data-testid="button-optimizar-vidiq">
-          {seoCargando ? "Optimizando con vidIQ…" : "✨ Optimizar título y tags (vidIQ)"}
+          {seoCargando ? "Optimizando con VANTS IA…" : "✨ Optimizar título y tags (VANTS IA)"}
         </button>
         {seo && (
           <span className="tag" style={{ borderColor: seo.source === "vidiq_mcp" ? "var(--ok)" : "var(--linea)", color: seo.source === "vidiq_mcp" ? "var(--ok)" : undefined }}>
-            {seo.source === "vidiq_mcp" ? "vidIQ MCP activo" : "SEO VANTS local"}
+            {seo.source === "vidiq_mcp" ? "VANTS IA activa" : "SEO VANTS básico"}
           </span>
         )}
         {seo?.quota && seo.quota.vidiq.limite > 0 && (
           <span className="text-xs muted num">
-            vidIQ hoy: {seo.quota.vidiq.usados}/{seo.quota.vidiq.limite}
+            Créditos VANTS hoy: {seo.quota.vidiq.usados}/{seo.quota.vidiq.limite}
           </span>
         )}
       </div>
@@ -527,7 +527,7 @@ function PanelYouTubeCanal({ enlacesExistentes, onImportar }: { enlacesExistente
         <div>
           <h2 className="d-3">Tu canal de YouTube · Shorts y vídeos</h2>
           <p className="small muted mt-1">
-            Conexión opcional con permisos mínimos (<code>youtube.readonly</code> + <code>youtube.upload</code>) para importar tus Shorts a VANTS o subir clips de Razer Cortex directo a YouTube.
+            Conexión opcional con permisos mínimos (<code>youtube.readonly</code> + <code>youtube.upload</code>) para importar tus Shorts a VANTS o publicar tus clips de PC directo en YouTube.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -607,26 +607,27 @@ function PanelYouTubeCanal({ enlacesExistentes, onImportar }: { enlacesExistente
   );
 }
 
-/* ---------------- Guía de captura automática (Razer Cortex + App VANTS) ---------------- */
+/* ---------------- Guía de captura automática (App VANTS PC) ---------------- */
 function GuiaCapturaAutomatica() {
   const cuota = useApi<ClipCuotaEstado>("/int/clips/cuota", { auth: true });
   const c = cuota.data;
+  const creditos = c?.vidiq;
 
   return (
     <section className="panel panel-pad grid gap-4" data-testid="guia-captura-automatica">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="eyebrow">Captura automática · PC Windows</div>
-          <h2 className="d-3 mt-1">Cómo capturar clips de Razer Cortex y subirlos solos a YouTube Shorts</h2>
+          <div className="eyebrow">Captura automática · Apps VANTS PC</div>
+          <h2 className="d-3 mt-1">Cómo capturar tus jugadas en PC y subirlas solas a YouTube Shorts</h2>
           <p className="small muted mt-1">
-            El recorte a formato vertical 9:16 ocurre en tu propio ordenador (sin lag y gratis). Al entrar cada día, tu membresía activa tu cupo diario de auto-subida a YouTube Shorts y optimización IA con vidIQ.
+            El recorte vertical 9:16 ocurre en tu propio ordenador (sin lag y gratis). Al entrar cada día, tu membresía VANTS activa tus <strong>Créditos VANTS IA</strong> y tu cupo diario de auto-subida a YouTube Shorts.
           </p>
         </div>
         {c && (
           <div className="flex items-center gap-2 flex-wrap" data-testid="cuota-clips-badge">
             <span className={"tag " + (c.activo ? "tag-rojo" : "")}>{c.label}</span>
             <span className="tag num">Shorts hoy: {c.shorts.usados}/{c.shorts.limite}</span>
-            <span className="tag num">vidIQ hoy: {c.vidiq.usados}/{c.vidiq.limite}</span>
+            <span className="tag num">Créditos VANTS hoy: {creditos?.usados ?? 0}/{creditos?.limite ?? 0}</span>
           </div>
         )}
       </div>
@@ -636,7 +637,7 @@ function GuiaCapturaAutomatica() {
           <span className="eyebrow">Paso 1 · Instala nuestra app</span>
           <strong className="text-sm">Banter Desktop o VANTS Clipper</strong>
           <p className="text-xs muted">
-            Se actualiza automáticamente cada vez que lanzamos una nueva versión (en PC y en Android desde Google Play).
+            Se actualiza automáticamente cada vez que lanzamos una nueva versión (en PC Windows y en Android desde Google Play).
           </p>
           <div className="flex gap-2 flex-wrap mt-1">
             <a
@@ -660,32 +661,27 @@ function GuiaCapturaAutomatica() {
 
         <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
           <span className="eyebrow">Paso 2 · Captura tus partidas</span>
-          <strong className="text-sm">Activa Razer Cortex (u OBS / ShadowPlay)</strong>
+          <strong className="text-sm">Detección automática en tu carpeta de clips</strong>
           <p className="text-xs muted">
-            Activa el guardado automático de jugadas en Razer Cortex (VALORANT, CS2, Fortnite, LoL). Nuestra app detecta la carpeta sola y recorta cada jugada a 9:16 en tu PC.
+            Activa la grabación de jugadas en tu PC (compatible con las carpetas de captura de Windows, grabadoras de juegos u OBS). Nuestra app detecta cada clip nuevo y lo recorta a 9:16 automáticamente en tu ordenador.
           </p>
-          <a
-            href="https://www.razer.com/cortex"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="link-arrow text-xs mt-1"
-          >
-            Descargar Razer Cortex ↗
-          </a>
+          <Link href="/perfil" className="link-arrow text-xs mt-1">
+            Ver tus Créditos VANTS en tu perfil →
+          </Link>
         </div>
 
         <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
-          <span className="eyebrow">Paso 3 · Cupos diarios por plan</span>
-          <strong className="text-sm">YouTube Shorts + vidIQ cada día</strong>
+          <span className="eyebrow">Paso 3 · Créditos VANTS diarios</span>
+          <strong className="text-sm">Shorts + VANTS IA cada día al entrar</strong>
           <ul className="text-xs muted grid gap-1">
             <li>▸ <strong>Gratis:</strong> recorte local 9:16 + subida manual</li>
-            <li>▸ <strong>PASE S4:</strong> 2 Shorts/día + 2 vidIQ/día</li>
-            <li>▸ <strong>VANTS PRO:</strong> 3 Shorts/día + 3 vidIQ/día + 0 anuncios</li>
-            <li>▸ <strong>VANTS CREATOR:</strong> 5 Shorts/día + 5 vidIQ/día + Discord</li>
+            <li>▸ <strong>PASE S4:</strong> 2 Shorts/día + 2 Créditos VANTS/día</li>
+            <li>▸ <strong>VANTS PRO:</strong> 3 Shorts/día + 3 Créditos VANTS/día + 0 anuncios</li>
+            <li>▸ <strong>VANTS CREATOR:</strong> 5 Shorts/día + 5 Créditos VANTS/día + Discord</li>
           </ul>
           {(!c || !c.activo) && (
             <Link href="/membresias" className="link-arrow text-xs mt-1">
-              Activar membresía para auto-subida →
+              Activar membresía VANTS →
             </Link>
           )}
         </div>

@@ -97,35 +97,268 @@ function FotoPerfil({ nombre, picture, size = 96 }: { nombre: string; picture: s
   );
 }
 
+type CuotaVantsPerfil = {
+  plan: string;
+  label: string;
+  activo: boolean;
+  shorts: { usados: number; limite: number; restantes: number };
+  vidiq: { usados: number; limite: number; restantes: number };
+  creditosVants?: { usados: number; limite: number; restantes: number };
+};
+
 function Resumen() {
   const { user } = useAuth();
   const q = useApi<{ nickname: string | null; redes: Record<string, any> }>("/api/account/perfil", { auth: true });
+  const cuota = useApi<CuotaVantsPerfil>("/int/clips/cuota", { auth: true });
   // El nombre público es el nickname guardado en el servidor. Nunca se sustituye por el correo.
   const nombre = q.data?.nickname || null;
   const ins = useMisInsignias();
+  const c = cuota.data;
+  const cred = c?.creditosVants || c?.vidiq;
+  const creditosRestantes = cred?.restantes ?? 0;
+  const creditosLimite = cred?.limite ?? 0;
+  const shortsRestantes = c?.shorts?.restantes ?? 0;
+  const shortsLimite = c?.shorts?.limite ?? 0;
+  const totalInsignias = (ins.data?.conseguidas || []).length;
+
   return (
-    <div className="wrap grid gap-6">
-      <div className="panel panel-pad flex flex-wrap items-center gap-6">
-        <span className="relative inline-block shrink-0">
-          <FotoPerfil nombre={nombre || "?"} picture={user?.picture || null} />
-          <SelloAvatar s={ins.data?.sello} />
-        </span>
-        <div className="min-w-0">
-          <div className="eyebrow mb-1">Nombre público</div>
-          {q.isLoading ? <div className="sk" style={{ height: 36, width: 220 }} /> : q.error ? (
-            <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
-          ) : nombre ? <h2 className="d-1 flex flex-wrap items-center gap-3">{nombre}<Sello3D s={ins.data?.sello} size={26} /></h2> : (
-            <div><p className="d-3">Sin nombre público</p><Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir nombre →</Link></div>
+    <div className="wrap grid gap-8" data-testid="vants-id-dashboard">
+      {/* Banner inmersivo VANTS ID */}
+      <section
+        className="panel relative overflow-hidden p-6 sm:p-8 flex flex-col items-center text-center gap-4"
+        style={{
+          background:
+            "radial-gradient(circle at 18% 20%, rgba(255,13,46,0.32), transparent 52%), radial-gradient(circle at 82% 25%, rgba(76,201,240,0.22), transparent 50%), linear-gradient(135deg, #111218 0%, #0b0b0f 60%, #160c12 100%)",
+          borderColor: "var(--linea)",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <span className="eyebrow">VANTS ID · Panel de miembro</span>
+          {c && (
+            <span className={"tag " + (c.activo ? "tag-rojo" : "")}>
+              {c.label}
+            </span>
           )}
         </div>
+        <span className="relative inline-block shrink-0">
+          <FotoPerfil nombre={nombre || "?"} picture={user?.picture || null} size={96} />
+          <SelloAvatar s={ins.data?.sello} />
+        </span>
+        <div className="min-w-0 grid gap-1 justify-items-center">
+          {q.isLoading ? (
+            <div className="sk" style={{ height: 36, width: 220 }} />
+          ) : q.error ? (
+            <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
+          ) : nombre ? (
+            <h2 className="d-1 flex flex-wrap items-center justify-center gap-3">
+              {nombre}
+              <Sello3D s={ins.data?.sello} size={26} />
+            </h2>
+          ) : (
+            <div>
+              <p className="d-3">Sin nombre público</p>
+              <Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir nombre →</Link>
+            </div>
+          )}
+          <span className="text-xs muted">
+            Tus Créditos VANTS y tu cupo de YouTube Shorts se renuevan cada día al entrar.
+          </span>
+        </div>
+      </section>
+
+      {/* RECOMPENSAS Y PRIVILEGIOS VANTS (3 tarjetas estilo Dashboard ID) */}
+      <section className="grid gap-4" aria-labelledby="vants-recompensas-t" data-testid="vants-recompensas-grid">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 id="vants-recompensas-t" className="eyebrow">Recompensas y privilegios VANTS</h2>
+          <span className="text-xs muted">Renovación diaria · 00:00 UTC</span>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {/* Tarjeta 1: Créditos VANTS IA */}
+          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(245,158,11,0.09), var(--grafito-1) 55%)" }}>
+            <div className="flex items-start gap-3.5">
+              <span
+                aria-hidden
+                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
+                style={{ background: "linear-gradient(135deg, #f59e0b, #b45309)", color: "#0b0b0f", boxShadow: "0 0 18px rgba(245,158,11,0.35)" }}
+              >
+                V
+              </span>
+              <div className="min-w-0">
+                <div className="d-2 num leading-none" style={{ color: "#fbbf24" }}>
+                  {creditosRestantes}
+                  <span className="text-xs muted font-normal ml-1">/ {creditosLimite} hoy</span>
+                </div>
+                <div className="text-xs uppercase tracking-wider mt-1 font-bold">Créditos VANTS IA</div>
+                <p className="text-xs muted mt-1.5">
+                  Títulos, hashtags y optimización inteligente de clips con el motor VANTS.
+                </p>
+              </div>
+            </div>
+            <Link
+              href={creditosLimite > 0 ? "/clips" : "/membresias"}
+              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
+              style={{ background: "#f59e0b", color: "#0b0b0f" }}
+            >
+              {creditosLimite > 0 ? "Usar Créditos VANTS" : "Activar Créditos VANTS"}
+            </Link>
+          </article>
+
+          {/* Tarjeta 2: Shorts Automáticos PC */}
+          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(76,201,240,0.09), var(--grafito-1) 55%)" }}>
+            <div className="flex items-start gap-3.5">
+              <span
+                aria-hidden
+                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
+                style={{ background: "linear-gradient(135deg, #38bdf8, #0284c7)", color: "#0b0b0f", boxShadow: "0 0 18px rgba(56,189,248,0.35)" }}
+              >
+                ▶
+              </span>
+              <div className="min-w-0">
+                <div className="d-2 num leading-none" style={{ color: "#38bdf8" }}>
+                  {shortsRestantes}
+                  <span className="text-xs muted font-normal ml-1">/ {shortsLimite} hoy</span>
+                </div>
+                <div className="text-xs uppercase tracking-wider mt-1 font-bold">Shorts Automáticos</div>
+                <p className="text-xs muted mt-1.5">
+                  Auto-subida diaria a YouTube Shorts desde nuestra app de PC en formato 9:16.
+                </p>
+              </div>
+            </div>
+            <Link
+              href={shortsLimite > 0 ? "/clips" : "/membresias"}
+              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
+              style={{ background: "#38bdf8", color: "#0b0b0f" }}
+            >
+              {shortsLimite > 0 ? "Abrir Mis Clips" : "Desbloquear Auto-Shorts"}
+            </Link>
+          </article>
+
+          {/* Tarjeta 3: VANTS Rewards & Membresía */}
+          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(255,13,46,0.12), var(--grafito-1) 55%)" }}>
+            <div className="flex items-start gap-3.5">
+              <span
+                aria-hidden
+                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
+                style={{ background: "linear-gradient(135deg, #ff0d2e, #99061b)", color: "#fff", boxShadow: "0 0 18px rgba(255,13,46,0.35)" }}
+              >
+                ★
+              </span>
+              <div className="min-w-0">
+                <div className="d-3 leading-tight" style={{ color: "var(--blanco)" }}>
+                  {c?.label || "VANTS Rewards"}
+                </div>
+                <div className="text-xs uppercase tracking-wider mt-1 font-bold" style={{ color: "var(--ok)" }}>
+                  {totalInsignias} {totalInsignias === 1 ? "insignia" : "insignias"} · {c?.activo ? "Plan activo" : "Sin anuncios en PRO"}
+                </div>
+                <p className="text-xs muted mt-1.5">
+                  Desbloquea 0 anuncios en Banter, más Créditos VANTS diarios y sello exclusivo.
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/membresias"
+              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
+              style={{ background: "var(--rojo)", color: "#fff" }}
+            >
+              Ver privilegios VANTS
+            </Link>
+          </article>
+        </div>
+      </section>
+
+      {/* ACCESOS DIRECTOS */}
+      <section className="grid gap-3" aria-labelledby="vants-accesos-t">
+        <h2 id="vants-accesos-t" className="eyebrow">Accesos directos</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Link href="/perfil/ajustes" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
+            <span className="text-sm font-semibold">Cuenta y perfil público</span>
+            <span className="muted text-xs">→</span>
+          </Link>
+          <Link href="/perfil/cuentas" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
+            <span className="text-sm font-semibold">Cuentas vinculadas</span>
+            <span className="muted text-xs">→</span>
+          </Link>
+          <Link href="/perfil/membresia" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
+            <span className="text-sm font-semibold">Membresía y plan</span>
+            <span className="muted text-xs">→</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* MIS APPS Y CAPTURA VANTS (estilo "MIS PRODUCTOS") */}
+      <section className="grid gap-3" aria-labelledby="vants-apps-t">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 id="vants-apps-t" className="eyebrow">Mis apps VANTS (actualización automática)</h2>
+          <Link href="/clips" className="link-arrow text-xs">Cómo funciona la captura →</Link>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <a
+            href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
+          >
+            <span className="w-12 h-12 shrink-0 grid place-items-center text-2xl font-light border" style={{ borderColor: "var(--linea)", background: "var(--grafito)" }}>+</span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold">Instalar VANTS Clipper PC</div>
+              <p className="text-xs muted mt-0.5">
+                Captura tus partidas en Windows, recorta a 9:16 gratis en tu PC y sube Shorts automáticos con tus Créditos VANTS.
+              </p>
+            </div>
+          </a>
+          <a
+            href="https://github.com/VANTSGAMES/banter/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
+          >
+            <span className="w-12 h-12 shrink-0 grid place-items-center text-lg font-black" style={{ background: "var(--rojo)", color: "#fff" }}>B</span>
+            <div className="min-w-0">
+              <div className="text-sm font-bold">Banter Desktop & Android</div>
+              <p className="text-xs muted mt-0.5">
+                App oficial multiplataforma VANTS con auto-updates en PC y Google Play, comunidad y modo 0 anuncios en PRO/CREATOR.
+              </p>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      {/* INSIGNIAS Y LOGROS (conservados intactos) */}
+      <div className="panel panel-pad grid gap-4" data-testid="perfil-insignias">
+        <div className="flex justify-between items-center gap-3">
+          <h2 className="d-3">Mis insignias</h2>
+          <Link href="/insignias" className="link-arrow">Catálogo →</Link>
+        </div>
+        {ins.isLoading ? <div className="sk" style={{ height: 90 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={72} />}
+        <p className="text-xs muted">Se colocan solas cuando cumples el requisito (plan activo, cuentas vinculadas, logros, torneos…).</p>
       </div>
-      <div className="panel panel-pad grid gap-4" data-testid="perfil-insignias"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Mis insignias</h2><Link href="/insignias" className="link-arrow">Catálogo →</Link></div>{ins.isLoading ? <div className="sk" style={{ height: 90 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={72} />}<p className="text-xs muted">Se colocan solas cuando cumples el requisito (plan activo, cuentas vinculadas, logros, torneos…).</p></div>
-      <div className="panel panel-pad grid gap-4"><div className="flex justify-between items-center gap-3"><h2 className="d-3">Logros conseguidos</h2><Link href="/logros" className="link-arrow">Ver los 1000 →</Link></div><ResumenLogros /></div>
-      <div className="grid gap-6 md:grid-cols-3">
-        <Link href="/perfil/cuentas" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Cuentas vinculadas</div><p className="small muted">FACEIT, Discord, Twitch, Riot y Steam.</p></Link>
-        <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Insignias y logros</div><p className="small muted">Validados por el motor de logros.</p></Link>
-        <Link href="/perfil/membresia" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors"><div className="eyebrow mb-2">Membresía</div><p className="small muted">Estado de tu plan.</p></Link>
+
+      <div className="panel panel-pad grid gap-4">
+        <div className="flex justify-between items-center gap-3">
+          <h2 className="d-3">Logros conseguidos</h2>
+          <Link href="/logros" className="link-arrow">Ver los 1000 →</Link>
+        </div>
+        <ResumenLogros />
       </div>
+
+      {/* ASISTENCIA Y COMUNIDAD */}
+      <section className="grid gap-3" aria-labelledby="vants-comunidad-t">
+        <h2 id="vants-comunidad-t" className="eyebrow">Asistencia y comunidad</h2>
+        <div className="grid gap-3 md:grid-cols-3">
+          <Link href="/comunidad" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
+            <div className="eyebrow mb-1">Comunidad VANTS</div>
+            <p className="small muted">LFG, foro, misiones y votaciones del circuito.</p>
+          </Link>
+          <Link href="/torneos" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
+            <div className="eyebrow mb-1">Torneos y rankings</div>
+            <p className="small muted">Inscripciones activas, brackets y estadísticas.</p>
+          </Link>
+          <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
+            <div className="eyebrow mb-1">Insignias y logros</div>
+            <p className="small muted">Validados automáticamente por VANTS.</p>
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }
