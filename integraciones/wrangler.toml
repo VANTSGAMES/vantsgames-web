@@ -28,6 +28,9 @@ EPIC_CLIENT_ID = "xyza7891Z6aDFRRrUpYMO0Hi3cf2Lmni"
 EPIC_REDIRECT_URI = "https://vants-integraciones.vants.workers.dev/epic/callback"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
+# Tope diario global de llamadas a vidIQ MCP (5 créditos/llamada; 20 = máx 100 créditos/día).
+# Sube este número cuando el plan de vidIQ escale con los ingresos de membresías.
+VIDIQ_DAILY_GLOBAL_CAP = "20"
 
 # Clips subidos desde el ordenador (vÃ­deo en trozos de 20 MB + miniatura).
 [[kv_namespaces]]

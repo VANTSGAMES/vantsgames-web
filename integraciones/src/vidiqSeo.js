@@ -1,12 +1,150 @@
-// VANTS · Optimización SEO de Clips / Shorts con vidIQ MCP
+// VANTS · Optimización SEO de Clips / Shorts con vidIQ MCP y Cuotas Diarias
 // -----------------------------------------------------------------------------
-// Endpoint protegido en Cloudflare Worker (el token VIDIQ_MCP_TOKEN jamás sale
+// Endpoints protegidos en Cloudflare Worker (el token VIDIQ_MCP_TOKEN jamás sale
 // al navegador):
-//   POST /clips/seo  -> genera títulos virales (con puntuación vidIQ si hay
-//                       VIDIQ_MCP_TOKEN), descripción optimizada y tags para
-//                       YouTube Shorts / TikTok / VANTS Clips.
+//   GET  /clips/cuota                 -> estado de membresía y cupos diarios (Shorts + vidIQ)
+//   POST /clips/cuota/consumir-short  -> valida y descuenta 1 Short automático del cupo diario
+//   POST /clips/seo                   -> genera títulos virales con vidIQ MCP solo si el plan
+//                                        del miembro y el tope diario global lo permiten; si no,
+//                                        usa el motor SEO local gratis (0 créditos).
+
+import { membresiaDe } from './extras.js';
 
 const VIDIQ_MCP_URL = 'https://mcp.vidiq.com/mcp';
+const GLOBAL_QUOTA_KEY = '__GLOBAL__';
+const DEFAULT_GLOBAL_VIDIQ_CAP = 20;
+
+export const CUOTAS_CLIPS_DIARIAS = {
+  free: { plan: 'free', label: 'Gratis', shortsPerDay: 0, vidiqPerDay: 0, autoUpload: false, autoDiscord: false },
+  pase: { plan: 'pase', label: 'PASE S4', shortsPerDay: 2, vidiqPerDay: 2, autoUpload: true, autoDiscord: false },
+  pro: { plan: 'pro', label: 'VANTS PRO', shortsPerDay: 3, vidiqPerDay: 3, autoUpload: true, autoDiscord: false },
+  creator: { plan: 'creator', label: 'VANTS CREATOR', shortsPerDay: 5, vidiqPerDay: 5, autoUpload: true, autoDiscord: true },
+  socio: { plan: 'socio', label: 'SOCIO VANTS', shortsPerDay: 15, vidiqPerDay: 15, autoUpload: true, autoDiscord: true },
+};
+
+export function planCuotaDe(mem) {
+  const key = String(mem?.plan || '').toLowerCase();
+  if (mem?.activo && CUOTAS_CLIPS_DIARIAS[key]) return CUOTAS_CLIPS_DIARIAS[key];
+  return CUOTAS_CLIPS_DIARIAS.free;
+}
+
+function fechaUtcHoy(now = new Date()) {
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(now.getUTCDate()).padStart(2, '0');
+  const next = new Date(Date.UTC(y, now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+  return { fecha: `${y}-${m}-${d}`, resetAt: next.toISOString() };
+}
+
+function globalCapDe(env) {
+  const raw = Number(env && env.VIDIQ_DAILY_GLOBAL_CAP);
+  if (Number.isFinite(raw) && raw >= 0) return Math.floor(raw);
+  return DEFAULT_GLOBAL_VIDIQ_CAP;
+}
+
+async function asegurarTablaCuotas(db) {
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS clips_cuota_diaria (
+        fecha TEXT NOT NULL,
+        clave TEXT NOT NULL,
+        vidiq_usados INTEGER NOT NULL DEFAULT 0,
+        shorts_usados INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (fecha, clave)
+      )`
+    )
+    .run();
+}
+
+async function leerUsoDiario(env, fecha, clave, quotaStore) {
+  if (quotaStore) {
+    return quotaStore.get(`${fecha}:${clave}`) || { vidiq_usados: 0, shorts_usados: 0 };
+  }
+  if (!env || !env.DB) return { vidiq_usados: 0, shorts_usados: 0 };
+  try {
+    await asegurarTablaCuotas(env.DB);
+    const row = await env.DB.prepare(
+      'SELECT vidiq_usados, shorts_usados FROM clips_cuota_diaria WHERE fecha = ? AND clave = ?'
+    )
+      .bind(fecha, clave)
+      .first();
+    return {
+      vidiq_usados: Number(row?.vidiq_usados || 0),
+      shorts_usados: Number(row?.shorts_usados || 0),
+    };
+  } catch {
+    return { vidiq_usados: 0, shorts_usados: 0 };
+  }
+}
+
+async function incrementarUsoDiario(env, fecha, clave, campo, quotaStore) {
+  const col = campo === 'shorts' ? 'shorts_usados' : 'vidiq_usados';
+  if (quotaStore) {
+    const k = `${fecha}:${clave}`;
+    const prev = quotaStore.get(k) || { vidiq_usados: 0, shorts_usados: 0 };
+    const next = { ...prev, [col]: prev[col] + 1 };
+    quotaStore.set(k, next);
+    return next;
+  }
+  if (!env || !env.DB) return { vidiq_usados: campo === 'vidiq' ? 1 : 0, shorts_usados: campo === 'shorts' ? 1 : 0 };
+  try {
+    await asegurarTablaCuotas(env.DB);
+    const vInc = campo === 'vidiq' ? 1 : 0;
+    const sInc = campo === 'shorts' ? 1 : 0;
+    await env.DB.prepare(
+      `INSERT INTO clips_cuota_diaria (fecha, clave, vidiq_usados, shorts_usados, updated_at)
+       VALUES (?, ?, ?, ?, datetime('now'))
+       ON CONFLICT(fecha, clave) DO UPDATE SET
+         vidiq_usados = vidiq_usados + excluded.vidiq_usados,
+         shorts_usados = shorts_usados + excluded.shorts_usados,
+         updated_at = datetime('now')`
+    )
+      .bind(fecha, clave, vInc, sInc)
+      .run();
+    return leerUsoDiario(env, fecha, clave, null);
+  } catch {
+    return { vidiq_usados: campo === 'vidiq' ? 1 : 0, shorts_usados: campo === 'shorts' ? 1 : 0 };
+  }
+}
+
+async function construirEstadoCuota(env, sub, mem, quotaStore, now) {
+  const { fecha, resetAt } = fechaUtcHoy(now);
+  const cfg = planCuotaDe(mem);
+  const [usoUser, usoGlobal] = await Promise.all([
+    leerUsoDiario(env, fecha, sub, quotaStore),
+    leerUsoDiario(env, fecha, GLOBAL_QUOTA_KEY, quotaStore),
+  ]);
+  const globalCap = globalCapDe(env);
+  const vidiqRestantesUsuario = Math.max(0, cfg.vidiqPerDay - usoUser.vidiq_usados);
+  const vidiqRestantesGlobal = Math.max(0, globalCap - usoGlobal.vidiq_usados);
+  const vidiqRestantes = Math.min(vidiqRestantesUsuario, vidiqRestantesGlobal);
+  const shortsRestantes = Math.max(0, cfg.shortsPerDay - usoUser.shorts_usados);
+
+  return {
+    fecha,
+    resetAt,
+    plan: cfg.plan,
+    label: cfg.label,
+    activo: cfg.plan !== 'free',
+    autoUpload: cfg.autoUpload,
+    autoDiscord: cfg.autoDiscord,
+    shorts: {
+      usados: usoUser.shorts_usados,
+      limite: cfg.shortsPerDay,
+      restantes: shortsRestantes,
+    },
+    vidiq: {
+      usados: usoUser.vidiq_usados,
+      limite: cfg.vidiqPerDay,
+      restantes: vidiqRestantes,
+      restantesUsuario: vidiqRestantesUsuario,
+      globalUsados: usoGlobal.vidiq_usados,
+      globalLimite: globalCap,
+      globalDisponible: vidiqRestantesGlobal > 0,
+    },
+  };
+}
 
 const JUEGO_META = {
   valorant: {
@@ -233,22 +371,85 @@ async function consultarVidiqTitles(env, { titulo, juego, notas, formato = 'shor
   return { titles, creditsUsed };
 }
 
-export async function rutasVidiqSeo(req, env, url, p, m, { json, usuarioClaims, fetchImpl = fetch }) {
-  if (p !== '/clips/seo') return null;
-  if (m !== 'POST') return json({ ok: false, error: 'metodo_no_permitido' }, 405);
-
-  // Autenticación: sesión de usuario (VANTS / Google) o secreto de VANTS-Clipper
+async function resolverContextoClips(req, env, usuarioClaims, membresiaFn) {
   const clipperHeader = req.headers.get('x-clipper-secret') || '';
   const clipperValid = Boolean(env && env.CLIPPER_SECRET && clipperHeader && clipperHeader === env.CLIPPER_SECRET);
-  if (!clipperValid) {
+  if (clipperValid) {
+    return {
+      ok: true,
+      sub: 'clipper:owner',
+      mem: { plan: 'socio', activo: true, origen: 'clipper_secret' },
+    };
+  }
+  try {
+    const claims = await usuarioClaims(req, env);
+    if (!claims || !claims.sub) return { ok: false };
+    let mem = { plan: null, activo: false };
     try {
-      const claims = await usuarioClaims(req, env);
-      if (!claims || !claims.sub) return json({ ok: false, error: 'sin_sesion' }, 401);
+      mem = (await membresiaFn(env, claims.sub)) || mem;
     } catch {
-      return json({ ok: false, error: 'sin_sesion' }, 401);
+      mem = { plan: null, activo: false };
     }
+    return { ok: true, sub: claims.sub, mem };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function rutasVidiqSeo(
+  req,
+  env,
+  url,
+  p,
+  m,
+  { json, usuarioClaims, fetchImpl = fetch, membresiaFn = membresiaDe, quotaStore = null, now } = {},
+) {
+  const rutas = ['/clips/seo', '/clips/cuota', '/clips/cuota/consumir-short'];
+  if (!rutas.includes(p)) return null;
+
+  if (p === '/clips/cuota' && m !== 'GET') return json({ ok: false, error: 'metodo_no_permitido' }, 405);
+  if ((p === '/clips/seo' || p === '/clips/cuota/consumir-short') && m !== 'POST') {
+    return json({ ok: false, error: 'metodo_no_permitido' }, 405);
   }
 
+  const ctx = await resolverContextoClips(req, env, usuarioClaims, membresiaFn);
+  if (!ctx.ok) return json({ ok: false, error: 'sin_sesion' }, 401);
+
+  if (p === '/clips/cuota') {
+    const quota = await construirEstadoCuota(env, ctx.sub, ctx.mem, quotaStore, now);
+    return json({ ok: true, ...quota, planes: CUOTAS_CLIPS_DIARIAS });
+  }
+
+  if (p === '/clips/cuota/consumir-short') {
+    const before = await construirEstadoCuota(env, ctx.sub, ctx.mem, quotaStore, now);
+    if (!before.autoUpload || before.shorts.limite <= 0) {
+      return json(
+        {
+          ok: false,
+          error: 'requiere_membresia',
+          detalle: 'La subida automática a YouTube Shorts requiere PASE S4, VANTS PRO o VANTS CREATOR.',
+          quota: before,
+        },
+        403,
+      );
+    }
+    if (before.shorts.restantes <= 0) {
+      return json(
+        {
+          ok: false,
+          error: 'limite_diario_shorts',
+          detalle: `Alcanzaste tu límite de ${before.shorts.limite} Shorts automáticos hoy. Se reinicia a las 00:00 UTC.`,
+          quota: before,
+        },
+        429,
+      );
+    }
+    await incrementarUsoDiario(env, before.fecha, ctx.sub, 'shorts', quotaStore);
+    const after = await construirEstadoCuota(env, ctx.sub, ctx.mem, quotaStore, now);
+    return json({ ok: true, quota: after });
+  }
+
+  // POST /clips/seo
   const body = await req.json().catch(() => ({}));
   const titulo = String(body.titulo || body.title || '').trim().slice(0, 160);
   const juego = String(body.juego || body.game || 'valorant').trim().slice(0, 40);
@@ -256,22 +457,42 @@ export async function rutasVidiqSeo(req, env, url, p, m, { json, usuarioClaims, 
   const formato = body.formato === 'long' ? 'long' : 'short';
 
   const baseSeo = generarSeoLocal({ titulo, juego, notas, formato });
+  const quotaBefore = await construirEstadoCuota(env, ctx.sub, ctx.mem, quotaStore, now);
 
-  try {
-    const vidiq = await consultarVidiqTitles(env, { titulo, juego, notas, formato }, fetchImpl);
-    if (vidiq && vidiq.titles.length) {
-      return json({
-        ok: true,
-        ...baseSeo,
-        source: 'vidiq_mcp',
-        recommendedTitle: vidiq.titles[0].title,
-        titleOptions: vidiq.titles,
-        creditsUsed: vidiq.creditsUsed,
-      });
-    }
-  } catch {
-    // Fallback limpio al motor local VANTS SEO si vidIQ MCP tarda o falla
+  let vidiqReason = null;
+  if (quotaBefore.vidiq.limite <= 0) {
+    vidiqReason = 'requiere_membresia';
+  } else if (quotaBefore.vidiq.restantesUsuario <= 0) {
+    vidiqReason = 'limite_diario_usuario';
+  } else if (!quotaBefore.vidiq.globalDisponible) {
+    vidiqReason = 'limite_diario_global';
   }
 
-  return json({ ok: true, ...baseSeo });
+  if (!vidiqReason) {
+    try {
+      const vidiq = await consultarVidiqTitles(env, { titulo, juego, notas, formato }, fetchImpl);
+      if (vidiq && vidiq.titles.length) {
+        await Promise.all([
+          incrementarUsoDiario(env, quotaBefore.fecha, ctx.sub, 'vidiq', quotaStore),
+          incrementarUsoDiario(env, quotaBefore.fecha, GLOBAL_QUOTA_KEY, 'vidiq', quotaStore),
+        ]);
+        const quotaAfter = await construirEstadoCuota(env, ctx.sub, ctx.mem, quotaStore, now);
+        return json({
+          ok: true,
+          ...baseSeo,
+          source: 'vidiq_mcp',
+          recommendedTitle: vidiq.titles[0].title,
+          titleOptions: vidiq.titles,
+          creditsUsed: vidiq.creditsUsed,
+          vidiqReason: null,
+          quota: quotaAfter,
+        });
+      }
+      vidiqReason = env && env.VIDIQ_MCP_TOKEN ? 'vidiq_no_disponible' : 'vidiq_sin_token';
+    } catch {
+      vidiqReason = 'vidiq_no_disponible';
+    }
+  }
+
+  return json({ ok: true, ...baseSeo, vidiqReason, quota: quotaBefore });
 }
