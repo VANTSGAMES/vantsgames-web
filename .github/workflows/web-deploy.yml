@@ -42,6 +42,7 @@ jobs:
         env:
           VITE_ROUTER: history
           VITE_AUTH_ENABLED: "1"
+          VITE_AUTH_PROVIDER: vants
           VITE_ASSET_ORIGIN: ""
           VITE_FN_ORIGIN: https://vants-functions.vants.workers.dev
           VITE_AUTH0_CLIENT_ID: totrP3GBWQpdi7IqWv2zhbVLe0xSyaMo
@@ -148,9 +149,11 @@ jobs:
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
           c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
           c=$(curl -s -A ci -o jwks.json -w '%{http_code}' $U/auth/.well-known/jwks.json); [ "$c" = 200 ] && jq -e '.keys[0].kid' jwks.json >/dev/null || { echo "/auth/.well-known/jwks.json -> $c"; ok=0; }
+          gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' $U/auth/google/start)
+          case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) echo "/auth/google/start -> $gs"; ok=0 ;; esac
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
-          if [ $ok = 1 ]; then echo "Producción OK (JWKS first-party verificado)"; exit 0; fi
+          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + JWKS verificados)"; exit 0; fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
           exit 1
