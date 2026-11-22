@@ -23,6 +23,10 @@ const todas = async (db, sql, ...a) => ((await db.prepare(sql).bind(...a).all().
 
 export async function identidades(db) {
   if (cache.val && Date.now() - cache.at < TTL) return cache.val;
+  // Garantiza la columna vitrina (idempotente): sin ella el SELECT de abajo
+  // falla en silencio (todas() traga errores) y desaparecen TODOS los
+  // perfiles — fichas, insignias, banner y logros — durante el TTL de caché.
+  await db.prepare('ALTER TABLE perfiles_publicos ADD COLUMN vitrina TEXT').run().catch(() => null);
   const padre = new Map();
   const raiz = (x) => { let r = x; while (padre.get(r) !== r) r = padre.get(r); let y = x; while (padre.get(y) !== r) { const n = padre.get(y); padre.set(y, r); y = n; } return r; };
   const nodo = (x) => { if (!padre.has(x)) padre.set(x, x); return x; };
@@ -99,6 +103,12 @@ export async function identidades(db) {
     for (const p of gr.players) if (!p.auth0_sub) porSub.set('p:' + p.id, ident);
     porPid.set(pid, ident);
     lista.push(ident);
+  }
+  // Protección anti-vaciamiento: todas() se traga los errores, así que si la
+  // tabla de perfiles vino vacía pero ya había identidades en caché, se
+  // conserva la anterior en vez de cachear un borrado en cascada.
+  if (perfiles.length === 0 && cache.val && cache.val.lista.length > 0) {
+    return cache.val;
   }
   cache = { at: Date.now(), val: { porSub, porPid, lista } };
   return cache.val;
