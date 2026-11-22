@@ -103,8 +103,8 @@ jobs:
           sleep 6
           D=$(curl -fsS -H "Authorization: Bearer $TOKEN" "$CF/settings" | jq -r '[.result.bindings[].name]|sort|join(",")')
           [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
-          c=$(curl -s -o /dev/null -w '%{http_code}' https://vants-functions.vants.workers.dev/fn/linker/api/status)
-          [ "$c" = 200 ] || { echo "/fn/linker/api/status -> $c"; ok=0; }
+          c=$(curl -s -o st.json -w '%{http_code}' https://vants-functions.vants.workers.dev/fn/linker/)
+          [ "$c" = 200 ] && jq -e '.plataformas' st.json >/dev/null || { echo "/fn/linker/ -> $c"; ok=0; }
           if [ $ok = 1 ]; then echo "vants-functions OK (verificación dual activa)"; exit 0; fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback vants-functions-auth-dual" -y
