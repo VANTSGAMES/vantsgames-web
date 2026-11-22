@@ -17,11 +17,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
 
-      - name: Generar y guardar VANTS_AUTH_PRIVATE_JWK + sincronizar GOOGLE_OAUTH_CLIENT_SECRET
+      - name: Generar y guardar VANTS_AUTH_PRIVATE_JWK + sincronizar secretos
         working-directory: integraciones
         env:
           EXISTING_JWK: ${{ secrets.VANTS_AUTH_PRIVATE_JWK }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           GH_TOKEN: ${{ secrets.VANTS_GH_PAT_SECRETS }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
@@ -53,11 +54,45 @@ jobs:
             echo "Sincronizando GOOGLE_OAUTH_CLIENT_SECRET a vants-integraciones..."
             printf '%s' "$GOOGLE_OAUTH_CLIENT_SECRET" | npx -y wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET
           fi
+          if [ -n "$RESEND_API_KEY" ]; then
+            echo "Sincronizando RESEND_API_KEY a vants-integraciones..."
+            printf '%s' "$RESEND_API_KEY" | npx -y wrangler@4 secret put RESEND_API_KEY
+          fi
+
+      - name: Configurar registro DNS TXT de Epic Games en vants.cc (si el token tiene permiso DNS)
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          EPIC_TXT: ${{ secrets.EPIC_DNS_VERIFY_TXT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EPIC_TXT" ]; then
+            echo "EPIC_DNS_VERIFY_TXT no definido; omitido."
+            exit 0
+          fi
+          Z=$(curl -sS -H "Authorization: Bearer $TOKEN" "https://api.cloudflare.com/client/v4/zones?name=vants.cc" | jq -r '.result[0].id // empty')
+          if [ -z "$Z" ]; then
+            echo "DNS_RESULT=sin_permiso_dns (el token CLOUDFLARE_API_TOKEN no tiene permiso Zone:DNS:Edit/Zone:Read)"
+            exit 0
+          fi
+          EXISTE=$(curl -sS -H "Authorization: Bearer $TOKEN" "https://api.cloudflare.com/client/v4/zones/$Z/dns_records?type=TXT&name=vants.cc" | jq --arg v "$EPIC_TXT" '[.result[]? | select(.content == $v or .content == ("\"" + $v + "\""))] | length')
+          if [ "${EXISTE:-0}" -gt 0 ]; then
+            echo "DNS_RESULT=ya_existia"
+            exit 0
+          fi
+          RES=$(curl -sS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones/$Z/dns_records" \
+            --data "$(jq -nc --arg c "$EPIC_TXT" '{type:"TXT", name:"vants.cc", content:$c, ttl:1}')")
+          OK=$(echo "$RES" | jq -r '.success')
+          if [ "$OK" = "true" ]; then
+            echo "DNS_RESULT=creado_ok"
+          else
+            echo "DNS_RESULT=error_dns $(echo "$RES" | jq -c '.errors')"
+          fi
 
       - name: Verificar endpoints públicos JWKS y Google OIDC
         run: |
           set -euo pipefail
-          curl -fsS https://vants.cc/auth/.well-known/jwks.json | jq '{keys: (.keys | length), kid: .keys[0].kid, kty: .keys[0].kty, alg: .keys[0].alg}'
-          gs=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' https://vants.cc/auth/google/start)
+          curl -fsS -A ci https://vants.cc/auth/.well-known/jwks.json | jq '{keys: (.keys | length), kid: .keys[0].kid, kty: .keys[0].kty, alg: .keys[0].alg}'
+          gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' https://vants.cc/auth/google/start)
           echo "/auth/google/start -> $gs"
           case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) exit 1 ;; esac
