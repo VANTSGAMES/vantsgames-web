@@ -94,6 +94,31 @@ async function infoDeSesion(token) {
     c = c.replace(OLD_FETCH_HOOK, NEW_FETCH_HOOK);
   }
 
+  // 3) Evita 403 "Bloqueado" a verificadores automáticos de dominio (Epic Games Brand Review,
+  //    Google, Stripe, Java/Go/Python/curl/UA vacío) en GET/HEAD de páginas públicas legítimas,
+  //    manteniendo bloqueados los escáneres de rutas sensibles (.env, .php, wp-*, etc.).
+  if (!c.includes("/* VANTS_UA_VERIFIER_V1 */")) {
+    const OLD_CALL = `      const __r301 = await fetchWorker(request, env, ctx);`;
+    const NEW_CALL = `      /* VANTS_UA_VERIFIER_V1 */
+      let __reqV = request;
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        !/\\.(env|php|sql|bak|git|ini|yml|yaml|log|sh)$/i.test(__redir301.pathname) &&
+        !/^\\/(wp-|xmlrpc|phpmyadmin|cgi-bin|admin\\.php)/i.test(__redir301.pathname)
+      ) {
+        const __ua = (request.headers.get("user-agent") || "").trim();
+        if (!__ua || /(curl|wget|python|java|go-http-client|apache-httpclient|okhttp|httpunit|libwww|lwp|urllib|aiohttp|httpx|undici)/i.test(__ua)) {
+          const __h = new Headers(request.headers);
+          __h.set("user-agent", "Mozilla/5.0 (compatible; VANTSVerifier/1.0; +https://vants.cc)");
+          __reqV = new Request(request, { headers: __h });
+        }
+      }
+      const __r301 = await fetchWorker(__reqV, env, ctx);`;
+    if (c.includes(OLD_CALL)) {
+      c = c.replace(OLD_CALL, NEW_CALL);
+    }
+  }
+
   return c;
 }
 

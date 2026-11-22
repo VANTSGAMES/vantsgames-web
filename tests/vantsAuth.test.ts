@@ -425,14 +425,19 @@ async function infoDeSesion(token) {
     return null;
   }
 }
-async function fetch(request, env) {
+async function fetch(request, env, ctx) {
     // 2. Activar Sitemap para Google y rutas de Kick
     const rInicial = await manejarRutasSeoYKick(request, env);
     if (rInicial) return rInicial;
+    try {
+      const __r301 = await fetchWorker(request, env, ctx);
+      return __r301;
+    } catch (e) {}
 }`;
   const v1 = parchearVantsWorker(sampleVants);
   assert.match(v1, /VANTS_AUTH_DUAL_V1/);
   assert.match(v1, /VANTS_AUTH_PROXY_V1/);
+  assert.match(v1, /VANTS_UA_VERIFIER_V1/);
   assert.equal(parchearVantsWorker(v1), v1);
 
   const sampleFn = `var jwksCache = null;
