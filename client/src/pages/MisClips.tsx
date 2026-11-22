@@ -233,14 +233,35 @@ async function miniaturaDe(file: File): Promise<{ thumb: Blob; dur: number }> {
   } finally { URL.revokeObjectURL(url); }
 }
 
+type ClipCuotaEstado = {
+  ok?: boolean;
+  fecha: string;
+  resetAt: string;
+  plan: string;
+  label: string;
+  activo: boolean;
+  autoUpload: boolean;
+  autoDiscord: boolean;
+  shorts: { usados: number; limite: number; restantes: number };
+  vidiq: { usados: number; limite: number; restantes: number; globalDisponible?: boolean };
+};
+
 type ClipSeoResponse = {
   ok: boolean;
   source: "vidiq_mcp" | "vants_seo";
+  vidiqReason?: string | null;
+  quota?: ClipCuotaEstado;
   recommendedTitle: string;
   titleOptions: Array<{ title: string; score: number | null }>;
   description: string;
   tags: string[];
   hashtags: string[];
+};
+
+const VIDIQ_REASON_MSG: Record<string, string> = {
+  requiere_membresia: "Plan Gratis: aplicamos SEO local VANTS (0 créditos). Activa PASE S4, VANTS PRO o CREATOR para desbloquear títulos IA vidIQ cada día.",
+  limite_diario_usuario: "Has usado tu cupo diario de vidIQ. Aplicamos SEO local VANTS gratis hasta las 00:00 UTC.",
+  limite_diario_global: "Cupo global diario de créditos vidIQ cubierto por hoy. Aplicamos SEO local VANTS gratis hasta mañana.",
 };
 
 export function SubirClip() {
@@ -278,6 +299,7 @@ export function SubirClip() {
       });
       setSeo(res);
       if (res.recommendedTitle) setTitulo(res.recommendedTitle.slice(0, 98));
+      qc.invalidateQueries({ queryKey: ["/int/clips/cuota", true] });
     } catch (err) {
       setSt({ k: "error", m: mensaje(err) });
     } finally {
@@ -352,11 +374,25 @@ export function SubirClip() {
           {seoCargando ? "Optimizando con vidIQ…" : "✨ Optimizar título y tags (vidIQ)"}
         </button>
         {seo && (
-          <span className="tag" style={{ borderColor: "var(--ok)", color: "var(--ok)" }}>
-            {seo.source === "vidiq_mcp" ? "vidIQ MCP activo" : "SEO VANTS"}
+          <span className="tag" style={{ borderColor: seo.source === "vidiq_mcp" ? "var(--ok)" : "var(--linea)", color: seo.source === "vidiq_mcp" ? "var(--ok)" : undefined }}>
+            {seo.source === "vidiq_mcp" ? "vidIQ MCP activo" : "SEO VANTS local"}
+          </span>
+        )}
+        {seo?.quota && seo.quota.vidiq.limite > 0 && (
+          <span className="text-xs muted num">
+            vidIQ hoy: {seo.quota.vidiq.usados}/{seo.quota.vidiq.limite}
           </span>
         )}
       </div>
+
+      {seo?.vidiqReason && VIDIQ_REASON_MSG[seo.vidiqReason] && (
+        <div className="text-xs px-3 py-2 flex items-center justify-between gap-3 flex-wrap" style={{ background: "rgba(255,13,46,0.08)", border: "1px solid var(--linea)" }}>
+          <span>{VIDIQ_REASON_MSG[seo.vidiqReason]}</span>
+          {seo.vidiqReason === "requiere_membresia" && (
+            <Link href="/membresias" className="link-arrow shrink-0">Ver planes VANTS →</Link>
+          )}
+        </div>
+      )}
 
       {seo && seo.titleOptions.length > 0 && (
         <div className="grid gap-2 p-3" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
@@ -571,6 +607,93 @@ function PanelYouTubeCanal({ enlacesExistentes, onImportar }: { enlacesExistente
   );
 }
 
+/* ---------------- Guía de captura automática (Razer Cortex + App VANTS) ---------------- */
+function GuiaCapturaAutomatica() {
+  const cuota = useApi<ClipCuotaEstado>("/int/clips/cuota", { auth: true });
+  const c = cuota.data;
+
+  return (
+    <section className="panel panel-pad grid gap-4" data-testid="guia-captura-automatica">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="eyebrow">Captura automática · PC Windows</div>
+          <h2 className="d-3 mt-1">Cómo capturar clips de Razer Cortex y subirlos solos a YouTube Shorts</h2>
+          <p className="small muted mt-1">
+            El recorte a formato vertical 9:16 ocurre en tu propio ordenador (sin lag y gratis). Al entrar cada día, tu membresía activa tu cupo diario de auto-subida a YouTube Shorts y optimización IA con vidIQ.
+          </p>
+        </div>
+        {c && (
+          <div className="flex items-center gap-2 flex-wrap" data-testid="cuota-clips-badge">
+            <span className={"tag " + (c.activo ? "tag-rojo" : "")}>{c.label}</span>
+            <span className="tag num">Shorts hoy: {c.shorts.usados}/{c.shorts.limite}</span>
+            <span className="tag num">vidIQ hoy: {c.vidiq.usados}/{c.vidiq.limite}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
+          <span className="eyebrow">Paso 1 · Instala nuestra app</span>
+          <strong className="text-sm">Banter Desktop o VANTS Clipper</strong>
+          <p className="text-xs muted">
+            Se actualiza automáticamente cada vez que lanzamos una nueva versión (en PC y en Android desde Google Play).
+          </p>
+          <div className="flex gap-2 flex-wrap mt-1">
+            <a
+              href="https://github.com/VANTSGAMES/banter/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-rojo"
+            >
+              Descargar Banter PC
+            </a>
+            <a
+              href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-ghost"
+            >
+              VANTS Clipper
+            </a>
+          </div>
+        </div>
+
+        <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
+          <span className="eyebrow">Paso 2 · Captura tus partidas</span>
+          <strong className="text-sm">Activa Razer Cortex (u OBS / ShadowPlay)</strong>
+          <p className="text-xs muted">
+            Activa el guardado automático de jugadas en Razer Cortex (VALORANT, CS2, Fortnite, LoL). Nuestra app detecta la carpeta sola y recorta cada jugada a 9:16 en tu PC.
+          </p>
+          <a
+            href="https://www.razer.com/cortex"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="link-arrow text-xs mt-1"
+          >
+            Descargar Razer Cortex ↗
+          </a>
+        </div>
+
+        <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
+          <span className="eyebrow">Paso 3 · Cupos diarios por plan</span>
+          <strong className="text-sm">YouTube Shorts + vidIQ cada día</strong>
+          <ul className="text-xs muted grid gap-1">
+            <li>▸ <strong>Gratis:</strong> recorte local 9:16 + subida manual</li>
+            <li>▸ <strong>PASE S4:</strong> 2 Shorts/día + 2 vidIQ/día</li>
+            <li>▸ <strong>VANTS PRO:</strong> 3 Shorts/día + 3 vidIQ/día + 0 anuncios</li>
+            <li>▸ <strong>VANTS CREATOR:</strong> 5 Shorts/día + 5 vidIQ/día + Discord</li>
+          </ul>
+          {(!c || !c.activo) && (
+            <Link href="/membresias" className="link-arrow text-xs mt-1">
+              Activar membresía para auto-subida →
+            </Link>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ---------------- Biblioteca ---------------- */
 type Mios = { clips: Clip[]; subidos: Clip[]; twitch: Clip[]; kick?: Clip[]; canal_twitch: string | null; canal_kick: string | null; error_twitch: string | null };
 
@@ -603,6 +726,7 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
   const filtros = filtrosJuegos().filter((j) => !j.v || filterClipsByGame(todosLosClips, j.v).length > 0);
   return (
     <div className="grid gap-8" data-testid="mi-biblioteca">
+      <GuiaCapturaAutomatica />
       {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0"><SubirClip /><PublicarClip /></div>}
       <PanelYouTubeCanal
         enlacesExistentes={enlaces}
