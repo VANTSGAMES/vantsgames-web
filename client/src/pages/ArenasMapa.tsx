@@ -370,8 +370,12 @@ export default function ArenasMapa() {
       return;
     }
     let active = true;
-    fetch("/api/maps/config")
-      .then((r) => r.json())
+    const intOrigin = (
+      (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev"
+    ).replace(/\/$/, "");
+    const mapsConfigUrl = import.meta.env.VITE_AUTH_ENABLED === "1" ? `${intOrigin}/maps/config` : "/api/maps/config";
+    fetch(mapsConfigUrl, { headers: { Accept: "application/json" } })
+      .then((r) => ((r.headers.get("content-type") || "").includes("application/json") ? r.json() : null))
       .then((d) => {
         if (active && d?.apiKey) setApiKey(String(d.apiKey));
       })

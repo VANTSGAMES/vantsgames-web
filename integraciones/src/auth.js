@@ -33,6 +33,7 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 const jwksRemoteCache = new Map(); // url -> { at, keys }
+const googleAccessTokenCache = new Map(); // token -> { at, claims }
 let tablasListas = false;
 
 // ---------------------------------------------------------------- codificación
@@ -175,6 +176,30 @@ export async function asegurarAuth(db) {
 export function resetAuthCachesForTests() {
   tablasListas = false;
   jwksRemoteCache.clear();
+  googleAccessTokenCache.clear();
+}
+
+export function openidDiscoveryFromEnv(env) {
+  const issuer = normIssuer((env && (env.VANTS_AUTH_ISSUER || env.SITE_URL)) || 'https://vants.cc');
+  return {
+    issuer,
+    authorization_endpoint: `${issuer}/auth/google/start`,
+    token_endpoint: `${issuer}/auth/refresh`,
+    userinfo_endpoint: `${issuer}/auth/userinfo`,
+    jwks_uri: `${issuer}/auth/.well-known/jwks.json`,
+    end_session_endpoint: `${issuer}/auth/logout`,
+    response_types_supported: ['code', 'id_token', 'token id_token'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['RS256'],
+    scopes_supported: ['openid', 'email', 'profile'],
+    token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic', 'none'],
+    claims_supported: [
+      'sub', 'iss', 'aud', 'exp', 'iat', 'auth_time', 'nonce',
+      'email', 'email_verified', 'name', 'picture', 'amr',
+    ],
+    code_challenge_methods_supported: ['S256'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+  };
 }
 
 // ---------------------------------------------------------------- Claves RS256 & JWKS
@@ -265,13 +290,47 @@ async function verifyRs256WithKeys(partes, cab, keys) {
 }
 
 /**
- * Verificación dual de JWT RS256: acepta tokens propios de VANTS (iss = VANTS_AUTH_ISSUER)
- * y tokens de Auth0 (iss = https://<AUTH0_DOMAIN>/) sin cortes durante la migración.
+ * Verificación universal de sesión:
+ *  1) JWT RS256 propio de VANTS Identity (iss = VANTS_AUTH_ISSUER)
+ *  2) ID Token RS256 de Google OpenID Connect (iss = https://accounts.google.com)
+ *  3) JWT RS256 de Auth0 (iss = https://<AUTH0_DOMAIN>/)
+ *  4) Access Token OAuth 2.0 de Google Identity Services / Google Workspace (ya29.*)
  */
 export async function verificarJwtDual(token, env, opts = {}) {
   const fetchImpl = opts.fetchImpl || fetch;
-  const partes = String(token || '').split('.');
-  if (partes.length !== 3) throw new Error('jwt_malo');
+  const rawToken = String(token || '').trim();
+  if (!rawToken) throw new Error('jwt_malo');
+  const partes = rawToken.split('.');
+
+  // Token opaco OAuth 2.0 de Google Identity Services (p. ej. ya29.*)
+  if (partes.length !== 3) {
+    if (!rawToken.startsWith('ya29.') && rawToken.length < 20) {
+      throw new Error('jwt_malo');
+    }
+    const cached = googleAccessTokenCache.get(rawToken);
+    if (cached && Date.now() - cached.at < 60_000) {
+      return cached.claims;
+    }
+    const r = await fetchImpl('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${rawToken}`, Accept: 'application/json' },
+    });
+    if (!r.ok) throw new Error('jwt_malo');
+    const info = await r.json().catch(() => null);
+    if (!info || !info.sub) throw new Error('jwt_sub');
+    if (info.email && info.email_verified === false) throw new Error('google_email_no_verificado');
+    const rawSub = String(info.sub);
+    const claims = {
+      sub: rawSub.startsWith('google-oauth2|') ? rawSub : `google-oauth2|${rawSub}`,
+      email: typeof info.email === 'string' && info.email ? info.email.toLowerCase() : null,
+      email_verified: info.email_verified !== false,
+      name: typeof info.name === 'string' && info.name ? info.name : null,
+      picture: typeof info.picture === 'string' && info.picture ? info.picture : null,
+      provider: 'google',
+    };
+    if (googleAccessTokenCache.size > 500) googleAccessTokenCache.clear();
+    googleAccessTokenCache.set(rawToken, { at: Date.now(), claims });
+    return claims;
+  }
 
   let cab, cuerpo;
   try {
@@ -298,6 +357,9 @@ export async function verificarJwtDual(token, env, opts = {}) {
     } else {
       throw new Error('jwt_kid');
     }
+  } else if (iss === 'https://accounts.google.com' || iss === 'accounts.google.com') {
+    provider = 'google';
+    keys = await fetchJwks(GOOGLE_JWKS_URL, fetchImpl);
   } else if (auth0Iss && iss === auth0Iss) {
     provider = 'auth0';
     keys = await fetchJwks(`https://${auth0Domain}/.well-known/jwks.json`, fetchImpl);
@@ -311,16 +373,22 @@ export async function verificarJwtDual(token, env, opts = {}) {
 
   const expectedAud = provider === 'vants'
     ? (env.VANTS_AUTH_AUDIENCE || env.AUTH0_AUDIENCE || 'https://api.vants.app')
-    : env.AUTH0_AUDIENCE;
+    : provider === 'google'
+      ? env.GOOGLE_OAUTH_CLIENT_ID
+      : env.AUTH0_AUDIENCE;
   if (expectedAud) {
     const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
     if (!auds.includes(expectedAud)) throw new Error('jwt_aud');
   }
 
   if (!cuerpo.sub) throw new Error('jwt_sub');
+  const rawSub = String(cuerpo.sub);
+  const canonicalSub = provider === 'google' && !rawSub.startsWith('google-oauth2|')
+    ? `google-oauth2|${rawSub}`
+    : rawSub;
 
   return {
-    sub: String(cuerpo.sub),
+    sub: canonicalSub,
     email: typeof cuerpo.email === 'string' && cuerpo.email ? cuerpo.email : null,
     email_verified: cuerpo.email_verified !== false,
     name: typeof cuerpo.name === 'string' && cuerpo.name ? cuerpo.name : null,
@@ -648,18 +716,69 @@ export async function verificarOtpEmail(db, env, rawEmail, rawCode, userAgent) {
   return { ok: true, ...session };
 }
 
-// ---------------------------------------------------------------- Router /auth/*
+// ---------------------------------------------------------------- Router /auth/* y /.well-known/*
 export async function rutasAuth(req, env, url, p, m, H) {
-  if (!p.startsWith('/auth/')) return null;
+  const isWellKnownOidc =
+    p === '/.well-known/openid-configuration' ||
+    p === '/auth/.well-known/openid-configuration';
+  const isWellKnownJwks =
+    p === '/.well-known/jwks.json' ||
+    p === '/auth/.well-known/jwks.json';
 
-  if (p === '/auth/.well-known/jwks.json' && m === 'GET') {
-    return new Response(JSON.stringify(publicJwksFromEnv(env)), {
+  if (!p.startsWith('/auth/') && !isWellKnownOidc && !isWellKnownJwks) return null;
+
+  if (isWellKnownOidc && (m === 'GET' || m === 'HEAD')) {
+    return new Response(m === 'HEAD' ? null : JSON.stringify(openidDiscoveryFromEnv(env)), {
       status: 200,
       headers: {
         'content-type': 'application/json; charset=utf-8',
         'cache-control': 'public, max-age=3600',
+        'access-control-allow-origin': '*',
       },
     });
+  }
+
+  if (isWellKnownJwks && (m === 'GET' || m === 'HEAD')) {
+    return new Response(m === 'HEAD' ? null : JSON.stringify(publicJwksFromEnv(env)), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'public, max-age=3600',
+        'access-control-allow-origin': '*',
+      },
+    });
+  }
+
+  if (p === '/auth/userinfo' && (m === 'GET' || m === 'POST')) {
+    try {
+      const claims = await H.usuarioClaims(req, env);
+      return new Response(
+        JSON.stringify({
+          sub: claims.sub,
+          email: claims.email || undefined,
+          email_verified: claims.email_verified !== false,
+          name: claims.name || undefined,
+          picture: claims.picture || undefined,
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json; charset=utf-8',
+            'cache-control': 'no-store',
+            'access-control-allow-origin': '*',
+          },
+        },
+      );
+    } catch {
+      return new Response(JSON.stringify({ error: 'invalid_token', error_description: 'Token inválido o ausente' }), {
+        status: 401,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'www-authenticate': 'Bearer error="invalid_token"',
+          'access-control-allow-origin': '*',
+        },
+      });
+    }
   }
 
   if (p === '/auth/me' && m === 'GET') {

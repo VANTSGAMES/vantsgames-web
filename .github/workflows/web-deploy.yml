@@ -96,15 +96,19 @@ jobs:
             const f="src/worker.js";
             let c=fs.readFileSync(f,"utf8");
             const DE1="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com;";
-            const A1 ="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com;";
+            const DE1_PREV="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://static.cloudflareinsights.com;";
+            const A1 ="script-src \u0027self\u0027 \u0027unsafe-inline\u0027 https://unpkg.com https://cdn.auth0.com https://accounts.google.com https://apis.google.com https://maps.googleapis.com https://static.cloudflareinsights.com;";
             const DE2="frame-src \u0027self\u0027 https:;";
             const DE2_PREV="frame-src \u0027self\u0027 https://*.twitch.tv https://kick.com https://*.kick.com https://www.youtube.com https://www.youtube-nocookie.com;";
-            const A2 ="frame-src \u0027self\u0027 https://*.twitch.tv https://kick.com https://*.kick.com https://www.youtube.com https://www.youtube-nocookie.com https://accounts.google.com https://docs.google.com;";
-            if (c.includes(A1)) { console.log("CSP: beacon ya incluido"); }
-            else if (!c.includes(DE1)) { console.error("CSP script-src esperada no encontrada en el worker LIVE"); process.exit(1); }
-            else { c=c.replace(DE1,A1); console.log("CSP: + beacon de Web Analytics"); }
-            if (c.includes(A2)) { console.log("CSP: frame-src ya restringida con Google OAuth/Picker"); }
-            else if (c.includes(DE2_PREV)) { c=c.replace(DE2_PREV,A2); console.log("CSP: frame-src + Google OAuth/Picker"); }
+            const DE2_PREV2="frame-src \u0027self\u0027 https://*.twitch.tv https://kick.com https://*.kick.com https://www.youtube.com https://www.youtube-nocookie.com https://accounts.google.com https://docs.google.com;";
+            const A2 ="frame-src \u0027self\u0027 https://*.twitch.tv https://kick.com https://*.kick.com https://www.youtube.com https://www.youtube-nocookie.com https://accounts.google.com https://docs.google.com https://drive.google.com https://calendar.google.com https://meet.google.com https://www.google.com;";
+            if (c.includes(A1)) { console.log("CSP: script-src Google + beacon ya incluido"); }
+            else if (c.includes(DE1_PREV)) { c=c.replace(DE1_PREV,A1); console.log("CSP: script-src + Google Maps"); }
+            else if (c.includes(DE1)) { c=c.replace(DE1,A1); console.log("CSP: + beacon de Web Analytics + Google Maps"); }
+            else { console.error("CSP script-src esperada no encontrada en el worker LIVE"); process.exit(1); }
+            if (c.includes(A2)) { console.log("CSP: frame-src ya restringida con Google Workspace"); }
+            else if (c.includes(DE2_PREV2)) { c=c.replace(DE2_PREV2,A2); console.log("CSP: frame-src + Google Drive/Calendar/Meet/Maps"); }
+            else if (c.includes(DE2_PREV)) { c=c.replace(DE2_PREV,A2); console.log("CSP: frame-src + Google OAuth/Picker/Workspace"); }
             else if (c.includes(DE2)) { c=c.replace(DE2,A2); console.log("CSP: frame-src restringida (bloquea consentimiento de terceros)"); }
             else { console.error("CSP frame-src esperada no encontrada en el worker LIVE"); process.exit(1); }
             fs.writeFileSync(f,c);
@@ -147,11 +151,12 @@ jobs:
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
           c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
           c=$(curl -s -A ci -o jwks.json -w '%{http_code}' $U/auth/.well-known/jwks.json); [ "$c" = 200 ] && jq -e '.keys[0].kid' jwks.json >/dev/null || { echo "/auth/.well-known/jwks.json -> $c"; ok=0; }
+          c=$(curl -s -A ci -o oidc.json -w '%{http_code}' $U/.well-known/openid-configuration); [ "$c" = 200 ] && jq -e '.issuer' oidc.json >/dev/null || { echo "/.well-known/openid-configuration -> $c"; ok=0; }
           gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' $U/auth/google/start)
           case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) echo "/auth/google/start -> $gs"; ok=0 ;; esac
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
-          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + JWKS verificados)"; exit 0; fi
+          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS verificados)"; exit 0; fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
           exit 1
