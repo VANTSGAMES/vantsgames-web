@@ -16,6 +16,7 @@ import {
   verificarJwtDual,
   verificarOtpEmail,
 } from "../integraciones/src/auth.js";
+import { parchearVantsFunctions, parchearVantsWorker } from "../script/ci/parchear-auth-dual.mjs";
 
 /** Genera un par RSA-2048 JWK para pruebas reales de firma/verificación RS256. */
 async function generateRsaJwk(kid: string) {
@@ -407,4 +408,147 @@ test("OIDC state signing rejects tampering and safeReturnTo blocks open redirect
   assert.equal(safeReturnTo("//evil.com/phish"), "/perfil");
   assert.equal(safeReturnTo("https://evil.com"), "/perfil");
   assert.equal(safeReturnTo(""), "/perfil");
+});
+
+test("parchearVantsWorker y parchearVantsFunctions son idempotentes y mantienen sintaxis válida", () => {
+  const sampleVants = `var AUTH0_TENANT = "vants.eu.auth0.com";
+async function infoDeSesion(token) {
+  if (!token) return null;
+  try {
+    const ui = await fetch("https://" + AUTH0_TENANT + "/userinfo", {
+      headers: { [AUTH_HEADER]: "Bearer " + token }
+    });
+    if (!ui.ok) return null;
+    const info = await ui.json();
+    return info && info.sub ? info : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function fetch(request, env) {
+    // 2. Activar Sitemap para Google y rutas de Kick
+    const rInicial = await manejarRutasSeoYKick(request, env);
+    if (rInicial) return rInicial;
+}`;
+  const v1 = parchearVantsWorker(sampleVants);
+  assert.match(v1, /VANTS_AUTH_DUAL_V1/);
+  assert.match(v1, /VANTS_AUTH_PROXY_V1/);
+  assert.equal(parchearVantsWorker(v1), v1);
+
+  const sampleFn = `var jwksCache = null;
+async function jwks() {
+  if (jwksCache && Date.now() - jwksCache.t < 36e5) return jwksCache.keys;
+  const r = await fetch("https://" + AUTH0_DOMAIN + "/.well-known/jwks.json");
+  const d = await j(r);
+  if (!d?.keys) throw new Error("jwks");
+  jwksCache = { keys: d.keys, t: Date.now() };
+  return d.keys;
+}
+__name(jwks, "jwks");
+var b64u = /* @__PURE__ */ __name((s) => Buffer.from(s, "base64url").toString("utf8"), "b64u");
+async function validarJWT(token) {
+  const partes = token.split(".");
+  if (partes.length !== 3) throw new Error("jwt_malo");
+  const cab = JSON.parse(b64u(partes[0]));
+  const cuerpo = JSON.parse(b64u(partes[1]));
+  const llave = (await jwks()).find((k) => String(k.kid) === String(cab.kid));
+  if (!llave) throw new Error("jwt_kid");
+  const pub = await subt.importKey(
+    "jwk",
+    llave,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  const data = new TextEncoder().encode(partes[0] + "." + partes[1]);
+  const sig = Buffer.from(partes[2], "base64url");
+  const ok = await subt.verify("RSASSA-PKCS1-v1_5", pub, sig, data);
+  if (!ok) throw new Error("jwt_firma");
+  if (cuerpo.iss !== "https://" + AUTH0_DOMAIN + "/") throw new Error("jwt_iss");
+  if (cuerpo.exp && cuerpo.exp * 1e3 < Date.now()) throw new Error("jwt_exp");
+  if (AUTH0_AUDIENCE && cuerpo.aud) {
+    const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
+    const valeApi = auds.includes(AUTH0_AUDIENCE);
+    const valeId = process.env.AUTH0_CLIENT_ID ? auds.includes(process.env.AUTH0_CLIENT_ID) : false;
+    if (!valeApi && !valeId) throw new Error("jwt_aud");
+  }
+  return String(cuerpo.sub);
+}
+async function jwks2(f, dominio) {
+  if (jwksCache2 && Date.now() - jwksCache2.at < JWKS_TTL_MS) return jwksCache2.claves;
+  const r = await f(\`https://\${dominio}/.well-known/jwks.json\`, { signal: AbortSignal.timeout(8e3) });
+  const j2 = await r.json().catch(() => null);
+  if (!j2 || !Array.isArray(j2.keys)) throw new Error("jwks_invalido");
+  jwksCache2 = { at: Date.now(), claves: j2.keys };
+  return j2.keys;
+}
+__name(jwks2, "jwks");
+async function validarJwt(authHeader, dep) {
+  const dominio = String(dep.env.AUTH0_DOMAIN || "vants.eu.auth0.com").replace(/^https?:\\/\\//, "").replace(/\\/+$/, "");
+  const audience = String(dep.env.AUTH0_AUDIENCE || "https://api.vants.app");
+  if (!authHeader || !/^bearer /i.test(authHeader)) return null;
+  const token = authHeader.replace(/^bearer /i, "").trim();
+  const partes = token.split(".");
+  if (partes.length !== 3) return null;
+  const cab = b64urlJson(partes[0]);
+  const cuerpo = b64urlJson(partes[1]);
+  if (!cab || !cuerpo || cab.alg !== "RS256") return null;
+  const ahora = Math.floor(Date.now() / 1e3);
+  if (typeof cuerpo.exp !== "number" || cuerpo.exp + LEEWAY_SEG < ahora) return null;
+  if (cuerpo.iss !== \`https://\${dominio}/\`) return null;
+  const aud = cuerpo.aud;
+  const audOk = typeof aud === "string" ? aud === audience : Array.isArray(aud) ? aud.includes(audience) : false;
+  if (!audOk) return null;
+  if (typeof cuerpo.sub !== "string" || !cuerpo.sub) return null;
+  try {
+    const claves2 = await jwks2(dep.fetch, dominio);
+  } catch {}
+}
+var jwksCache3 = null;
+async function jwks3() {
+  if (jwksCache3 && Date.now() - jwksCache3.t < 36e5) return jwksCache3.keys;
+  const r = await fetch("https://" + AUTH0_DOMAIN2 + "/.well-known/jwks.json");
+  const d = await r.json().catch(() => null);
+  if (!d?.keys) throw new Error("jwks");
+  jwksCache3 = { keys: d.keys, t: Date.now() };
+  return d.keys;
+}
+__name(jwks3, "jwks");
+var b64u2 = /* @__PURE__ */ __name((s) => Buffer.from(s, "base64url").toString("utf8"), "b64u");
+async function validarJWT2(token) {
+  const partes = token.split(".");
+  if (partes.length !== 3) throw new Error("jwt_malo");
+  const cab = JSON.parse(b64u2(partes[0]));
+  const cuerpo = JSON.parse(b64u2(partes[1]));
+  const llave = (await jwks3()).find((k) => String(k.kid) === String(cab.kid));
+  if (!llave) throw new Error("jwt_kid");
+  const pub = await subt2.importKey(
+    "jwk",
+    llave,
+    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+    false,
+    ["verify"]
+  );
+  const data = new TextEncoder().encode(partes[0] + "." + partes[1]);
+  const sig = Buffer.from(partes[2], "base64url");
+  const ok = await subt2.verify("RSASSA-PKCS1-v1_5", pub, sig, data);
+  if (!ok) throw new Error("jwt_firma");
+  if (cuerpo.iss !== "https://" + AUTH0_DOMAIN2 + "/") throw new Error("jwt_iss");
+  if (cuerpo.exp && cuerpo.exp * 1e3 < Date.now()) throw new Error("jwt_exp");
+  if (AUTH0_AUDIENCE2 && cuerpo.aud) {
+    const auds = Array.isArray(cuerpo.aud) ? cuerpo.aud : [cuerpo.aud];
+    const valeApi = auds.includes(AUTH0_AUDIENCE2);
+    const valeId = AUTH0_CLIENT_ID ? auds.includes(AUTH0_CLIENT_ID) : false;
+    if (!valeApi && !valeId) throw new Error("jwt_aud");
+  }
+  return { sub: String(cuerpo.sub), email: typeof cuerpo.email === "string" ? cuerpo.email : null };
+}`;
+  const f1 = parchearVantsFunctions(sampleFn);
+  assert.match(f1, /VANTS_FN_DUAL_1/);
+  assert.match(f1, /VANTS_FN_DUAL_2/);
+  assert.match(f1, /VANTS_FN_DUAL_3/);
+  assert.equal(parchearVantsFunctions(f1), f1);
+  // Syntax check via Function constructor (ESM-free body)
+  assert.doesNotThrow(() => new Function(v1));
+  assert.doesNotThrow(() => new Function(f1));
 });

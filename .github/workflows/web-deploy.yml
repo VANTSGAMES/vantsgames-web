@@ -78,18 +78,16 @@ jobs:
             if(!n) { console.error("worker.js no encontrado"); process.exit(1); }'
           node --input-type=module --check < src/worker.js
           grep -q "export" src/worker.js
-          CRONS=$(cat crons.json) node ../script/ci/vants-config.mjs settings.json version.json ../dist-web > wrangler.json
-          jq '{name, compatibility_date, vars: (.vars|keys), d1_databases, assets: (.assets|del(.directory)), triggers}' wrangler.json
-          jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
-          echo "bindings: $(cat bindings-antes.txt)"; echo "version anterior: $V"
+          CRONS=$(cat crons.json) WRANGLER_EXTRA='{"services":[{"binding":"VANTS_INT","service":"vants-integraciones"}]}' node ../script/ci/vants-config.mjs settings.json version.json ../dist-web > wrangler.json
+          jq '{name, compatibility_date, vars: (.vars|keys), d1_databases, services, assets: (.assets|del(.directory)), triggers}' wrangler.json
+          jq -r '[.result.bindings[].name, "VANTS_INT"] | unique | sort | join(",")' settings.json > bindings-antes.txt
+          echo "bindings esperados: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
-      - name: Parche CSP del worker (beacon + bloqueo de consentimiento de terceros)
-        # El worker LIVE define la CSP del sitio. Dos ajustes idempotentes:
-        # 1) script-src += https://static.cloudflareinsights.com (beacon de Web Analytics,
-        #    si no el navegador lo bloquea).
-        # 2) frame-src 'self' https: -> lista cerrada (Twitch/Kick/YouTube + Google OAuth/Picker).
-        #    El GTM roto de Zaraz abre un iframe de consentimiento de Google (fondo blanco) que
-        #    tapa la web en móvil; con lista cerrada no puede cargarse.
+      - name: Parche CSP + VANTS Identity dual (/auth/* proxy + infoDeSesion)
+        # El worker LIVE define la CSP del sitio y la verificación de sesión:
+        # 1) script-src += https://static.cloudflareinsights.com (beacon de Web Analytics).
+        # 2) frame-src lista cerrada (Twitch/Kick/YouTube + Google OAuth/Picker).
+        # 3) Proxy first-party /auth/* -> VANTS_INT + verificación dual en infoDeSesion.
         # Si la línea base cambia en el futuro, falla ruidosamente.
         working-directory: vants
         run: |
@@ -112,9 +110,13 @@ jobs:
             else { console.error("CSP frame-src esperada no encontrada en el worker LIVE"); process.exit(1); }
             fs.writeFileSync(f,c);
           '
+          node ../script/ci/parchear-auth-dual.mjs --vants src/worker.js
+          node --input-type=module --check < src/worker.js
           grep -c "static.cloudflareinsights.com" src/worker.js
           grep -c "youtube-nocookie" src/worker.js
           grep -c "accounts.google.com" src/worker.js
+          grep -c "VANTS_AUTH_PROXY_V1" src/worker.js
+          grep -c "VANTS_AUTH_DUAL_V1" src/worker.js
 
       - name: Prueba en seco
         working-directory: vants
@@ -145,9 +147,10 @@ jobs:
           U=https://vants.cc
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
           c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
+          c=$(curl -s -A ci -o jwks.json -w '%{http_code}' $U/auth/.well-known/jwks.json); [ "$c" = 200 ] && jq -e '.keys[0].kid' jwks.json >/dev/null || { echo "/auth/.well-known/jwks.json -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
-          if [ $ok = 1 ]; then echo "Producción OK"; exit 0; fi
+          if [ $ok = 1 ]; then echo "Producción OK (JWKS first-party verificado)"; exit 0; fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
           exit 1

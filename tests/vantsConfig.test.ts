@@ -107,3 +107,19 @@ test("construirConfig — WRANGLER_EXTRA se fusiona al final (exports, consumers
   assert.deepEqual(cfg.queues, { consumers: extra.queues.consumers });
   assert.deepEqual(cfg.migrations, extra.migrations);
 });
+
+test("construirConfig — soporta service bindings existentes y fusiona WRANGLER_EXTRA.services sin duplicar", () => {
+  const conSvc = {
+    ...settingsBase,
+    bindings: [
+      ...settingsBase.bindings,
+      { type: "service", name: "VANTS_INT", service: "vants-integraciones" },
+    ],
+  };
+  const extra = { services: [{ binding: "VANTS_INT", service: "vants-integraciones" }, { binding: "OTRO", service: "otro-worker" }] };
+  const cfg = construirConfig(conSvc, versionBase, "dist-web", { WRANGLER_EXTRA: JSON.stringify(extra) });
+  assert.deepEqual(cfg.services, [
+    { binding: "VANTS_INT", service: "vants-integraciones" },
+    { binding: "OTRO", service: "otro-worker" },
+  ]);
+});

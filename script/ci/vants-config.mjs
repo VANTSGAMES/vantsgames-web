@@ -22,7 +22,7 @@ import { pathToFileURL } from "node:url";
 
 /** Traduce los bindings del Settings API de Cloudflare a bloques de wrangler.json. */
 export function mapearBindings(bindings) {
-  const vars = {}, d1 = [], colas = [], dos = [], workflows = [], otros = [];
+  const vars = {}, d1 = [], colas = [], dos = [], workflows = [], servicios = [], otros = [];
   for (const b of bindings || []) {
     switch (b.type) {
       case "plain_text":
@@ -33,6 +33,13 @@ export function mapearBindings(bindings) {
         break;
       case "d1":
         d1.push({ binding: b.name, database_id: b.database_id || b.id });
+        break;
+      case "service":
+        servicios.push({
+          binding: b.name,
+          service: b.service,
+          ...(b.environment ? { environment: b.environment } : {}),
+        });
         break;
       case "queue":
         colas.push({ binding: b.name, queue: b.queue_name || b.queue || b.queue_id });
@@ -63,13 +70,13 @@ export function mapearBindings(bindings) {
     }
   }
   if (otros.length) throw new Error("Bindings no soportados, se aborta: " + otros.join(", "));
-  return { vars, d1, colas, dos, workflows };
+  return { vars, d1, colas, dos, workflows, servicios };
 }
 
 /** Construye el objeto wrangler.json completo a partir de settings + versión desplegada. */
 export function construirConfig(set, ver, dir, env = process.env) {
   const a = ver.resources.script_runtime.assets || {};
-  const { vars, d1, colas, dos, workflows } = mapearBindings(set.bindings);
+  const { vars, d1, colas, dos, workflows, servicios } = mapearBindings(set.bindings);
   const cfg = {
     name: "vants",
     main: "src/worker.js",
@@ -99,12 +106,25 @@ export function construirConfig(set, ver, dir, env = process.env) {
       issue_detection: { enabled: true },
     },
   };
+  if (servicios.length) cfg.services = servicios;
   if (colas.length) cfg.queues = { producers: colas };
   if (dos.length) cfg.durable_objects = { bindings: dos };
   if (workflows.length) cfg.workflows = workflows;
-  // Puerta de escape operativa: p. ej. exports (DO), queues.consumers, migrations.
+  // Puerta de escape operativa: p. ej. services adicionales, exports (DO), queues.consumers, migrations.
   const extra = env.WRANGLER_EXTRA ? JSON.parse(env.WRANGLER_EXTRA) : null;
-  if (extra) Object.assign(cfg, extra);
+  if (extra) {
+    if (Array.isArray(extra.services)) {
+      const merged = [...(cfg.services || [])];
+      for (const s of extra.services) {
+        if (!merged.some((x) => x.binding === s.binding)) merged.push(s);
+      }
+      cfg.services = merged;
+      const { services: _omit, ...rest } = extra;
+      Object.assign(cfg, rest);
+    } else {
+      Object.assign(cfg, extra);
+    }
+  }
   return cfg;
 }
 
