@@ -425,6 +425,12 @@ async function infoDeSesion(token) {
     return null;
   }
 }
+var AUTH_HEADER = "Authorization";
+async function verifySesionJwt(request, env) {
+  if (!payload || !payload.sub) return null;
+  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;
+  return null;
+}
 async function fetch(request, env, ctx) {
     // 2. Activar Sitemap para Google y rutas de Kick
     const rInicial = await manejarRutasSeoYKick(request, env);
@@ -437,6 +443,8 @@ async function fetch(request, env, ctx) {
   const v1 = parchearVantsWorker(sampleVants);
   assert.match(v1, /VANTS_AUTH_DUAL_V1/);
   assert.match(v1, /VANTS_AUTH_PROXY_V1/);
+  assert.match(v1, /VANTS_AUTH_DUAL_V2/);
+  assert.match(v1, /new Request\("https:\/\/vants\.cc\/auth\/me"/);
   assert.match(v1, /VANTS_UA_VERIFIER_V1/);
   assert.equal(parchearVantsWorker(v1), v1);
 

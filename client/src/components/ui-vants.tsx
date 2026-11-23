@@ -34,13 +34,14 @@ export function PageHead({ eyebrow, title, lead, actions }: { eyebrow: string; t
   );
 }
 
-export function Section({ id, eyebrow, title, more, children, className = "" }: { id?: string; eyebrow?: string; title: ReactNode; more?: { to: string; label: string }; children: ReactNode; className?: string }) {
+export function Section({ id, eyebrow, title, more, children, className = "", nivel = 2 }: { id?: string; eyebrow?: string; title: ReactNode; more?: { to: string; label: string }; children: ReactNode; className?: string; nivel?: 1 | 2 }) {
+  const Titulo = nivel === 1 ? "h1" : "h2";
   return (
     <section id={id} className={"wrap py-10 md:py-14 " + className} aria-labelledby={id ? id + "-t" : undefined}>
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
           {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-          <h2 id={id ? id + "-t" : undefined} className="d-2">{title}</h2>
+          <Titulo id={id ? id + "-t" : undefined} className="d-2">{title}</Titulo>
         </div>
         {more && <Link href={more.to} className="link-arrow shrink-0" data-testid={"link-more-" + (id || "x")}>{more.label} <span aria-hidden>→</span></Link>}
       </div>

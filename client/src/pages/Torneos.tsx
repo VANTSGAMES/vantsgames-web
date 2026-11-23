@@ -657,7 +657,12 @@ function Participantes({ slug }: { slug: string }) {
 }
 
 function TorneoPartidos({ slug, juego }: { slug: string; juego?: string }) {
-  const qs = ["live", "upcoming", "finished"].map((e) => useApi<{ data: Paged<Match> }>(`/api/matches?estado=${e}&porPagina=50${juego ? "&juego=" + juego : ""}`));
+  const fin = juego ? "&juego=" + juego : "";
+  // Tres llamadas explícitas: los hooks no pueden llamarse dentro de un callback.
+  const qLive = useApi<{ data: Paged<Match> }>(`/api/matches?estado=live&porPagina=50${fin}`);
+  const qUpcoming = useApi<{ data: Paged<Match> }>(`/api/matches?estado=upcoming&porPagina=50${fin}`);
+  const qFinished = useApi<{ data: Paged<Match> }>(`/api/matches?estado=finished&porPagina=50${fin}`);
+  const qs = [qLive, qUpcoming, qFinished];
   const all = qs.flatMap((q) => q.data?.data.items || []).filter((m) => m.tournament_slug === slug);
   return (
     <div className="wrap py-8"><div className="panel">

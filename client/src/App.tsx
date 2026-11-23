@@ -142,11 +142,11 @@ export default function App() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <FeedbackProvider>
+        <FeedbackProvider>
+          <AuthProvider>
             {HASH ? <Router hook={useHashLocation}><Rutas /></Router> : <Router><Rutas /></Router>}
-          </FeedbackProvider>
-        </AuthProvider>
+          </AuthProvider>
+        </FeedbackProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   );

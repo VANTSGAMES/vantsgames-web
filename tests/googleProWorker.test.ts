@@ -305,6 +305,10 @@ async function infoDeSesion(token) {
     return null;
   }
 }
+async function verifySesionJwt(request, env) {
+  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;
+  return null;
+}
 const CSP = "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;";
 async function main(request, env, ctx) {
     // 2. Activar Sitemap para Google y rutas de Kick

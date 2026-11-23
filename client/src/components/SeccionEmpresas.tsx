@@ -153,10 +153,10 @@ function ModalAlianza({ abierta, onCerrar }: { abierta: boolean; onCerrar: () =>
   );
 }
 
-export function SeccionEmpresas() {
+export function SeccionEmpresas({ pagina = false }: { pagina?: boolean }) {
   const [modal, setModal] = useState(false);
   return (
-    <Section id="empresas" eyebrow="Industria gamer · Patrocinios y alianzas" title={<>Conecta tu marca con la <span style={{ color: "var(--rojo)" }}>escena competitiva</span> de Latinoamérica</>}>
+    <Section id="empresas" nivel={pagina ? 1 : 2} eyebrow="Industria gamer · Patrocinios y alianzas" title={<>Conecta tu marca con la <span style={{ color: "var(--rojo)" }}>escena competitiva</span> de Latinoamérica</>}>
       <p className="muted" style={{ maxWidth: "76ch" }}>
         VANTS GAMES ofrece un espacio organizado, seguro y verificado para estudios de videojuegos, tiendas de hardware,
         marcas, organizadores y negocios de la industria gamer que buscan presencia real en torneos, rankings y
@@ -187,7 +187,7 @@ export function SeccionEmpresas() {
 export function PaginaEmpresas() {
   return (
     <>
-      <SeccionEmpresas />
+      <SeccionEmpresas pagina />
       <div className="wrap pb-14">
         <p className="muted small">Más información en <Link href="/terminos#empresas" className="link-arrow">condiciones para empresas <span aria-hidden>→</span></Link> o escribiendo a <a href="mailto:contacto@vants.cc" className="link-arrow">contacto@vants.cc</a>.</p>
       </div>

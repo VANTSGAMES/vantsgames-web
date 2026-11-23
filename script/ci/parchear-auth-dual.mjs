@@ -6,6 +6,9 @@
 //        para que las cookies HttpOnly viajen first-party en `https://vants.cc/auth/*` sin error 1042.
 //     2) Verificación dual en `infoDeSesion(token)`: intenta primero `VANTS_INT /auth/me`
 //        (valida VANTS Identity RS256 y Auth0) y conserva fallback a Auth0 `/userinfo`.
+//     3) Verificación dual en `verifySesionJwt(request, env)` (VANTS_AUTH_DUAL_V2): el segundo
+//        verificador del Worker (`/api/account/perfil`, `/api/account/progreso`,
+//        `/api/valorant/rango`, clips destacados) también acepta sesiones de VANTS Identity.
 //
 // - `parchearVantsFunctions(src)`:
 //     Actualiza los 3 verificadores JWT de `vants-functions` (`validarJWT` de linker,
@@ -148,6 +151,47 @@ async function infoDeSesion(token) {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;",
     );
   }
+
+  // 6) Verificación dual en `verifySesionJwt(request, env)`.
+  //    Este verificador (distinto de infoDeSesion) protege /api/account/perfil (nick y
+  //    vínculos de la ficha), /api/account/progreso, /api/valorant/rango y la publicación
+  //    de clips destacados. Solo aceptaba `iss` de Auth0, así que toda sesión iniciada con
+  //    VANTS Identity (Google OIDC o código de correo) recibía 401 `sin_sesion` al guardar.
+  //    Ahora los tokens emitidos por VANTS (RS256, kid) se validan con el propio emisor a
+  //    través del Service Binding (VANTS_INT /auth/me), que ya verifica firma, exp y aud.
+  if (!c.includes("/* VANTS_AUTH_DUAL_V2 */")) {
+    const OLD_ISS = `  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;`;
+    const NEW_ISS = `  /* VANTS_AUTH_DUAL_V2 */
+  const __issV = String(payload.iss || "").replace(/\\/+$/, "");
+  if (__issV === "${VANTS_ISSUER}") {
+    if (!head || head.alg !== "RS256" || !head.kid || !_vantsInt) return null;
+    try {
+      const __meV = await _vantsInt.fetch(new Request("${VANTS_ISSUER}/auth/me", {
+        headers: { [AUTH_HEADER]: "Bearer " + token }
+      }));
+      if (!__meV.ok) return null;
+      const __dV = await __meV.json().catch(() => null);
+      return __dV && __dV.ok && __dV.user && __dV.user.sub ? { sub: String(__dV.user.sub) } : null;
+    } catch (eV) {
+      return null;
+    }
+  }
+  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;`;
+    if (c.split(OLD_ISS).length !== 2) {
+      throw new Error(
+        "vants: línea de emisor (iss) de verifySesionJwt esperada exactamente una vez, encontradas " +
+          (c.split(OLD_ISS).length - 1),
+      );
+    }
+    c = c.replace(OLD_ISS, NEW_ISS);
+  }
+
+  // 6b) `infoDeSesion` (V1) pasa un `Request` con la cabecera al Service Binding: los bindings
+  //     documentan `fetch(request)`; así no depende de que acepten `fetch(url, init)`.
+  //     El cierre de la llamada original (`});`) se conserva: el segundo argumento es el mismo init.
+  const OLD_CALL_V1 = `      const me = await _vantsInt.fetch("${VANTS_ISSUER}/auth/me", {`;
+  const NEW_CALL_V1 = `      const me = await _vantsInt.fetch(new Request("${VANTS_ISSUER}/auth/me", { headers: { [AUTH_HEADER]: "Bearer " + token } }), {`;
+  if (c.includes(OLD_CALL_V1)) c = c.split(OLD_CALL_V1).join(NEW_CALL_V1);
 
   return c;
 }

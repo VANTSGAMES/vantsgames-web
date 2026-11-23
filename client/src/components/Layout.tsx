@@ -136,11 +136,11 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
   return (
     <>
-      <button className="btn btn-sm lg:hidden" aria-expanded={open} aria-controls="menu-movil" onClick={() => setOpen((o) => !o)} data-testid="button-menu">
+      <button className="btn btn-sm xl:hidden" aria-expanded={open} aria-controls="menu-movil" onClick={() => setOpen((o) => !o)} data-testid="button-menu">
         {open ? "Cerrar" : "Menú"}
       </button>
       {open && (
-        <nav id="menu-movil" className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto lg:hidden" style={{ background: "var(--negro)" }} aria-label="Menú principal">
+        <nav id="menu-movil" className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto xl:hidden" style={{ background: "var(--negro)" }} aria-label="Menú principal">
           <div className="wrap py-6 grid gap-6">
             <button
               type="button"
@@ -204,7 +204,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
       <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 btn btn-sm">Saltar al contenido</a>
       <div className="wrap hdr-in">
         <Wordmark />
-        <nav className="hidden lg:flex items-center ml-4" aria-label="Principal">
+        <nav className="hidden xl:flex items-center ml-4" aria-label="Principal">
           <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} data-testid="nav-inicio">Inicio</Link>
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
           <Link href="/empresas" className={"nav-btn" + (path === "/empresas" ? " activo" : "")} data-testid="nav-empresas">Empresas</Link>
@@ -221,8 +221,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
               <circle cx="11" cy="11" r="8" />
               <path d="M21 21l-4.35-4.35" />
             </svg>
-            <span className="hidden md:inline">Buscar</span>
-            <kbd className="hidden xl:inline text-[10px] px-1.5 py-0.5 border" style={{ borderColor: "var(--linea)", color: "var(--gris-2)", fontFamily: "var(--f-mono)" }}>⌘K</kbd>
+            <span className="sr-only">Buscar</span>
           </button>
           <span className="hidden sm:inline-flex"><PWAInstallButton /></span>
           <AccountButton />

@@ -30,12 +30,33 @@ export class ApiError extends Error {
   }
 }
 
-let tokenProvider: (() => Promise<string | null>) | null = null;
-export function setTokenProvider(fn: (() => Promise<string | null>) | null) {
+type ProveedorToken = (opts?: { force?: boolean }) => Promise<string | null>;
+let tokenProvider: ProveedorToken | null = null;
+export function setTokenProvider(fn: ProveedorToken | null) {
   tokenProvider = fn;
 }
 export async function getAuthToken(): Promise<string | null> {
   return tokenProvider ? tokenProvider() : null;
+}
+
+async function pedir(path: string, headers: Record<string, string>, method: string, body?: BodyInit): Promise<Response> {
+  try {
+    return await fetch(destino(path), { method, headers, body });
+  } catch {
+    throw new ApiError(0, "red_no_disponible");
+  }
+}
+
+/** Si el servidor responde 401 aun llevando token, el token local pudo vencerse o
+ *  revocarse por adelantado (rotación de claves, cierre en otra pestaña): fuerza un
+ *  refresh de sesión y reintenta una sola vez antes de fallar. */
+async function pedirConSesion(path: string, headers: Record<string, string>, method: string, body?: BodyInit): Promise<Response> {
+  let r = await pedir(path, headers, method, body);
+  if (r.status === 401 && headers.authorization && tokenProvider) {
+    const t = await tokenProvider({ force: true }).catch(() => null);
+    if (t) r = await pedir(path, { ...headers, authorization: "Bearer " + t }, method, body);
+  }
+  return r;
 }
 
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; auth?: boolean } = {}): Promise<T> {
@@ -45,16 +66,8 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     const t = await tokenProvider();
     if (t) headers.authorization = "Bearer " + t;
   }
-  let r: Response;
-  try {
-    r = await fetch(destino(path), {
-      method: opts.method || "GET",
-      headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
-  } catch {
-    throw new ApiError(0, "red_no_disponible");
-  }
+  const cuerpo = opts.body !== undefined ? JSON.stringify(opts.body) : undefined;
+  const r = await pedirConSesion(path, headers, opts.method || "GET", cuerpo);
   let data: any = null;
   try {
     data = await r.json();
@@ -72,8 +85,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
 export async function apiForm<T = any>(path: string, form: FormData, method = "POST"): Promise<T> {
   const headers: Record<string, string> = { accept: "application/json" };
   if (tokenProvider) { const t = await tokenProvider(); if (t) headers.authorization = "Bearer " + t; }
-  let r: Response;
-  try { r = await fetch(destino(path), { method, headers, body: form }); } catch { throw new ApiError(0, "red_no_disponible"); }
+  const r = await pedirConSesion(path, headers, method, form);
   let data: any = null;
   try { data = await r.json(); } catch { data = null; }
   if (!r.ok || (data && data.ok === false)) {

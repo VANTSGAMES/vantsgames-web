@@ -8,6 +8,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { setTokenProvider, api } from "./api";
+import { useFeedback } from "../components/FeedbackProvider";
 
 const ENABLED = import.meta.env.VITE_AUTH_ENABLED === "1";
 const HASH_ROUTER = import.meta.env.VITE_ROUTER !== "history";
@@ -88,46 +89,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<VantsUser | null>(null);
   const vantsTokenRef = useRef<VantsSessionToken | null>(null);
   const refreshInFlightRef = useRef<Promise<string | null> | null>(null);
+  const statusRef = useRef<AuthStatus>(ENABLED ? "cargando" : "no_disponible");
+  useEffect(() => { statusRef.current = status; }, [status]);
+  const { toast } = useFeedback();
 
+  /**
+   * Refresca la sesión con el servidor. El refresh ROTA la cookie compartida por todas
+   * las pestañas, así que se serializa con Web Locks: dos refresh concurrentes con la
+   * misma cookie disparan la detección de reutilización del servidor y revocan TODAS
+   * las sesiones del usuario (cierre de sesión global).
+   */
   const refreshVantsSession = async (): Promise<{ token: string; user: VantsUser | null } | null> => {
-    try {
-      const r = await fetch(vantsAuthUrl("/auth/refresh"), {
-        method: "POST",
-        credentials: "include",
-        headers: { accept: "application/json" },
-      });
-      if (!r.ok) {
-        vantsTokenRef.current = null;
+    const dentro = async (): Promise<{ token: string; user: VantsUser | null } | null> => {
+      try {
+        const r = await fetch(vantsAuthUrl("/auth/refresh"), {
+          method: "POST",
+          credentials: "include",
+          headers: { accept: "application/json" },
+        });
+        if (!r.ok) {
+          vantsTokenRef.current = null;
+          // Sin sesión válida en el servidor: sincroniza la interfaz. Antes la web
+          // seguía mostrando al usuario dentro y cada guardado daba «sesión caducó».
+          if (statusRef.current === "autenticado") {
+            setUser(null);
+            setStatus("anonimo");
+            toast({ kind: "error", title: "Tu sesión caducó", description: "Vuelve a iniciar sesión para continuar." });
+          }
+          return null;
+        }
+        const d = (await r.json()) as {
+          ok?: boolean;
+          access_token?: string;
+          expires_in?: number;
+          user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null };
+        };
+        if (!d.ok || !d.access_token) {
+          vantsTokenRef.current = null;
+          return null;
+        }
+        const ttlMs = Math.max(60, Number(d.expires_in) || 3600) * 1000;
+        vantsTokenRef.current = {
+          accessToken: d.access_token,
+          expiresAt: Date.now() + ttlMs,
+        };
+        return { token: d.access_token, user: toUser(d.user || null) };
+      } catch {
+        // Red caída: no cierra la sesión local; la siguiente petición lo reintentará.
         return null;
       }
-      const d = (await r.json()) as {
-        ok?: boolean;
-        access_token?: string;
-        expires_in?: number;
-        user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null };
-      };
-      if (!d.ok || !d.access_token) {
-        vantsTokenRef.current = null;
-        return null;
-      }
-      const ttlMs = Math.max(60, Number(d.expires_in) || 3600) * 1000;
-      vantsTokenRef.current = {
-        accessToken: d.access_token,
-        expiresAt: Date.now() + ttlMs,
-      };
-      return { token: d.access_token, user: toUser(d.user || null) };
-    } catch {
-      return null;
-    }
+    };
+    const locks = (navigator as unknown as { locks?: { request: (nombre: string, fn: () => Promise<unknown>) => Promise<unknown> } }).locks;
+    if (!locks?.request) return dentro();
+    return (await locks.request("vants-auth-refresh", dentro)) as { token: string; user: VantsUser | null } | null;
   };
 
   useEffect(() => {
     if (!ENABLED) return;
     let vivo = true;
 
-    setTokenProvider(async () => {
+    setTokenProvider(async (opts?: { force?: boolean }) => {
       const cur = vantsTokenRef.current;
-      if (cur && cur.expiresAt - Date.now() > 60_000) return cur.accessToken;
+      if (!opts?.force && cur && cur.expiresAt - Date.now() > 60_000) return cur.accessToken;
       if (!refreshInFlightRef.current) {
         refreshInFlightRef.current = refreshVantsSession()
           .then((res) => (res ? res.token : null))
