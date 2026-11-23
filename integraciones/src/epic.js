@@ -90,6 +90,24 @@ export async function fortnitePublico(env, subs) {
   return { nombre: c.display_name, ...st };
 }
 
+/** Refleja la vinculación de Epic en el registro común de cuentas vinculadas (misma D1 que
+ *  lee la web en /api/account/perfil y usan las insignias). Así Epic aparece también en la
+ *  lista "Cuentas vinculadas", no solo en su tarjeta. */
+async function enlazarVinculoEpic(env, sub, accountId, nombre) {
+  try {
+    await env.DB.prepare(
+      "CREATE TABLE IF NOT EXISTS vants_links (id TEXT PRIMARY KEY, auth0_sub TEXT NOT NULL, player_id TEXT, platform TEXT NOT NULL, handle TEXT NOT NULL, platform_user_id TEXT, avatar_url TEXT, verified INTEGER NOT NULL DEFAULT 0, connected_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (auth0_sub, platform))",
+    ).run();
+    await env.DB.prepare(
+      "INSERT INTO vants_links (id, auth0_sub, platform, handle, platform_user_id, verified, connected_at) VALUES (?, ?, 'epic', ?, ?, 1, datetime('now')) ON CONFLICT(auth0_sub, platform) DO UPDATE SET handle = excluded.handle, platform_user_id = excluded.platform_user_id, verified = 1",
+    )
+      .bind(crypto.randomUUID(), sub, nombre || accountId, accountId)
+      .run();
+  } catch (e) {
+    console.error(JSON.stringify({ tipo: 'epic_vinculo', error: String((e && e.message) || e).slice(0, 160) }));
+  }
+}
+
 export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }) {
   if (!p.startsWith('/epic/')) return null;
 
@@ -122,6 +140,7 @@ export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }
     if (otro && otro.auth0_sub !== sub) return volver(env, 'linkerr=epic_ya_vinculada');
     await env.DB.prepare("INSERT INTO integ_epic (auth0_sub, account_id, display_name) VALUES (?, ?, ?) ON CONFLICT(auth0_sub) DO UPDATE SET account_id=excluded.account_id, display_name=excluded.display_name, actualizado=datetime('now')")
       .bind(sub, t.account_id, nombre).run();
+    await enlazarVinculoEpic(env, sub, t.account_id, nombre);
     // No guardamos el token: solo hace falta el accountId. Se revoca en Epic.
     fetch('https://api.epicgames.dev/epic/oauth/v2/revoke', {
       method: 'POST',
@@ -160,6 +179,7 @@ export async function rutasEpic(req, env, url, p, m, { json, cacheado, usuario }
   }
   if (p === '/epic/desvincular' && m === 'POST') {
     await env.DB.prepare('DELETE FROM integ_epic WHERE auth0_sub = ?').bind(sub).run();
+    await env.DB.prepare("DELETE FROM vants_links WHERE auth0_sub = ? AND platform = 'epic'").bind(sub).run().catch(() => null);
     return json({ ok: true });
   }
   return json({ ok: false, error: 'no_encontrado' }, 404);

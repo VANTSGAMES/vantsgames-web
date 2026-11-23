@@ -25,6 +25,15 @@ SITE_URL = "https://vants.cc"
 TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
 EPIC_CLIENT_ID = "xyza7891Z6aDFRRrUpYMO0Hi3cf2Lmni"
+# Dominios oficiales (rutas de worker en la zona vants.cc):
+#   int.vants.cc  -> este Worker (vants-integraciones)
+#   fn.vants.cc   -> vants-functions (linker OAuth)
+#   bot.vants.cc  -> vantsbot (Discord)
+#   recursos.vants.cc -> vants-recursos
+# Mientras los portales de proveedores no tengan registrada la URL nueva, se mantienen las
+# URLs workers.dev (van dentro de cada var). Para pasar Epic al dominio oficial:
+#   1) Epic Developer Portal -> Redirect URLs: añadir https://int.vants.cc/epic/callback
+#   2) Cambiar EPIC_REDIRECT_URI a https://int.vants.cc/epic/callback y desplegar
 EPIC_REDIRECT_URI = "https://vants-integraciones.vants.workers.dev/epic/callback"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
