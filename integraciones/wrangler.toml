@@ -30,6 +30,9 @@ EPIC_CLIENT_ID = "xyza7891Z6aDFRRrUpYMO0Hi3cf2Lmni"
 #   fn.vants.cc   -> vants-functions (linker OAuth)
 #   bot.vants.cc  -> vantsbot (Discord)
 #   recursos.vants.cc -> vants-recursos
+#   bus.vants.cc  -> vants-bus (bus interno de eventos)
+# (vants-kick, vants-riot-verify, vants-google-verify y vants-faceit-webhook ya cuelgan de
+#  vants.cc mediante rutas: /kick/*, /riot.txt, /google*.html y /api/webhooks/faceit*)
 # Mientras los portales de proveedores no tengan registrada la URL nueva, se mantienen las
 # URLs workers.dev (van dentro de cada var). Para pasar Epic al dominio oficial:
 #   1) Epic Developer Portal -> Redirect URLs: añadir https://int.vants.cc/epic/callback
