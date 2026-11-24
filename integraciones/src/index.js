@@ -366,6 +366,31 @@ async function rutas(req, env, url) {
     });
   }
 
+  // Descarga directa sin redirección 302 del instalador VANTS PC (requerido por Microsoft Store Win32).
+  const dlMatch = p.match(/^\/descargas\/vants-pc\/(\d+\.\d+\.\d+)\/(VANTS-Setup-\d+\.\d+\.\d+\.exe)$/);
+  if (dlMatch && (m === 'GET' || m === 'HEAD')) {
+    const [, ver, file] = dlMatch;
+    if (file !== `VANTS-Setup-${ver}.exe`) return new Response('not found', { status: 404 });
+    const ghUrl = `https://github.com/VANTSGAMES/banter/releases/download/v${ver}/${file}`;
+    const upHeaders = { 'User-Agent': 'VANTS-Store-Proxy/1.0' };
+    const range = req.headers.get('range');
+    if (range) upHeaders['Range'] = range;
+    const up = await fetch(ghUrl, { method: m, headers: upHeaders, redirect: 'follow' });
+    if (!up.ok && up.status !== 206) return new Response('not found', { status: up.status === 404 ? 404 : 502 });
+    const out = new Headers({
+      'content-type': 'application/octet-stream',
+      'content-disposition': `attachment; filename="${file}"`,
+      'accept-ranges': 'bytes',
+      'cache-control': 'public, max-age=86400',
+      'access-control-allow-origin': '*',
+    });
+    for (const k of ['content-length', 'content-range', 'etag', 'last-modified']) {
+      const v = up.headers.get(k);
+      if (v) out.set(k, v);
+    }
+    return new Response(m === 'HEAD' ? null : up.body, { status: up.status, headers: out });
+  }
+
   if (p === '/directos' && m === 'GET') {
     const rs = await env.DB.prepare('SELECT plataforma, canal, nombre, en_vivo, titulo, juego, espectadores, miniatura, url, desde, actualizado FROM integ_directos ORDER BY en_vivo DESC, espectadores DESC').all();
     return json({ ok: true, directos: (rs.results || []).map((r) => ({ ...r, en_vivo: !!r.en_vivo })) }, 200, { 'Cache-Control': 'public, max-age=30' });
