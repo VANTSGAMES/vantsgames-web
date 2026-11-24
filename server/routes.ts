@@ -128,6 +128,51 @@ async function resolveDbUser(req: AuthRequest) {
 }
 
 export async function registerRoutes(httpServer: Server, app: Express): Promise<Server> {
+  // Diagnóstico público (sin exponer valores secretos) del proyecto 238603325169 y los 10 servicios Workspace
+  app.get("/api/pro/config-status", (_req: Request, res: Response) => {
+    res.json({
+      project: {
+        gcpProjectId: process.env.GCP_PROJECT_ID || process.env.VITE_GOOGLE_CLOUD_PROJECT_ID || "semiotic-ion-508913-r1",
+        gcpProjectNumber: process.env.GCP_PROJECT_NUMBER || "238603325169",
+        resourceName: `projects/${process.env.GCP_PROJECT_NUMBER || "238603325169"}`,
+      },
+      secretsConfiguredInEnv: {
+        VITE_INT_ORIGIN: Boolean(process.env.VITE_INT_ORIGIN),
+        VITE_FN_ORIGIN: Boolean(process.env.VITE_FN_ORIGIN),
+        VITE_GOOGLE_CLOUD_PROJECT_ID: Boolean(process.env.VITE_GOOGLE_CLOUD_PROJECT_ID),
+        VITE_GOOGLE_OAUTH_CLIENT_ID: Boolean(process.env.VITE_GOOGLE_OAUTH_CLIENT_ID),
+        GCP_PROJECT_ID: Boolean(process.env.GCP_PROJECT_ID),
+        GCP_PROJECT_NUMBER: Boolean(process.env.GCP_PROJECT_NUMBER),
+        GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
+      },
+      effectiveDefaultsActive: {
+        VITE_INT_ORIGIN: INT_ORIGIN,
+        VITE_FN_ORIGIN: FN_ORIGIN,
+        VITE_GOOGLE_CLOUD_PROJECT_ID: process.env.VITE_GOOGLE_CLOUD_PROJECT_ID || process.env.GCP_PROJECT_ID || "semiotic-ion-508913-r1",
+        VITE_GOOGLE_OAUTH_CLIENT_ID:
+          process.env.VITE_GOOGLE_OAUTH_CLIENT_ID ||
+          "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com",
+        GCP_PROJECT_ID: process.env.GCP_PROJECT_ID || "semiotic-ion-508913-r1",
+        GCP_PROJECT_NUMBER: process.env.GCP_PROJECT_NUMBER || "238603325169",
+      },
+      workspaceServices: Array.from(VALID_SERVICES),
+      requiredGoogleCloudApis: [
+        "drive.googleapis.com",
+        "picker.googleapis.com",
+        "docs.googleapis.com",
+        "sheets.googleapis.com",
+        "slides.googleapis.com",
+        "gmail.googleapis.com",
+        "calendar-json.googleapis.com",
+        "tasks.googleapis.com",
+        "chat.googleapis.com",
+        "forms.googleapis.com",
+        "meet.googleapis.com",
+        "games.googleapis.com",
+      ],
+    });
+  });
+
   // ---------------- VANTS Pro API (Cloud SQL + Google OAuth 2.0) ----------------
   app.get("/api/pro/me", requireAuth, async (req: AuthRequest, res: Response) => {
     try {

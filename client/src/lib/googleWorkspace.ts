@@ -69,6 +69,25 @@ export const WORKSPACE_SCOPES = [
   "https://www.googleapis.com/auth/meetings.space.readonly",
 ] as const;
 
+export interface WorkspaceServiceDefinition {
+  id: "drive" | "docs" | "sheets" | "slides" | "gmail" | "calendar" | "tasks" | "chat" | "forms" | "meet";
+  name: string;
+  requiredScopes: readonly string[];
+}
+
+export const WORKSPACE_TEN_SERVICES: readonly WorkspaceServiceDefinition[] = [
+  { id: "drive", name: "Google Drive", requiredScopes: ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive.readonly"] },
+  { id: "docs", name: "Google Docs", requiredScopes: ["https://www.googleapis.com/auth/documents"] },
+  { id: "sheets", name: "Google Sheets", requiredScopes: ["https://www.googleapis.com/auth/spreadsheets"] },
+  { id: "slides", name: "Google Slides", requiredScopes: ["https://www.googleapis.com/auth/presentations"] },
+  { id: "gmail", name: "Gmail", requiredScopes: ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"] },
+  { id: "calendar", name: "Google Calendar", requiredScopes: ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.readonly"] },
+  { id: "tasks", name: "Google Tasks", requiredScopes: ["https://www.googleapis.com/auth/tasks"] },
+  { id: "chat", name: "Google Chat", requiredScopes: ["https://www.googleapis.com/auth/chat.spaces.readonly", "https://www.googleapis.com/auth/chat.messages.create"] },
+  { id: "forms", name: "Google Forms", requiredScopes: ["https://www.googleapis.com/auth/forms.body"] },
+  { id: "meet", name: "Google Meet", requiredScopes: ["https://www.googleapis.com/auth/meetings.space.created", "https://www.googleapis.com/auth/meetings.space.readonly"] },
+] as const;
+
 const BASIC_SCOPES = ["openid", "email", "profile"] as const;
 
 // Strictly in-memory OAuth session cache (never localStorage or sessionStorage).
@@ -187,6 +206,7 @@ async function requestGoogleOAuthToken(
       const tokenClient = window.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_OAUTH_CLIENT_ID,
         scope: scopes.join(" "),
+        include_granted_scopes: true,
         prompt,
         callback: (response: { access_token?: string; error?: string; error_description?: string }) => {
           if (response.error || !response.access_token) {
@@ -270,6 +290,29 @@ export async function signInWithGoogleWorkspace(): Promise<{
 
 export function getWorkspaceAccessToken(): string | null {
   return cachedAccessToken;
+}
+
+/** Verifica en tiempo real contra Google OAuth2 tokeninfo qué servicios de los 10 están autorizados. */
+export async function verifyGrantedWorkspaceServices(): Promise<Record<string, boolean>> {
+  const result: Record<string, boolean> = {};
+  for (const s of WORKSPACE_TEN_SERVICES) {
+    result[s.id] = false;
+  }
+  if (!cachedAccessToken) return result;
+  try {
+    const res = await fetch(
+      `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(cachedAccessToken)}`,
+    );
+    if (!res.ok) return result;
+    const data = (await res.json()) as { scope?: string };
+    const granted = new Set(String(data.scope || "").split(/\s+/).filter(Boolean));
+    for (const s of WORKSPACE_TEN_SERVICES) {
+      result[s.id] = s.requiredScopes.some((sc) => granted.has(sc));
+    }
+    return result;
+  } catch {
+    return result;
+  }
 }
 
 export async function signOutGoogleWorkspace(): Promise<void> {
@@ -405,10 +448,16 @@ export async function openGooglePicker(): Promise<DriveFileItem | null> {
         ? window.location.ancestorOrigins[window.location.ancestorOrigins.length - 1]
         : window.location.origin;
 
-    const picker = new window.google.picker.PickerBuilder()
+    const pickerBuilder = new window.google.picker.PickerBuilder()
       .addView(window.google.picker.ViewId.DOCS)
       .setOAuthToken(token)
-      .setOrigin(pickerOrigin)
+      .setOrigin(pickerOrigin);
+
+    if (typeof pickerBuilder.setAppId === "function" && GOOGLE_CLOUD_PROJECT_NUMBER) {
+      pickerBuilder.setAppId(GOOGLE_CLOUD_PROJECT_NUMBER);
+    }
+
+    const picker = pickerBuilder
       .setCallback((data: any) => {
         if (data.action === window.google.picker.Action.PICKED && data.docs?.[0]) {
           const doc = data.docs[0];

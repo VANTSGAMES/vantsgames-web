@@ -7,6 +7,8 @@ import { JUEGOS, etiquetaJuego, opcionesJuegos } from "@/lib/juegos";
 import { validateTacticalNote } from "@/lib/urlFilters";
 import {
   GOOGLE_CLOUD_PROJECT_ID,
+  GOOGLE_CLOUD_PROJECT_NUMBER,
+  WORKSPACE_TEN_SERVICES,
   GoogleAuthClientError,
   createCalendarScrimEvent,
   createGoogleTask,
@@ -28,6 +30,7 @@ import {
   signInWithGoogleWorkspace,
   signOutGoogleWorkspace,
   toggleGoogleTask,
+  verifyGrantedWorkspaceServices,
   type AuthErrorDetail,
   type CalendarEventItem,
   type ChatSpaceItem,
@@ -112,6 +115,7 @@ export default function Workspace() {
   const [chatSpaces, setChatSpaces] = useState<ChatSpaceItem[]>([]);
   const [chatNotice, setChatNotice] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [grantedServices, setGrantedServices] = useState<Record<string, boolean>>({});
 
   // Forms state
   const [templateTitle, setTemplateTitle] = useState("Torneo VANTS Apertura");
@@ -219,8 +223,13 @@ export default function Workspace() {
   }, [user, loadProData]);
 
   useEffect(() => {
-    if (user && hasToken && tab !== "notas") {
-      loadWorkspaceTab(tab);
+    if (user && hasToken) {
+      verifyGrantedWorkspaceServices().then(setGrantedServices);
+      if (tab !== "notas") {
+        loadWorkspaceTab(tab);
+      }
+    } else {
+      setGrantedServices({});
     }
   }, [user, hasToken, tab, loadWorkspaceTab]);
 
@@ -715,6 +724,33 @@ export default function Workspace() {
                 <span className={"tag " + (hasToken ? "tag-ok" : "tag-aviso")}>
                   {hasToken ? "Workspace autorizado" : "Sesión sin token activo"}
                 </span>
+              </div>
+            </div>
+
+            {/* Estado de los 10 servicios de Google Workspace en el proyecto 238603325169 */}
+            <div className="panel panel-pad grid gap-3" data-testid="workspace-10-services-status">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="eyebrow">
+                  Ecosistema Google Workspace · Proyecto {GOOGLE_CLOUD_PROJECT_ID} ({GOOGLE_CLOUD_PROJECT_NUMBER})
+                </div>
+                <span className="small muted">
+                  {Object.values(grantedServices).filter(Boolean).length}/{WORKSPACE_TEN_SERVICES.length} servicios autorizados
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {WORKSPACE_TEN_SERVICES.map((srv) => {
+                  const ok = Boolean(grantedServices[srv.id]);
+                  return (
+                    <span
+                      key={srv.id}
+                      className={"tag " + (ok ? "tag-ok" : "")}
+                      data-testid={`ws-service-${srv.id}`}
+                    >
+                      {ok ? "● " : "○ "}
+                      {srv.name}
+                    </span>
+                  );
+                })}
               </div>
             </div>
 

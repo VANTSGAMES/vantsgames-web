@@ -163,6 +163,29 @@ export async function rutasGooglePro(req, env, url, p, m, { json, usuarioClaims 
     return json({ apiKey, configured: Boolean(apiKey) });
   }
 
+  if (p === '/pro/config-status' && m === 'GET') {
+    const gcpProjectId = String(env.GCP_PROJECT_ID || 'semiotic-ion-508913-r1');
+    const gcpProjectNumber = String(env.GCP_PROJECT_NUMBER || '238603325169');
+    return json({
+      ok: true,
+      project: {
+        gcpProjectId,
+        gcpProjectNumber,
+        resourceName: `projects/${gcpProjectNumber}`,
+        googleOAuthClientId: String(
+          env.GOOGLE_OAUTH_CLIENT_ID ||
+            '238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com',
+        ),
+      },
+      origins: {
+        intOrigin: 'https://int.vants.cc',
+        fnOrigin: 'https://fn.vants.cc',
+        siteUrl: String(env.SITE_URL || 'https://vants.cc'),
+      },
+      workspaceServices: Array.from(VALID_SERVICES),
+    });
+  }
+
   if (!p.startsWith('/pro/')) return null;
 
   let claims;
