@@ -36,8 +36,14 @@ const cache = new Map(); // caché en memoria del isolate
 function cors(env, req) {
   const origin = req.headers.get('origin') || '';
   const permitidos = String(env.SITE_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const allowLocal = env.ALLOW_LOCALHOST === '1' && /^http:\/\/localhost(:\d+)?$/.test(origin);
-  const ok = !origin || permitidos.includes(origin) || allowLocal;
+  const isWebAllowed = permitidos.includes(origin) || (env.ALLOW_LOCALHOST === '1' && /^http:\/\/localhost(:\d+)?$/.test(origin));
+  const isNativeApp =
+    origin === 'https://localhost' ||
+    origin === 'capacitor://localhost' ||
+    origin === 'ionic://localhost' ||
+    origin === 'null' ||
+    /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  const ok = !origin || isWebAllowed || isNativeApp;
   const headers = {
     'Access-Control-Allow-Origin': ok && origin ? origin : permitidos[0] || '*',
     'Access-Control-Allow-Headers': 'authorization, content-type',
@@ -45,7 +51,7 @@ function cors(env, req) {
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
-  if (ok && origin) headers['Access-Control-Allow-Credentials'] = 'true';
+  if (isWebAllowed && origin) headers['Access-Control-Allow-Credentials'] = 'true';
   return headers;
 }
 function json(body, status, h) {
