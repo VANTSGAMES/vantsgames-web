@@ -532,8 +532,32 @@ async function rutas(req, env, url) {
   return json({ ok: false, error: 'no_encontrado' }, 404);
 }
 
+async function notificarPagerDuty(env, summary, dedupKey = 'vants-integraciones-error', details = {}) {
+  const key = String((env && env.PAGERDUTY_ROUTING_KEY) || '').trim();
+  if (!key) return;
+  try {
+    await fetch('https://events.pagerduty.com/v2/enqueue', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        routing_key: key,
+        event_action: 'trigger',
+        dedup_key: dedupKey,
+        payload: {
+          summary: String(summary).slice(0, 1024),
+          source: 'int.vants.cc (vants-integraciones Cloudflare Worker)',
+          severity: 'error',
+          custom_details: details,
+        },
+      }),
+    });
+  } catch {
+    /* no bloquear respuesta si PagerDuty falla */
+  }
+}
+
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const h = cors(env, req);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: h });
     const url = new URL(req.url);
@@ -543,7 +567,15 @@ export default {
     } catch (e) {
       const msg = String((e && e.message) || e);
       const auth = /^(sin_sesion|jwt_)/.test(msg);
-      if (!auth) console.error(JSON.stringify({ tipo: 'integ_error', ruta: url.pathname, error: msg }));
+      if (!auth) {
+        console.error(JSON.stringify({ tipo: 'integ_error', ruta: url.pathname, error: msg }));
+        const p = notificarPagerDuty(env, `[vants-integraciones] Error en ${url.pathname}: ${msg}`, 'vants-int-' + url.pathname, {
+          ruta: url.pathname,
+          metodo: req.method,
+          error: msg,
+        });
+        if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(p);
+      }
       res = json({ ok: false, error: msg }, auth ? 401 : 502);
     }
     // Response.redirect() trae cabeceras inmutables: se copia antes de añadir CORS.
@@ -557,9 +589,9 @@ export default {
   },
   async scheduled(_ev, env, ctx) {
     ctx.waitUntil((async () => {
-      try { await procesarFaceit(env); } catch (e) { console.error('cron_faceit', String(e)); }
-      try { await revisarDirectos(env); } catch (e) { console.error('cron_directos', String(e)); }
-      try { await refrescarRanking(env, perfilFaceit, 15); } catch (e) { console.error('cron_ranking', String(e)); }
+      try { await procesarFaceit(env); } catch (e) { console.error('cron_faceit', String(e)); await notificarPagerDuty(env, `[vants-integraciones] Fallo cron_faceit: ${String(e)}`, 'vants-int-cron-faceit'); }
+      try { await revisarDirectos(env); } catch (e) { console.error('cron_directos', String(e)); await notificarPagerDuty(env, `[vants-integraciones] Fallo cron_directos: ${String(e)}`, 'vants-int-cron-directos'); }
+      try { await refrescarRanking(env, perfilFaceit, 15); } catch (e) { console.error('cron_ranking', String(e)); await notificarPagerDuty(env, `[vants-integraciones] Fallo cron_ranking: ${String(e)}`, 'vants-int-cron-ranking'); }
     })());
   },
 };

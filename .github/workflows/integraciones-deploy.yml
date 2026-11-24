@@ -36,6 +36,7 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           VIDIQ_MCP_TOKEN: ${{ secrets.VIDIQ_MCP_TOKEN }}
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
         run: |
           if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
           if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
@@ -43,5 +44,6 @@ jobs:
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then printf '%s' "$GOOGLE_OAUTH_CLIENT_SECRET" | npx -y wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET; fi
           if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | npx -y wrangler@4 secret put RESEND_API_KEY; fi
           if [ -n "$VIDIQ_MCP_TOKEN" ]; then printf '%s' "$VIDIQ_MCP_TOKEN" | npx -y wrangler@4 secret put VIDIQ_MCP_TOKEN; fi
+          if [ -n "$PAGERDUTY_ROUTING_KEY" ]; then printf '%s' "$PAGERDUTY_ROUTING_KEY" | npx -y wrangler@4 secret put PAGERDUTY_ROUTING_KEY; fi
       - name: Salud
         run: curl -fsS -A "Mozilla/5.0 (compatible; VANTSHealthCheck/1.0; +https://vants.cc)" https://vants-integraciones.vants.workers.dev/salud
