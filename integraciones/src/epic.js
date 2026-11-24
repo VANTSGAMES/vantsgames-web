@@ -11,7 +11,7 @@
 //
 // Variables: EPIC_CLIENT_ID. Secretos: EPIC_CLIENT_SECRET, FORTNITE_API_KEY (opcional).
 // URL de retorno que hay que registrar en el Epic Developer Portal:
-//   https://vants-integraciones.vants.workers.dev/epic/callback
+//   https://int.vants.cc/epic/callback
 
 const AUTORIZAR = 'https://www.epicgames.com/id/authorize';
 const TOKEN = 'https://api.epicgames.dev/epic/oauth/v2/token';

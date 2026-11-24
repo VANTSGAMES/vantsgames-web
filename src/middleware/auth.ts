@@ -23,7 +23,7 @@ const AUTH0_DOMAIN = (process.env.AUTH0_DOMAIN || process.env.VITE_AUTH0_DOMAIN 
 const VANTS_AUTH_ISSUER = (process.env.VANTS_AUTH_ISSUER || "https://vants.cc").replace(/\/+$/, "");
 const VANTS_AUTH_AUDIENCE = process.env.VANTS_AUTH_AUDIENCE || process.env.AUTH0_AUDIENCE || "https://api.vants.app";
 const VANTS_AUTH_JWKS_URL =
-  process.env.VANTS_AUTH_JWKS_URL || "https://vants-integraciones.vants.workers.dev/auth/.well-known/jwks.json";
+  process.env.VANTS_AUTH_JWKS_URL || "https://int.vants.cc/auth/.well-known/jwks.json";
 
 // Short in-memory cache (60s) to avoid calling upstream userinfo on burst requests.
 const tokenCache = new Map<string, CachedTokenEntry>();

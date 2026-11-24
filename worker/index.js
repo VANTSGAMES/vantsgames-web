@@ -7,7 +7,7 @@
 import { ASSETS } from "./assets.js";
 
 const API_HOST = "https://vantscc-preview.vants.workers.dev";
-const FN_HOST = "https://vants-functions.vants.workers.dev";
+const FN_HOST = "https://fn.vants.cc";
 const UA = "Mozilla/5.0 (compatible; VantsgamesWeb/1.0; +https://github.com/VANTSGAMES/vantsgames-web)";
 
 const SECURITY = {

@@ -70,7 +70,7 @@ import { validateEventDraft, validateRsvpRoleNote } from "../client/src/lib/even
  * + endpoints /api/pro/* respaldados por Cloud SQL (PostgreSQL) y Google OAuth 2.0.
  */
 const API_ORIGIN = (process.env.VANTS_API_ORIGIN || "https://vants.cc").replace(/\/$/, "");
-const FN_ORIGIN = (process.env.VANTS_FN_ORIGIN || "https://vants-functions.vants.workers.dev").replace(/\/$/, "");
+const FN_ORIGIN = (process.env.VANTS_FN_ORIGIN || "https://fn.vants.cc").replace(/\/$/, "");
 const UA_FALLBACK = "Mozilla/5.0 (compatible; VantsgamesWeb/1.0; +https://github.com/VANTSGAMES/vantsgames-web)";
 
 const VALID_SERVICES = new Set([
