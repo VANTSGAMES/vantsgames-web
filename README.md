@@ -1,134 +1,66 @@
-# VANTS GAMES — Web Privada
+# VANTS GAMES — Web Oficial, `vants-integraciones` y VANTS Movil
 
-<sub>PROJECT STATUS: ACTIVE</sub>
-
-Web pública de **VANTS GAMES** para jugadores y visitantes: torneos de once juegos (VALORANT, CS2, Fortnite, FC 27, Super Smash Bros. Ultimate, Call of Duty: Warzone, Free Fire, League of Legends, Wild Rift, Mobile Legends y Clash Royale), sala de jugadores, clips, comunidad, membresías y perfiles con insignias y sellos 3D.
-
-El repositorio volvió a desarrollo activo para la expansión del circuito y las nuevas animaciones del perfil (V1-Insignias-3D).
-
-> Este repositorio es independiente de **VantsHubLauche**, el Dashboard interno de operaciones. La administración se realiza desde VantsHubLauche y se comunica con esta web mediante la API autorizada del Worker de Vantsgames. Esta web no incorpora un panel administrativo.
+Plataforma competitiva oficial de **VANTS GAMES** en **[https://vants.cc](https://vants.cc)**: torneos de 11 títulos (VALORANT, CS2, Fortnite, EA Sports FC, Super Smash Bros. Ultimate, Warzone, Free Fire, League of Legends, Wild Rift, Mobile Legends y Clash Royale), sala de jugadores, clips, comunidad, eventos RSVP, misiones, votaciones, membresías e insignias 3D.
 
 ---
 
-## Estado del proyecto
+## Mapa del Ecosistema VANTS (`vants.cc`)
 
-| Área | Estado |
-|---|---|
-| Desarrollo principal | Activo |
-| Frontend público | En expansión |
-| Arquitectura | Documentada |
-| Nuevas funcionalidades | En curso |
-| Mejoras | En curso |
-| Mantenimiento evolutivo | Activo |
-| Repositorio | Activo |
+| Servicio / Worker | Dominio oficial | Repositorio |
+| --- | --- | --- |
+| **Web + API principal (`vants`)** | `https://vants.cc` · `https://www.vants.cc` | `VANTSGAMES/vantsgames-web` |
+| **Integraciones (`vants-integraciones`)** | `https://int.vants.cc` | `VANTSGAMES/vantsgames-web` (`integraciones/`) |
+| **App Android (`VANTS Movil`)** | APK firmado en GitHub Releases | `VANTSGAMES/vantsgames-web` (`capacitor.config.ts`) |
+| **App Escritorio (`VANTS.exe` / PC)** | Microsoft Store + WinGet + Releases | [`VANTSGAMES/banter`](https://github.com/VANTSGAMES/banter) |
+| **Bot de Discord (`vantsbot`)** | `https://bot.vants.cc` | [`VANTSGAMES/vantsbot-cf`](https://github.com/VANTSGAMES/vantsbot-cf) |
+| **Webhook FACEIT (`vants-faceit-webhook`)** | `https://vants.cc/api/webhooks/faceit` | [`VANTSGAMES/vants-faceit-webhook`](https://github.com/VANTSGAMES/vants-faceit-webhook) |
+| **Agente de Clips (`VANTS-Clipper`)** | WinGet + Windows CLI | [`VANTSGAMES/VANTS-Clipper`](https://github.com/VANTSGAMES/VANTS-Clipper) |
+| **Funciones / Linker (`vants-functions`)** | `https://fn.vants.cc` | Cloudflare Worker |
+| **Bus de eventos (`vants-bus`)** | `https://bus.vants.cc` | Cloudflare Worker |
+| **Recursos / Sitemap / Verificaciones** | `recursos.vants.cc` · `sitemap.vants.cc` · `vants.cc/kick/*` · `/riot.txt` | Cloudflare Workers |
 
-## Arquitectura
+---
 
-- **Frontend propio:** React + Vite + wouter + TanStack Query + Tailwind. No reutiliza páginas ni componentes de la web anterior.
-- **Datos:** toda la información se obtiene de la API de Vantsgames (Cloudflare Worker + D1). Esta web no tiene base de datos propia. Sin Neon.
-- **Proxy:** `server/routes.ts` reenvía `/api/*` al Worker de Vantsgames (`VANTS_API_ORIGIN`, por defecto el Worker de preview) y `/fn/*` a `vants-functions`.
-- **Autenticación:** Auth0 (`vants.eu.auth0.com`). Se activa con `VITE_AUTH_ENABLED=1` únicamente en dominios registrados en Auth0. Las sesiones y permisos se validan en el servidor.
-- **Pagos:** Stripe Checkout mediante `vants-functions`. La web nunca activa un plan por su cuenta.
-- **Tienda:** sin carrito ni pagos hasta disponer de un catálogo conectado a un comercio real.
+## Componentes en este repositorio
 
-## Desarrollo
+### 1. Frontend Web (`client/`)
+- **Stack:** React + TypeScript + Vite + Tailwind CSS + wouter + TanStack Query.
+- **Identidad:** VANTS Identity (Google OIDC + Email OTP + JWKS RS256 en `https://vants.cc/auth/*`, proxy first-party por Service Binding `VANTS_INT`).
+- **Comunidad y juegos:** FACEIT CS2, VALORANT (Riot ID), Epic Games / Fortnite, directos Twitch & Kick, LFG, foro, misiones semanales, votaciones, eventos RSVP, Google Workspace Pro y Arenas.
+- **Deploy automático:** [`.github/workflows/web-deploy.yml`](./.github/workflows/web-deploy.yml) en cada push a `main`.
+
+### 2. Worker `vants-integraciones` (`integraciones/`)
+- **Dominio:** `https://int.vants.cc`
+- **Almacenamiento:** Cloudflare D1 (`DB` → `vants-db`, `ACH_DB` → `vants-logros-db`) + KV (`CLIPS_KV`).
+- **Módulos principales:**
+  - `src/auth.js` — VANTS Identity (Google OIDC, Email OTP, sesiones rotables, `/.well-known/openid-configuration` y `jwks.json`).
+  - `src/index.js` — Perfil FACEIT, directos Twitch/Kick (cron `*/2 * * * *`), notificaciones, descarga directa sin redirección `/descargas/vants-pc/<ver>/VANTS-Setup-<ver>.exe` para Microsoft Store.
+  - `src/epic.js` — OAuth 2.0 Epic Games (`https://int.vants.cc/epic/callback`) y estadísticas de Fortnite.
+  - `src/juegos.js` — Catálogo de 1.000 logros (500 FACEIT CS2 + 500 VALORANT) y Riot ID.
+  - `src/vidiqSeo.js` — Optimización SEO de clips/Shorts vía vidIQ MCP con cuotas diarias por membresía.
+  - `src/comms.js` y `src/email.js` — Correos transaccionales (Resend) y webhooks salientes a Discord (`REGISTROS`, `COMUNIDAD`, `B2B`, `TICKETS`).
+  - `src/comunidad*.js`, `src/eventosRsvp.js`, `src/extras.js`, `src/insignias.js`, `src/perfiles.js`, `src/googlePro.js`.
+- **Deploy automático:** [`.github/workflows/integraciones-deploy.yml`](./.github/workflows/integraciones-deploy.yml).
+
+### 3. App Android — `VANTS Movil` (`capacitor.config.ts`)
+- **Identificador:** `cc.vants.app` · **Nombre:** `VANTS Movil`
+- **Iconos y Splash:** generados automáticamente desde `client/public/brand/vants-mark-1024.png` mediante [`script/ci/app-icono.mjs`](./script/ci/app-icono.mjs).
+- **Release APK firmado:** [`.github/workflows/app-release.yml`](./.github/workflows/app-release.yml) publica `VANTSMovil-<version>.apk` en GitHub Releases.
+
+---
+
+## Desarrollo y pruebas locales
 
 ```bash
-npm install
-npm run dev          # http://localhost:5000
-npm run build        # dist/public (estático) + dist/index.cjs (proxy)
+npm ci
+npm run dev          # Frontend + proxy local en http://localhost:5000
+npm run check        # Verificación TypeScript (tsc)
+node --check integraciones/src/index.js
+node --experimental-strip-types --test tests/*.test.ts
 ```
 
-### Variables de entorno
-
-| Variable | Uso |
-|---|---|
-| `VANTS_API_ORIGIN` | Origen del Worker de Vantsgames (preview por defecto) |
-| `VANTS_FN_ORIGIN` | Origen de vants-functions |
-| `VITE_AUTH_ENABLED` | `1` para activar Auth0 |
-| `VITE_ROUTER` | `history` para URLs limpias; por defecto hash |
-
-## Producción
-
-La web se publica en:
-
-**https://vants.vants.workers.dev**
-
-Se encuentra dentro del Worker `vants` (repositorio Vantsgames, `vants-server/public`), junto a la API.
-
-### Publicación automática
-
-El workflow `.github/workflows/web-deploy.yml` se ejecuta en cada push a `main` y mediante `workflow_dispatch`.
-
-Proceso:
-
-1. Construye el cliente con `VITE_AUTH_ENABLED=1` y el Client ID de Auth0 configurado.
-2. Copia el build a `vants-server/public` del repositorio Vantsgames.
-3. El push resultante activa el despliegue de Cloudflare.
-
-Este repositorio es la fuente principal del frontend. No editar `vants-server/public` manualmente.
-
-### Archivos públicos
-
-Los siguientes recursos viven en `client/public/` para que el build sea autocontenido:
-
-- `assets/badges/`
-- `static/`
-- `.well-known/`
-- Verificaciones de Google y Manicule.
-- `robots.txt`
-- `llms.txt`
-- `_headers`
-- `sw.js`
-- `admin-logros.html`
-
-El Client ID de Auth0 del login corresponde a la aplicación **VANTS** del tenant `vants.eu.auth0.com`.
-
-### Preview
-
-`worker/` contiene un Worker de preview independiente y opcional.
-
----
-
-## Reglas del proyecto
-
-- El trabajo se realiza exclusivamente en Preview hasta recibir autorización expresa para producción.
-- No utilizar datos ficticios: cuando no exista contenido, mostrar estados vacíos.
-- No mezclar este proyecto con VantsHubLauche ni con VANTS-Clipper.
-- No modificar la arquitectura ni las integraciones sin autorización.
-- Mantener separadas las responsabilidades de cada repositorio.
-
-## Política de archivado
-
-Este repositorio se conserva como versión de referencia del frontend público de VANTS GAMES.
-
-A partir de su archivado:
-
-- No se desarrollarán nuevas funcionalidades.
-- No se implementarán mejoras visuales ni técnicas.
-- No se aceptarán nuevas tareas de desarrollo.
-- No se realizarán actualizaciones rutinarias.
-- No se garantiza mantenimiento ni soporte evolutivo.
-- El historial, código y documentación permanecerán conservados.
-
-Las automatizaciones de GitHub Actions pueden quedar suspendidas mientras el repositorio permanezca archivado. Los servicios externos y la infraestructura de producción tienen un ciclo de vida independiente.
-
-## Reactivación
-
-El repositorio podrá desarchivarse si VANTS decide retomar su desarrollo.
-
-Cualquier nueva etapa de trabajo requerirá autorización expresa y planificación independiente.
-
----
-
-<p align="center">
-
-**VANTS GAMES**
-
-Competitive Gaming & Esports Ecosystem
-
-`PROJECT COMPLETED` · `ARCHIVED UNTIL FURTHER NOTICE`
-
-© VANTS GAMES
-
-</p>
+## Enlaces legales y soporte
+- **Web:** https://vants.cc
+- **Privacidad:** https://vants.cc/privacidad
+- **Términos de uso:** https://vants.cc/terminos
+- **Contacto:** contacto@vants.cc
