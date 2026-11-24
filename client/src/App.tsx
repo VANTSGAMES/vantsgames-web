@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy as reactLazy, Suspense, type ComponentType, type ReactNode } from "react";
 import { Switch, Route, Router, Redirect } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -13,6 +13,38 @@ import { PageLoader } from "./components/ui-vants";
 import { useSeo } from "./lib/seo";
 import Home from "./pages/Home";
 import NotFound from "./pages/not-found";
+
+function lazy<T extends ComponentType<any>>(loader: () => Promise<{ default: T }>) {
+  return reactLazy(async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const mod = await loader();
+        try {
+          sessionStorage.removeItem("vants_chunk_reload");
+        } catch {}
+        return mod;
+      } catch (err) {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 350 * (attempt + 1)));
+          continue;
+        }
+        const msg = String((err as Error)?.message || "");
+        if (/dynamically imported module|module script failed|Loading chunk/i.test(msg)) {
+          try {
+            const key = "vants_chunk_reload";
+            const prev = Number(sessionStorage.getItem(key) || "0");
+            if (Date.now() - prev > 15_000) {
+              sessionStorage.setItem(key, String(Date.now()));
+              window.location.reload();
+            }
+          } catch {}
+        }
+        throw err;
+      }
+    }
+    return loader();
+  });
+}
 
 const PerfilPublicoPagina = lazy(() => import("./pages/PerfilPublico").then((m) => ({ default: m.PerfilPublicoPagina })));
 const TorneosLista = lazy(() => import("./pages/Torneos").then((m) => ({ default: m.TorneosLista })));

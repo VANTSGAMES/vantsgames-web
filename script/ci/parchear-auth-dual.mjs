@@ -193,6 +193,27 @@ async function infoDeSesion(token) {
   const NEW_CALL_V1 = `      const me = await _vantsInt.fetch(new Request("${VANTS_ISSUER}/auth/me", { headers: { [AUTH_HEADER]: "Bearer " + token } }), {`;
   if (c.includes(OLD_CALL_V1)) c = c.split(OLD_CALL_V1).join(NEW_CALL_V1);
 
+  // 7) Evitar falsos 429 (Too Many Requests) al cargar assets estáticos, chunks lazy de React
+  //    y rutas SPA públicas (GET/HEAD que no sean /api/* ni rutas sensibles .env/.php/wp-*).
+  if (!c.includes("/* VANTS_STATIC_NORATELIMIT_V1 */")) {
+    const TARGET_CALL = `      const __r301 = await fetchWorker(__reqV, env, ctx);`;
+    const REPLACED_CALL = `      /* VANTS_STATIC_NORATELIMIT_V1 */
+      if (
+        (request.method === "GET" || request.method === "HEAD") &&
+        !/\\.(env|php|sql|bak|git|ini|yml|yaml|log|sh)$/i.test(__redir301.pathname) &&
+        !/^\\/(wp-|xmlrpc|phpmyadmin|cgi-bin|admin\\.php)/i.test(__redir301.pathname) &&
+        !__redir301.pathname.startsWith("/api/")
+      ) {
+        const __hStatic = new Headers(__reqV.headers);
+        __hStatic.set("cf-connecting-ip", "static:" + __redir301.pathname + ":" + Math.floor(Math.random() * 100000));
+        __reqV = new Request(__reqV, { headers: __hStatic });
+      }
+      const __r301 = await fetchWorker(__reqV, env, ctx);`;
+    if (c.includes(TARGET_CALL)) {
+      c = c.replace(TARGET_CALL, REPLACED_CALL);
+    }
+  }
+
   return c;
 }
 
