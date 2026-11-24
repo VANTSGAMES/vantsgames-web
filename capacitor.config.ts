@@ -11,7 +11,6 @@ const config: CapacitorConfig = {
   appName: "VANTS Movil",
   webDir: "dist-app",
   server: {
-    url: "https://vants.cc",
     androidScheme: "https",
   },
   android: {

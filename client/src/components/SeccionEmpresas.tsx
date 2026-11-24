@@ -8,7 +8,7 @@ import { Section } from "./ui-vants";
  * El formulario compone un correo estructurado a contacto@vants.cc.
  */
 
-const APP_APK = "https://github.com/VANTSGAMES/vantsgames-web/releases/latest/download/VANTS-1.0.0.apk";
+const APP_APK = "https://github.com/VANTSGAMES/banter/releases/latest/download/VANTSMovil.apk";
 export { APP_APK };
 
 const BENEFICIOS: { t: string; d: string }[] = [

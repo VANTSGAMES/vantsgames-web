@@ -24,6 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Descargar app nativa VANTS (VANTSGAMES/banter)
+        uses: actions/checkout@v4
+        with:
+          repository: VANTSGAMES/banter
+          path: banter-src
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -32,6 +38,17 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Compilar bundle nativo VANTS Movil (desde banter)
+        run: |
+          cd banter-src
+          npm install --no-audit --no-fund
+          npm run build:web
+          cd ..
+          rm -rf dist-app
+          mkdir -p dist-app
+          cp -r banter-src/apps/web/dist/* dist-app/
+          ls -la dist-app
 
       - name: Componentes del SDK de Android
         run: |
@@ -101,18 +118,20 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
           mv app/build/outputs/apk/release/app-release.apk ../VANTSMovil-${{ inputs.version }}.apk
+          cp ../VANTSMovil-${{ inputs.version }}.apk ../VANTSMovil.apk
           cd ..
-          ls -la VANTSMovil-*.apk
+          ls -la VANTSMovil*.apk
 
-      - name: Publicar en GitHub Releases
+      - name: Publicar APK en GitHub Releases público (VANTSGAMES/banter)
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GHPAT_VANTS || github.token }}
         run: |
-          gh release create "v${{ inputs.version }}" "VANTSMovil-${{ inputs.version }}.apk" \
-            --title "VANTS Movil v${{ inputs.version }}" \
-            --notes "App Android oficial de VANTS GAMES (VANTS Movil).
-
-          - Torneos, rankings, sala, clips y comunidad con acceso de miembros
-          - Instalación: descarga el APK y permite *instalar apps de origen desconocido* (es nuestro APK firmado, no está en Play Store)
-          - Si ya tenías una versión anterior, se actualiza sin perder nada" \
-            --latest -R "$GITHUB_REPOSITORY"
+          TAG="v${{ inputs.version }}"
+          if gh release view "$TAG" -R VANTSGAMES/banter >/dev/null 2>&1; then
+            gh release upload "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" --clobber -R VANTSGAMES/banter
+          else
+            gh release create "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" \
+              --title "VANTS PC & Movil $TAG" \
+              --notes "App Android oficial de VANTS GAMES (VANTS Movil $TAG, 100% nativa e independiente)." \
+              --latest -R VANTSGAMES/banter
+          fi
