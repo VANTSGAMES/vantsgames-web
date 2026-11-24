@@ -534,26 +534,52 @@ async function rutas(req, env, url) {
 
 async function notificarPagerDuty(env, summary, dedupKey = 'vants-integraciones-error', details = {}) {
   const key = String((env && env.PAGERDUTY_ROUTING_KEY) || '').trim();
-  if (!key) return;
-  try {
-    await fetch('https://events.pagerduty.com/v2/enqueue', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        routing_key: key,
-        event_action: 'trigger',
-        dedup_key: dedupKey,
-        payload: {
-          summary: String(summary).slice(0, 1024),
-          source: 'int.vants.cc (vants-integraciones Cloudflare Worker)',
-          severity: 'error',
-          custom_details: details,
-        },
-      }),
-    });
-  } catch {
-    /* no bloquear respuesta si PagerDuty falla */
+  const ddKey = String((env && env.DD_API_KEY) || '').trim();
+  const tasks = [];
+  if (key) {
+    tasks.push(
+      fetch('https://events.pagerduty.com/v2/enqueue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          routing_key: key,
+          event_action: 'trigger',
+          dedup_key: dedupKey,
+          payload: {
+            summary: String(summary).slice(0, 1024),
+            source: 'int.vants.cc (vants-integraciones Cloudflare Worker)',
+            severity: 'error',
+            custom_details: details,
+          },
+        }),
+      }).catch(() => {}),
+    );
   }
+  if (ddKey) {
+    const site = String((env && env.DD_SITE) || 'datadoghq.com').trim();
+    tasks.push(
+      fetch(`https://http-intake.logs.${site}/api/v2/logs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'DD-API-KEY': ddKey,
+        },
+        body: JSON.stringify([
+          {
+            ddsource: 'cloudflare-worker',
+            ddtags: 'env:production,service:vants-integraciones,domain:int.vants.cc',
+            hostname: 'int.vants.cc',
+            service: 'vants-integraciones',
+            status: 'error',
+            message: String(summary).slice(0, 1024),
+            dedup_key: dedupKey,
+            details,
+          },
+        ]),
+      }).catch(() => {}),
+    );
+  }
+  if (tasks.length) await Promise.all(tasks);
 }
 
 export default {
