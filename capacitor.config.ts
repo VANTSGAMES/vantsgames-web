@@ -8,7 +8,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
  */
 const config: CapacitorConfig = {
   appId: "cc.vants.app",
-  appName: "VANTS GAMES",
+  appName: "VANTS Movil",
   webDir: "dist-app",
   server: {
     url: "https://vants.cc",

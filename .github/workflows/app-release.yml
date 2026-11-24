@@ -100,17 +100,17 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleRelease
-          mv app/build/outputs/apk/release/app-release.apk ../VANTS-${{ inputs.version }}.apk
+          mv app/build/outputs/apk/release/app-release.apk ../VANTSMovil-${{ inputs.version }}.apk
           cd ..
-          ls -la VANTS-*.apk
+          ls -la VANTSMovil-*.apk
 
       - name: Publicar en GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ inputs.version }}" "VANTS-${{ inputs.version }}.apk" \
-            --title "VANTS GAMES v${{ inputs.version }}" \
-            --notes "App Android oficial de VANTS GAMES.
+          gh release create "v${{ inputs.version }}" "VANTSMovil-${{ inputs.version }}.apk" \
+            --title "VANTS Movil v${{ inputs.version }}" \
+            --notes "App Android oficial de VANTS GAMES (VANTS Movil).
 
           - Torneos, rankings, sala, clips y comunidad con acceso de miembros
           - Instalación: descarga el APK y permite *instalar apps de origen desconocido* (es nuestro APK firmado, no está en Play Store)
