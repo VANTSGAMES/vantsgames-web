@@ -7,6 +7,7 @@ import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalo
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm } from "./Juegos";
+import { PanelJuegosDispositivo } from "@/components/DispositivosJuegos";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -735,6 +736,9 @@ function Cuentas() {
         <TarjetaEpic />
       </div>
       <div className="mt-4"><RiotIdForm /></div>
+      <div className="mt-6 border-t pt-6" style={{ borderColor: "var(--linea-suave)" }}>
+        <PanelJuegosDispositivo />
+      </div>
     </div>
   );
 }

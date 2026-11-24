@@ -62,8 +62,16 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm i -D @capacitor/cli @capacitor/core @capacitor/android sharp
+          rm -rf android
           npx cap add android
           npx cap sync android
+
+      - name: Configurar Android, Google Play Services y Detección de Juegos
+        env:
+          APP_VERSION: ${{ inputs.version }}
+          APP_VERSION_CODE: ${{ inputs.codigo }}
+          VANTS_PLAY_GAMES_APP_ID: ${{ secrets.VANTS_PLAY_GAMES_APP_ID || '238603325169' }}
+        run: node script/ci/setup-android.mjs
 
       - name: Icono, splash y versión
         env:
@@ -107,26 +115,34 @@ jobs:
             console.log("Firma de release lista");
           '
 
-      - name: Construir APK (assembleRelease)
+      - name: Construir AAB para Google Play y APK (bundleRelease + assembleRelease)
         env:
           VANTS_KEYSTORE_FILE: ${{ github.workspace }}/vants-release.jks
           VANTS_KEYSTORE_PASSWORD: ${{ secrets.VANTS_KEYSTORE_PASSWORD }}
           VANTS_KEY_PASSWORD: ${{ secrets.VANTS_KEY_PASSWORD }}
           VANTS_KEY_ALIAS: ${{ secrets.VANTS_KEY_ALIAS }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_VERSION_CODE: ${{ inputs.codigo }}
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon bundleRelease assembleRelease
+          # Mover AAB (formato oficial requerido por Google Play Store)
+          mv app/build/outputs/bundle/release/app-release.aab ../VANTSMovil-${{ inputs.version }}.aab
+          cp ../VANTSMovil-${{ inputs.version }}.aab ../VANTSMovil.aab
+          # Mover APK (instalación directa)
           mv app/build/outputs/apk/release/app-release.apk ../VANTSMovil-${{ inputs.version }}.apk
           cp ../VANTSMovil-${{ inputs.version }}.apk ../VANTSMovil.apk
           cd ..
-          ls -la VANTSMovil*.apk
+          ls -la VANTSMovil*
 
-      - name: Guardar APK firmado como artifact
+      - name: Guardar AAB y APK firmados como artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VANTSMovil-apk
+          name: VANTSMovil-builds
           path: |
+            VANTSMovil-${{ inputs.version }}.aab
+            VANTSMovil.aab
             VANTSMovil-${{ inputs.version }}.apk
             VANTSMovil.apk
 
@@ -135,11 +151,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ inputs.version }}"
+          ARCHIVOS=("VANTSMovil-${{ inputs.version }}.aab" "VANTSMovil.aab" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk")
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" --clobber -R "$GITHUB_REPOSITORY"
+            gh release upload "$TAG" "${ARCHIVOS[@]}" --clobber -R "$GITHUB_REPOSITORY"
           else
-            gh release create "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" \
-              --title "VANTS Movil $TAG" \
-              --notes "App Android oficial de VANTS GAMES (VANTS Movil $TAG, 100% adaptada a Android)." \
+            gh release create "$TAG" "${ARCHIVOS[@]}" \
+              --title "VANTS Movil $TAG (Google Play + APK)" \
+              --notes "App oficial de VANTS GAMES (VANTS Movil $TAG). Incluye Android App Bundle (.aab) para Google Play Store y APK firmado con Google Play Games Services v2 y detección de juegos." \
               --latest -R "$GITHUB_REPOSITORY"
           fi

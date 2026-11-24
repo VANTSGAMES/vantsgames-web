@@ -9,7 +9,10 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
-    "build:worker": "VITE_ROUTER=history vite build --base=/ --outDir ../dist/worker-public && node worker/build.mjs"
+    "build:worker": "VITE_ROUTER=history vite build --base=/ --outDir ../dist/worker-public && node worker/build.mjs",
+    "android:setup": "node script/ci/setup-android.mjs",
+    "cap:sync": "npx cap sync android",
+    "cap:build": "node script/ci/setup-android.mjs && cd android && ./gradlew bundleRelease assembleRelease"
   },
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",

@@ -42,10 +42,14 @@ Plataforma competitiva oficial de **VANTS GAMES** en **[https://vants.cc](https:
   - `src/comunidad*.js`, `src/eventosRsvp.js`, `src/extras.js`, `src/insignias.js`, `src/perfiles.js`, `src/googlePro.js`.
 - **Deploy automático:** [`.github/workflows/integraciones-deploy.yml`](./.github/workflows/integraciones-deploy.yml).
 
-### 3. App Android — `VANTS Movil` (`capacitor.config.ts`)
+### 3. App Android & Tablets — `VANTS Movil` (`capacitor.config.ts`)
 - **Identificador:** `cc.vants.app` · **Nombre:** `VANTS Movil`
-- **Iconos y Splash:** generados automáticamente desde `client/public/brand/vants-mark-1024.png` mediante [`script/ci/app-icono.mjs`](./script/ci/app-icono.mjs).
-- **Release APK firmado:** [`.github/workflows/app-release.yml`](./.github/workflows/app-release.yml) publica `VANTSMovil-<version>.apk` en GitHub Releases.
+- **Google Play Store:** Genera tanto el bundle oficial **Android App Bundle (`.aab`)** para Play Console como el APK firmado (`.apk`).
+- **Google Play Games Services v2:** Integrado con autenticación silenciosa, GamerTag y sincronización de perfil de jugador.
+- **Detección de Juegos en Dispositivo:** Plugin nativo [`VantsGamesPlugin.java`](./android/app/src/main/java/cc/vants/app/VantsGamesPlugin.java) que consulta el catálogo oficial (Free Fire, Wild Rift, Mobile Legends, Clash Royale, Warzone Mobile, FC Mobile, Brawl Stars, PUBG Mobile, Fortnite) cumpliendo las políticas de Google Play mediante `<queries>` sin permisos invasivos.
+- **Soporte Adaptativo:** Optimizado para smartphones, pantallas plegables y tablets (orientación, multi-window, barras oscuras `#0A0A0B`).
+- **Automatización:** [`script/ci/setup-android.mjs`](./script/ci/setup-android.mjs) y [`script/ci/app-icono.mjs`](./script/ci/app-icono.mjs).
+- **Release CI/CD:** [`.github/workflows/app-release.yml`](./.github/workflows/app-release.yml) publica `VANTSMovil-<version>.aab` y `VANTSMovil-<version>.apk` en GitHub Releases.
 
 ---
 

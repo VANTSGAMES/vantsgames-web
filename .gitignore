@@ -19,3 +19,14 @@ worker/assets.js
 !client/.env
 client/dist-web/
 dist-web/
+
+# IDE & Android build artifacts / signing keys
+.idea/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+*.keystore
+*.aab
+/VANTSMovil*.apk
