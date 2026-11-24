@@ -377,9 +377,18 @@ async function consultarVidiqTitles(env, { titulo, juego, notas, formato = 'shor
   return { titles, creditsUsed };
 }
 
+function timingSafeEqualStr(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  if (!sa || sa.length !== sb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < sa.length; i++) diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  return diff === 0;
+}
+
 async function resolverContextoClips(req, env, usuarioClaims, membresiaFn) {
   const clipperHeader = req.headers.get('x-clipper-secret') || '';
-  const clipperValid = Boolean(env && env.CLIPPER_SECRET && clipperHeader && clipperHeader === env.CLIPPER_SECRET);
+  const clipperValid = Boolean(env && env.CLIPPER_SECRET && timingSafeEqualStr(clipperHeader, env.CLIPPER_SECRET));
   if (clipperValid) {
     return {
       ok: true,

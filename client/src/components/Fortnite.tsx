@@ -33,7 +33,7 @@ export const mensajeEpic = (k: string) => {
   if (k.startsWith("intercambio_epic")) {
     // Formato: intercambio_epic_<status>_<errorCode> (p. ej. intercambio_epic_401_invalid_client)
     if (/invalid_client|unauthorized_client/.test(k)) return "Epic rechazó las credenciales de la app (invalid_client): el Client Secret guardado no corresponde al Client ID. Genera un nuevo Client Secret en el Epic Developer Portal y avisa a la organización para actualizarlo en el servidor.";
-    if (/redirect/.test(k)) return "Epic rechazó la URL de retorno (redirect_uri). En el Epic Developer Portal, la app debe tener registrada exactamente: https://vants-integraciones.vants.workers.dev/epic/callback";
+    if (/redirect/.test(k)) return "Epic rechazó la URL de retorno (redirect_uri). En el Epic Developer Portal, la app debe tener registrada exactamente: https://int.vants.cc/epic/callback";
     if (k.includes("_400")) return "El código de autorización de Epic expiró o ya se usó (" + k + "). Cierra la pestaña de Epic y vuelve a intentarlo.";
     return "Epic rechazó la autorización (" + k + "). Revisa la app en el Epic Developer Portal.";
   }
