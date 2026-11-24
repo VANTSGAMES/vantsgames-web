@@ -46,10 +46,15 @@ export async function enviarEmail(env, { to, asunto, html }) {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + key, 'content-type': 'application/json' },
       body: JSON.stringify({ from, to: [to], subject: asunto, html }),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!r.ok) return { ok: false, error: 'resend_' + r.status };
+    if (!r.ok) {
+      console.error(JSON.stringify({ tipo: 'resend_error', status: r.status }));
+      return { ok: false, error: 'resend_' + r.status };
+    }
     return { ok: true };
-  } catch {
+  } catch (e) {
+    console.error(JSON.stringify({ tipo: 'resend_error', error: String((e && e.message) || e).slice(0, 120) }));
     return { ok: false, error: 'red' };
   }
 }

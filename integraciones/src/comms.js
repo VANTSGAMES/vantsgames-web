@@ -32,8 +32,12 @@ export async function webhookDiscord(env, destino, payload) {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(8000),
     });
+    if (!r.ok) {
+      console.error(JSON.stringify({ tipo: 'discord_webhook_error', destino, status: r.status }));
+    }
     return r.ok;
-  } catch {
+  } catch (e) {
+    console.error(JSON.stringify({ tipo: 'discord_webhook_error', destino, error: String((e && e.message) || e).slice(0, 120) }));
     return false;
   }
 }
@@ -57,7 +61,7 @@ async function limitePorIp(env, req, prefijo, max, ventanaMin = 60) {
   const clave = prefijo + '_' + ventana + '_' + ip.slice(0, 45);
   const r = await env.DB.prepare('SELECT valor FROM integ_estado WHERE clave = ?').bind(clave).first().catch(() => null);
   if (r && Number(r.valor) >= max) return false;
-  await env.DB.prepare('INSERT INTO integ_estado (clave, valor) VALUES (?, 2) ON CONFLICT(clave) DO UPDATE SET valor = CAST(valor AS INTEGER) + 1').bind(clave).run().catch(() => null);
+  await env.DB.prepare('INSERT INTO integ_estado (clave, valor) VALUES (?, 1) ON CONFLICT(clave) DO UPDATE SET valor = CAST(valor AS INTEGER) + 1').bind(clave).run().catch(() => null);
   return true;
 }
 

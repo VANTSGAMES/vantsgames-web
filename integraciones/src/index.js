@@ -36,7 +36,8 @@ const cache = new Map(); // caché en memoria del isolate
 function cors(env, req) {
   const origin = req.headers.get('origin') || '';
   const permitidos = String(env.SITE_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  const ok = !origin || permitidos.includes(origin) || /^http:\/\/localhost(:\d+)?$/.test(origin);
+  const allowLocal = env.ALLOW_LOCALHOST === '1' && /^http:\/\/localhost(:\d+)?$/.test(origin);
+  const ok = !origin || permitidos.includes(origin) || allowLocal;
   const headers = {
     'Access-Control-Allow-Origin': ok && origin ? origin : permitidos[0] || '*',
     'Access-Control-Allow-Headers': 'authorization, content-type',
@@ -190,7 +191,8 @@ async function tokenApp(env, prov) {
       client_id: prov === 'twitch' ? env.TWITCH_CLIENT_ID : env.KICK_CLIENT_ID,
       client_secret: prov === 'twitch' ? env.TWITCH_CLIENT_SECRET : env.KICK_CLIENT_SECRET,
     });
-    const r = await fetch(url, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+    const r = await fetch(url, { method: 'POST', body, headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(9000) });
+    if (!r.ok) throw new Error('token_' + prov + '_' + r.status);
     const j = await r.json().catch(() => ({}));
     if (!j.access_token) throw new Error('token_' + prov);
     return j.access_token;
@@ -200,7 +202,11 @@ async function directosTwitch(env, logins) {
   if (!logins.length || !env.TWITCH_CLIENT_SECRET) return [];
   const tk = await tokenApp(env, 'twitch');
   const q = logins.slice(0, 100).map((l) => 'user_login=' + encodeURIComponent(l)).join('&');
-  const r = await fetch('https://api.twitch.tv/helix/streams?' + q, { headers: { Authorization: 'Bearer ' + tk, 'Client-Id': env.TWITCH_CLIENT_ID } });
+  const r = await fetch('https://api.twitch.tv/helix/streams?' + q, { headers: { Authorization: 'Bearer ' + tk, 'Client-Id': env.TWITCH_CLIENT_ID }, signal: AbortSignal.timeout(9000) });
+  if (!r.ok) {
+    if (r.status === 401) cache.delete('tok:twitch');
+    throw new Error('twitch_' + r.status);
+  }
   const j = await r.json().catch(() => ({}));
   const vivos = new Map((j.data || []).map((s) => [s.user_login.toLowerCase(), s]));
   return logins.map((l) => {
@@ -218,7 +224,11 @@ async function directosKick(env, slugs) {
   if (!slugs.length || !env.KICK_CLIENT_SECRET) return [];
   const tk = await tokenApp(env, 'kick');
   const q = slugs.slice(0, 50).map((s) => 'slug=' + encodeURIComponent(s)).join('&');
-  const r = await fetch('https://api.kick.com/public/v1/channels?' + q, { headers: { Authorization: 'Bearer ' + tk, Accept: 'application/json' } });
+  const r = await fetch('https://api.kick.com/public/v1/channels?' + q, { headers: { Authorization: 'Bearer ' + tk, Accept: 'application/json' }, signal: AbortSignal.timeout(9000) });
+  if (!r.ok) {
+    if (r.status === 401) cache.delete('tok:kick');
+    throw new Error('kick_' + r.status);
+  }
   const j = await r.json().catch(() => ({}));
   const por = new Map((j.data || []).map((c) => [String(c.slug).toLowerCase(), c]));
   return slugs.map((sl) => {
@@ -254,11 +264,17 @@ async function discord(env, categoria, payload) {
   if (!env.DISCORD_BOT_TOKEN) return;
   const c = await env.DB.prepare('SELECT channel_id FROM discord_channels WHERE category = ?').bind(categoria).first();
   if (!c) return;
-  await fetch('https://discord.com/api/v10/channels/' + c.channel_id + '/messages', {
-    method: 'POST',
-    headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN, 'content-type': 'application/json' },
-    body: JSON.stringify(payload),
-  }).catch(() => null);
+  try {
+    const r = await fetch('https://discord.com/api/v10/channels/' + c.channel_id + '/messages', {
+      method: 'POST',
+      headers: { Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN, 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) console.error(JSON.stringify({ tipo: 'discord_bot_error', categoria, status: r.status }));
+  } catch (e) {
+    console.error(JSON.stringify({ tipo: 'discord_bot_error', categoria, error: String((e && e.message) || e).slice(0, 120) }));
+  }
 }
 async function estado(env, clave, valor) {
   if (valor === undefined) {
@@ -505,7 +521,11 @@ export default {
     }
     // Response.redirect() trae cabeceras inmutables: se copia antes de añadir CORS.
     res = new Response(res.body, res);
-    for (const [k, v] of Object.entries(h)) res.headers.set(k, v);
+    const keepWildcard = res.headers.get('access-control-allow-origin') === '*';
+    for (const [k, v] of Object.entries(h)) {
+      if (keepWildcard && (k === 'Access-Control-Allow-Origin' || k === 'Access-Control-Allow-Credentials')) continue;
+      res.headers.set(k, v);
+    }
     return res;
   },
   async scheduled(_ev, env, ctx) {

@@ -86,7 +86,7 @@ export async function identidades(db) {
     const nick = (perf && perf.nickname) || (conSub[0] && (conSub[0].display_name || conSub[0].username)) || (rk && rk.nick) || (conXp[0] && (conXp[0].display_name || conXp[0].username)) || null;
     if (!nick) continue;
     const foto = fotos.get(pid);
-    const fotoUrl = foto ? (foto.tiene ? 'https://vants-integraciones.vants.workers.dev/foto/' + pid + '?v=' + encodeURIComponent(String(foto.actualizado || '').replace(/\D/g, '')) : foto.url) : null;
+    const fotoUrl = foto ? (foto.tiene ? 'https://int.vants.cc/foto/' + pid + '?v=' + encodeURIComponent(String(foto.actualizado || '').replace(/\D/g, '')) : foto.url) : null;
     const avatar = fotoUrl || (rk && rk.avatar) || gr.links.find((l) => l.avatar_url)?.avatar_url || conXp.find((p) => p.avatar_url && !/embed\/avatars/.test(p.avatar_url))?.avatar_url || null;
     const ident = {
       pid, principal, nick, avatar, fotoPropia: !!fotoUrl,

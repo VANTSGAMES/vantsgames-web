@@ -30,9 +30,17 @@ async function crearState(env, sub) {
   const datos = b64u(enc.encode(JSON.stringify({ s: sub, e: Date.now() + 10 * 60_000, n: crypto.randomUUID() })));
   return datos + '.' + (await firma(env, datos));
 }
+function timingSafeEqualStr(a, b) {
+  const sa = String(a || '');
+  const sb = String(b || '');
+  if (sa.length !== sb.length) return false;
+  let diff = 0;
+  for (let i = 0; i < sa.length; i++) diff |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  return diff === 0;
+}
 async function leerState(env, st) {
   const [datos, f] = String(st || '').split('.');
-  if (!datos || !f || f !== (await firma(env, datos))) return null;
+  if (!datos || !f || !timingSafeEqualStr(f, await firma(env, datos))) return null;
   const o = JSON.parse(desB64u(datos));
   return o.e > Date.now() ? o.s : null;
 }
@@ -40,7 +48,7 @@ async function leerState(env, st) {
 // Redirect URI fijo (debe coincidir EXACTAMENTE con el registrado en el Epic
 // Developer Portal). Se puede sobreescribir con la variable EPIC_REDIRECT_URI.
 const callbackUrl = (env, url) => env.EPIC_REDIRECT_URI || (url.origin + '/epic/callback');
-const volver = (env, q) => Response.redirect((env.SITE_URL || 'https://vants.vants.workers.dev') + '/perfil/cuentas?' + q, 302);
+const volver = (env, q) => Response.redirect((env.SITE_URL || 'https://vants.cc') + '/perfil/cuentas?' + q, 302);
 
 function resumen(d) {
   const s = d && d.stats && d.stats.all && d.stats.all.overall;

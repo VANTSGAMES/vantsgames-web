@@ -261,7 +261,7 @@ export async function signVantsJwt(claims, env, ttlSec = ACCESS_TTL_SEC) {
 async function fetchJwks(url, fetchImpl = fetch) {
   const cached = jwksRemoteCache.get(url);
   if (cached && Date.now() - cached.at < 3600_000) return cached.keys;
-  const r = await fetchImpl(url);
+  const r = await fetchImpl(url, { signal: AbortSignal.timeout(10_000) });
   if (!r.ok) throw new Error('jwks_fetch_' + r.status);
   const j = await r.json();
   const keys = Array.isArray(j.keys) ? j.keys : [];
@@ -271,7 +271,7 @@ async function fetchJwks(url, fetchImpl = fetch) {
 
 async function verifyRs256WithKeys(partes, cab, keys) {
   if (cab.alg !== 'RS256') throw new Error('jwt_alg');
-  const llave = keys.find((k) => !cab.kid || k.kid === cab.kid);
+  const llave = keys.find((k) => (k.kid ? cab.kid && k.kid === cab.kid : true));
   if (!llave) throw new Error('jwt_kid');
   const pub = await crypto.subtle.importKey(
     'jwk',
@@ -311,8 +311,20 @@ export async function verificarJwtDual(token, env, opts = {}) {
     if (cached && Date.now() - cached.at < 60_000) {
       return cached.claims;
     }
+    // Validar aud/azp contra GOOGLE_OAUTH_CLIENT_ID para evitar tokens de otras apps.
+    if (env && env.GOOGLE_OAUTH_CLIENT_ID) {
+      const ti = await fetchImpl('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(rawToken), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!ti.ok) throw new Error('jwt_malo');
+      const tiJson = await ti.json().catch(() => null);
+      const tokenAud = tiJson && (tiJson.aud || tiJson.azp);
+      if (!tokenAud || tokenAud !== env.GOOGLE_OAUTH_CLIENT_ID) throw new Error('jwt_aud');
+    }
     const r = await fetchImpl('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${rawToken}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000),
     });
     if (!r.ok) throw new Error('jwt_malo');
     const info = await r.json().catch(() => null);

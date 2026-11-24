@@ -20,7 +20,7 @@ AUTH0_AUDIENCE = "https://api.vants.app"
 VANTS_AUTH_ISSUER = "https://vants.cc"
 GOOGLE_OAUTH_CLIENT_ID = "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com"
 GOOGLE_OAUTH_REDIRECT_URI = "https://vants.cc/auth/google/callback"
-SITE_ORIGINS = "https://vants.cc,https://www.vants.cc,https://vants.vants.workers.dev"
+SITE_ORIGINS = "https://vants.cc,https://www.vants.cc"
 SITE_URL = "https://vants.cc"
 TWITCH_CLIENT_ID = "x6zeqc8b632zlqz21dm88cw5tna8mj"
 KICK_CLIENT_ID = "01M4W9NBXSXR43BP4T2KD8KCX1"
@@ -33,11 +33,7 @@ EPIC_CLIENT_ID = "xyza7891Z6aDFRRrUpYMO0Hi3cf2Lmni"
 #   bus.vants.cc  -> vants-bus (bus interno de eventos)
 # (vants-kick, vants-riot-verify, vants-google-verify y vants-faceit-webhook ya cuelgan de
 #  vants.cc mediante rutas: /kick/*, /riot.txt, /google*.html y /api/webhooks/faceit*)
-# Mientras los portales de proveedores no tengan registrada la URL nueva, se mantienen las
-# URLs workers.dev (van dentro de cada var). Para pasar Epic al dominio oficial:
-#   1) Epic Developer Portal -> Redirect URLs: añadir https://int.vants.cc/epic/callback
-#   2) Cambiar EPIC_REDIRECT_URI a https://int.vants.cc/epic/callback y desplegar
-EPIC_REDIRECT_URI = "https://vants-integraciones.vants.workers.dev/epic/callback"
+EPIC_REDIRECT_URI = "https://int.vants.cc/epic/callback"
 CANALES_TWITCH = "feisreal"
 CANALES_KICK = "feispla"
 # Tope diario global de llamadas a vidIQ MCP (5 créditos/llamada; 20 = máx 100 créditos/día).

@@ -44,4 +44,4 @@ jobs:
           if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | npx -y wrangler@4 secret put RESEND_API_KEY; fi
           if [ -n "$VIDIQ_MCP_TOKEN" ]; then printf '%s' "$VIDIQ_MCP_TOKEN" | npx -y wrangler@4 secret put VIDIQ_MCP_TOKEN; fi
       - name: Salud
-        run: curl -fsS https://vants-integraciones.vants.workers.dev/salud
+        run: curl -fsS https://int.vants.cc/salud

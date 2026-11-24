@@ -14,7 +14,7 @@ import { webhookDiscord } from './comms.js';
 import { identidadDe, invalidarIdentidades, perfilPublico, jugadoresPublicos, rosterOficial, editarRoster } from './perfiles.js'
 import { rutasInsignias, invalidarInsignias, evaluar } from './insignias.js';
 
-const INT_URL = 'https://vants-integraciones.vants.workers.dev';
+const INT_URL = 'https://int.vants.cc';
 const JUEGOS = ['valorant', 'cs2', 'fortnite', 'fc27', 'smash', 'warzone', 'freefire', 'lol', 'wildrift', 'mlbb', 'clashroyale', 'otro'];
 const normalizarJuego = (v) => {
   const s = String(v || '').trim().toLowerCase();
@@ -63,7 +63,7 @@ export function analizarClip(raw) {
   try { u = new URL(String(raw || '').trim()); } catch { return null; }
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
   const h = u.hostname.replace(/^www\.|^m\./, '').toLowerCase();
-  const parent = 'vants.vants.workers.dev';
+  const parent = 'vants.cc&parent=www.vants.cc';
   let m;
   if (h === 'youtu.be' && (m = u.pathname.match(/^\/([\w-]{11})/))) return yt(m[1]);
   if (h === 'youtube.com') {
@@ -151,7 +151,7 @@ async function clipsTwitchCanal(env, H, login) {
     const cs = (await rc.json().catch(() => ({}))).data || [];
     return cs.map((c) => ({
       id: 'tw_' + c.id, origen: 'twitch', plataforma: 'twitch', url: c.url, titulo: c.title, juego: juegoTwitch(c.game_id),
-      miniatura: c.thumbnail_url || null, embed: 'https://clips.twitch.tv/embed?clip=' + c.id + '&parent=vants.vants.workers.dev&autoplay=false',
+      miniatura: c.thumbnail_url || null, embed: 'https://clips.twitch.tv/embed?clip=' + c.id + '&parent=vants.cc&parent=www.vants.cc&autoplay=false',
       vistas: c.view_count, duracion: c.duration, creado: c.created_at, autor: c.creator_name, propio: false,
     }));
   });
@@ -208,7 +208,7 @@ async function canalKickDe(db, sub) {
 // Clips subidos desde el ordenador (vitrina vants-clips del Worker principal).
 async function clipsSubidos(H, subs) {
   const j = await H.cacheado('featured', 60_000, async () => {
-    const r = await fetch('https://vants.vants.workers.dev/api/clips/featured', { headers: { 'User-Agent': UA_NAV, Accept: 'application/json' } });
+    const r = await fetch('https://vants.cc/api/clips/featured', { headers: { 'User-Agent': UA_NAV, Accept: 'application/json' }, signal: AbortSignal.timeout(9000) });
     return r.ok ? r.json() : { clips: [] };
   }).catch(() => ({ clips: [] }));
   return ((j && j.clips) || []).filter((c) => c && subs.includes(c.sub)).map((c) => ({
