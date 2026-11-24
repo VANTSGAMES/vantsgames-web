@@ -14,7 +14,7 @@ const ESPECIALES: CommandItem[] = [
   { id: "ir-planes", label: "Planes", hint: "PRO, CREATOR y Pase S4", to: "/membresias", group: "Ir a" },
   { id: "ir-empresas", label: "Empresas", hint: "Patrocinios y alianzas", to: "/empresas", group: "Ir a", keywords: ["b2b", "marcas"] },
   { id: "ir-soporte", label: "Soporte", hint: "Abrir un ticket", to: "/perfil/soporte", group: "Ir a", keywords: ["ticket", "ayuda"] },
-  { id: "ir-app", label: "App Android", hint: "Descargar VANTS Movil APK", to: "https://github.com/VANTSGAMES/banter/releases/latest/download/VANTSMovil.apk", group: "Ir a", keywords: ["apk", "descargar", "movil"] },
+  { id: "ir-app", label: "App Android", hint: "Descargar VANTS Movil APK", to: "https://vants.cc/VANTSMovil.apk", group: "Ir a", keywords: ["apk", "descargar", "movil"] },
 ];
 
 const JUEGOS_ITEMS: CommandItem[] = JUEGOS.map((j) => ({

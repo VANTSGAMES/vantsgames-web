@@ -232,7 +232,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
   );
 }
 
-const APP_APK = "https://github.com/VANTSGAMES/banter/releases/latest/download/VANTSMovil.apk";
+const APP_APK = "https://vants.cc/VANTSMovil.apk";
 
 /** Columnas del footer: reflejan la navegación principal + legal y app. */
 const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?: boolean }[] }[] = [
