@@ -8,7 +8,8 @@ import { existsSync } from "node:fs";
 import sharp from "sharp";
 
 const RES = "android/app/src/main/res";
-const MARCA = "client/public/brand/vants-mark.svg";
+const MARCA_PNG = "client/public/brand/vants-mark-1024.png";
+const MARCA_SVG = "client/public/brand/vants-mark.svg";
 const FONDO = "#0A0A0B";
 
 if (!existsSync(RES)) {
@@ -16,18 +17,25 @@ if (!existsSync(RES)) {
   process.exit(1);
 }
 
-const svg = readFileSync(MARCA);
+const usaPng = existsSync(MARCA_PNG);
+const marcaBuf = readFileSync(usaPng ? MARCA_PNG : MARCA_SVG);
+const renderMarca = (px) =>
+  (usaPng ? sharp(marcaBuf) : sharp(marcaBuf, { density: 720 }))
+    .resize(px, px, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
 
-// Icono cuadrado: marca centrada sobre fondo de la marca (85% del lienzo, margen 7.5%)
+// Icono cuadrado: marca oficial centrada sobre fondo oscuro #0A0A0B
 const densidades = { mdpi: 48, hdpi: 72, xhdpi: 96, xxhdpi: 144, xxxhdpi: 192 };
 for (const [dens, px] of Object.entries(densidades)) {
   const dir = `${RES}/mipmap-${dens}`;
   mkdirSync(dir, { recursive: true });
-  const marca = Math.round(px * 0.72);
+  const marca = Math.round(px * 0.76);
   const margen = Math.round((px - marca) / 2);
+  const iconoMarca = await renderMarca(marca);
   for (const nombre of ["ic_launcher.png", "ic_launcher_round.png"]) {
     await sharp({ create: { width: px, height: px, channels: 4, background: FONDO } })
-      .composite([{ input: await sharp(svg, { density: 720 }).resize(marca, marca).png().toBuffer(), left: margen, top: margen }])
+      .composite([{ input: iconoMarca, left: margen, top: margen }])
       .png()
       .toFile(`${dir}/${nombre}`);
   }
@@ -35,11 +43,18 @@ for (const [dens, px] of Object.entries(densidades)) {
 // Iconos adaptativos: usamos PNG directo, quitamos la variante anydpi-v26
 for (const d of ["mipmap-anydpi-v26"]) rmSync(`${RES}/${d}`, { recursive: true, force: true });
 
-// Splash: sólido oscuro (styles.xml del template referencia @drawable/splash)
+// Splash: fondo oscuro #0A0A0B con el logo oficial de VANTS centrado
 mkdirSync(`${RES}/drawable`, { recursive: true });
 mkdirSync(`${RES}/drawable-land`, { recursive: true });
-await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } }).png().toFile(`${RES}/drawable/splash.png`);
-await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } }).png().toFile(`${RES}/drawable-land/splash.png`);
+const splashLogo = await renderMarca(360);
+await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } })
+  .composite([{ input: splashLogo, left: 360, top: 780 }])
+  .png()
+  .toFile(`${RES}/drawable/splash.png`);
+await sharp({ create: { width: 1920, height: 1080, channels: 4, background: FONDO } })
+  .composite([{ input: splashLogo, left: 780, top: 360 }])
+  .png()
+  .toFile(`${RES}/drawable-land/splash.png`);
 
 // Versión
 const gradle = `${'android'}/app/build.gradle`;
