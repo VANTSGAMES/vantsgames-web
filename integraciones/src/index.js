@@ -367,10 +367,12 @@ async function rutas(req, env, url) {
   }
 
   // Descarga directa sin redirección 302 del instalador VANTS PC (requerido por Microsoft Store Win32).
-  const dlMatch = p.match(/^\/descargas\/vants-pc\/(\d+\.\d+\.\d+)\/(VANTS-Setup-\d+\.\d+\.\d+\.exe)$/);
+  const dlMatch = p.match(/^\/descargas\/vants-pc\/(\d+\.\d+\.\d+)\/(VANTS-(?:Setup|Install)(?:-\d+\.\d+\.\d+)?\.exe)$/);
   if (dlMatch && (m === 'GET' || m === 'HEAD')) {
     const [, ver, file] = dlMatch;
-    if (file !== `VANTS-Setup-${ver}.exe`) return new Response('not found', { status: 404 });
+    if (file !== `VANTS-Setup-${ver}.exe` && file !== `VANTS-Install-${ver}.exe` && file !== 'VANTS-Install.exe') {
+      return new Response('not found', { status: 404 });
+    }
     const ghUrl = `https://github.com/VANTSGAMES/banter/releases/download/v${ver}/${file}`;
     const upHeaders = { 'User-Agent': 'VANTS-Store-Proxy/1.0' };
     const range = req.headers.get('range');
