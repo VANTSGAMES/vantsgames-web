@@ -122,16 +122,24 @@ jobs:
           cd ..
           ls -la VANTSMovil*.apk
 
-      - name: Publicar APK en GitHub Releases público (VANTSGAMES/banter)
+      - name: Guardar APK firmado como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VANTSMovil-apk
+          path: |
+            VANTSMovil-${{ inputs.version }}.apk
+            VANTSMovil.apk
+
+      - name: Publicar en GitHub Releases
         env:
-          GH_TOKEN: ${{ secrets.GHPAT_VANTS || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v${{ inputs.version }}"
-          if gh release view "$TAG" -R VANTSGAMES/banter >/dev/null 2>&1; then
-            gh release upload "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" --clobber -R VANTSGAMES/banter
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" --clobber -R "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" "VANTSMovil-${{ inputs.version }}.apk" "VANTSMovil.apk" \
-              --title "VANTS PC & Movil $TAG" \
-              --notes "App Android oficial de VANTS GAMES (VANTS Movil $TAG, 100% nativa e independiente)." \
-              --latest -R VANTSGAMES/banter
+              --title "VANTS Movil $TAG" \
+              --notes "App Android oficial de VANTS GAMES (VANTS Movil $TAG, 100% adaptada a Android)." \
+              --latest -R "$GITHUB_REPOSITORY"
           fi
