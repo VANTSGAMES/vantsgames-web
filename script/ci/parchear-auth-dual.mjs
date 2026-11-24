@@ -214,6 +214,22 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 8) Fallback limpio 200 cuando /api/clips/featured devuelve 502 vitrina_no_disponible.
+  if (!c.includes("/* VANTS_CLIPS_FEATURED_FALLBACK_V1 */")) {
+    const TARGET_CALL2 = `      const __r301 = await fetchWorker(__reqV, env, ctx);`;
+    const REPLACED_CALL2 = `      const __r301 = await fetchWorker(__reqV, env, ctx);
+      /* VANTS_CLIPS_FEATURED_FALLBACK_V1 */
+      if (__r301 && __r301.status >= 500 && __redir301.pathname === "/api/clips/featured" && request.method === "GET") {
+        return new Response(JSON.stringify({ ok: true, clips: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8" }
+        });
+      }`;
+    if (c.includes(TARGET_CALL2)) {
+      c = c.replace(TARGET_CALL2, REPLACED_CALL2);
+    }
+  }
+
   return c;
 }
 

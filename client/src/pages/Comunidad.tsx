@@ -37,8 +37,7 @@ function Destacados() {
   const q = useApi<any>("/api/clips/featured");
   const items: any[] = q.data?.clips || q.data?.data || [];
   if (q.isLoading) return <Skel h={160} n={1} />;
-  if (q.error || items.length === 0)
-    return <Empty code={"clips · " + (q.error?.code || "0")} title="La vitrina de clips destacados está vacía" text="Los clips destacados los selecciona la organización y los publica el servicio de clips (VANTS-Clipper). Mientras tanto puedes ver los clips más recientes." action={<Link href="/clips/recientes" className="link-arrow">Ver recientes →</Link>} />;
+  if (q.error || items.length === 0) return null;
   return (
     <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
       {items.map((c: any) => (
