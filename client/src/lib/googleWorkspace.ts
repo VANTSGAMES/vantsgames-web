@@ -8,7 +8,7 @@ import { getAuthToken } from "./api";
 export type { AuthErrorDetail };
 
 const INT_ORIGIN: string = (
-  (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev"
+  (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://int.vants.cc"
 ).replace(/\/$/, "");
 
 function resolveProUrl(path: string): string {

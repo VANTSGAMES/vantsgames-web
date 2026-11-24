@@ -14,7 +14,7 @@ export const ASSET_ORIGIN: string =
 const FN_ORIGIN: string = (import.meta.env.VITE_FN_ORIGIN as string | undefined) || "";
 
 /** Worker vants-integraciones (FACEIT, directos Twitch/Kick, notificaciones). Rutas "/int/...". */
-const INT_ORIGIN: string = (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev";
+const INT_ORIGIN: string = (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://int.vants.cc";
 function destino(path: string): string {
   if (path.startsWith("/int/")) return INT_ORIGIN + path.slice(4);
   return (FN_ORIGIN && path.startsWith("/fn/") ? FN_ORIGIN : API_BASE) + path;

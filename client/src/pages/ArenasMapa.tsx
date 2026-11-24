@@ -371,7 +371,7 @@ export default function ArenasMapa() {
     }
     let active = true;
     const intOrigin = (
-      (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://vants-integraciones.vants.workers.dev"
+      (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://int.vants.cc"
     ).replace(/\/$/, "");
     const mapsConfigUrl = import.meta.env.VITE_AUTH_ENABLED === "1" ? `${intOrigin}/maps/config` : "/api/maps/config";
     fetch(mapsConfigUrl, { headers: { Accept: "application/json" } })
