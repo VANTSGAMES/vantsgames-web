@@ -16,13 +16,27 @@ import firebaseConfig from "../../../firebase-applet-config.json";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
-// La app de Firebase se inicializa aquí: desde la actualización Workspace el
-// login ya no pasa por Firebase Auth (es OAuth de Google Workspace), pero
-// Firestore sigue necesitando la app para la base del applet.
-const appFirebase = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const firebaseAuth = getAuth(appFirebase);
+// Proyecto oficial VANTS: semiotic-ion-508913-r1 (projects/238603325169).
+const effectiveFirebaseConfig = {
+  ...firebaseConfig,
+  projectId:
+    (import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_ID as string | undefined) ||
+    firebaseConfig.projectId ||
+    "semiotic-ion-508913-r1",
+  messagingSenderId:
+    (import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_NUMBER as string | undefined) ||
+    firebaseConfig.messagingSenderId ||
+    "238603325169",
+  oAuthClientId:
+    (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined) ||
+    firebaseConfig.oAuthClientId ||
+    "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com",
+};
 
-export const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
+const appFirebase = getApps().length ? getApp() : initializeApp(effectiveFirebaseConfig);
+export const firebaseAuth = effectiveFirebaseConfig.apiKey ? getAuth(appFirebase) : (null as any);
+
+export const db = getFirestore(appFirebase, effectiveFirebaseConfig.firestoreDatabaseId);
 
 export enum OperationType {
   CREATE = "create",
@@ -83,7 +97,7 @@ export function handleFirestoreError(
 // Startup connectivity probe (validates Firebase config & databaseId)
 let connectionTested = false;
 export async function testFirestoreConnection(): Promise<void> {
-  if (connectionTested) return;
+  if (connectionTested || !effectiveFirebaseConfig.apiKey) return;
   connectionTested = true;
   try {
     await getDocFromServer(doc(db, "test", "connection"));

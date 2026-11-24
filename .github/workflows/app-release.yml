@@ -70,7 +70,9 @@ jobs:
         env:
           APP_VERSION: ${{ inputs.version }}
           APP_VERSION_CODE: ${{ inputs.codigo }}
-          VANTS_PLAY_GAMES_APP_ID: ${{ secrets.VANTS_PLAY_GAMES_APP_ID || '238603325169' }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'semiotic-ion-508913-r1' }}
+          GCP_PROJECT_NUMBER: ${{ secrets.GCP_PROJECT_NUMBER || '238603325169' }}
+          VANTS_PLAY_GAMES_APP_ID: ${{ secrets.VANTS_PLAY_GAMES_APP_ID || secrets.GCP_PROJECT_NUMBER || '238603325169' }}
         run: node script/ci/setup-android.mjs
 
       - name: Icono, splash y versión

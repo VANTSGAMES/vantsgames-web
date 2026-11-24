@@ -165,8 +165,18 @@ function extractGroundingSources(response: any): { sources: GroundingSource[]; s
 export function registerGeminiRoutes(app: Express) {
   /** Estado rápido de disponibilidad sin exponer ninguna clave */
   app.get("/api/ai/status", (_req: Request, res: Response) => {
+    const gcpProjectId =
+      process.env.GCP_PROJECT_ID ||
+      process.env.VITE_GOOGLE_CLOUD_PROJECT_ID ||
+      "semiotic-ion-508913-r1";
+    const gcpProjectNumber =
+      process.env.GCP_PROJECT_NUMBER ||
+      process.env.VITE_GOOGLE_CLOUD_PROJECT_NUMBER ||
+      "238603325169";
     res.json({
       configured: Boolean(process.env.GEMINI_API_KEY),
+      gcpProjectId,
+      gcpProjectNumber,
       defaultModel: "gemini-4-hydrogen",
       models: [
         { id: "gemini-4-hydrogen", label: "Gemini 4 Hydrogen", tier: "general", grounding: true },

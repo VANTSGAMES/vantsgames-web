@@ -119,8 +119,10 @@ const MANIFEST_XML = `<?xml version="1.0" encoding="utf-8"?>
 `;
 writeFileSync(`${APP_SRC}/AndroidManifest.xml`, MANIFEST_XML.trim() + "\n");
 
-// 2. strings.xml y styles.xml (Proyecto Google Cloud / AI Studio: projects/238603325169)
-const PLAY_GAMES_ID = process.env.VANTS_PLAY_GAMES_APP_ID || "238603325169";
+// 2. strings.xml y styles.xml (Proyecto Google Cloud / AI Studio: projects/238603325169 · semiotic-ion-508913-r1)
+const GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || process.env.VITE_GOOGLE_CLOUD_PROJECT_ID || "semiotic-ion-508913-r1";
+const GCP_PROJECT_NUMBER = process.env.GCP_PROJECT_NUMBER || "238603325169";
+const PLAY_GAMES_ID = process.env.VANTS_PLAY_GAMES_APP_ID || GCP_PROJECT_NUMBER;
 const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VANTS Movil</string>
@@ -128,7 +130,8 @@ const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
     <string name="package_name">cc.vants.app</string>
     <string name="custom_url_scheme">cc.vants.app</string>
     <string name="game_services_project_id">${PLAY_GAMES_ID}</string>
-    <string name="google_cloud_project_number">238603325169</string>
+    <string name="gcp_project_id">${GCP_PROJECT_ID}</string>
+    <string name="google_cloud_project_number">${GCP_PROJECT_NUMBER}</string>
 </resources>
 `;
 writeFileSync(`${RES_VALUES}/strings.xml`, STRINGS_XML.trim() + "\n");

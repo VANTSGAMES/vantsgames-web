@@ -1,12 +1,13 @@
 {
-  "projectId": "gen-lang-client-0825603513",
-  "appId": "1:139095543579:web:71bc28c4f2df5542300dbe",
-  "apiKey": "AIzaSyDMWEFRISM-XGrGvcNCx3oe-ne2n6ePYpo",
-  "authDomain": "gen-lang-client-0825603513.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-vantsgamesweb-ba128e10-3124-4199-bc0b-2872b129cc2b",
-  "storageBucket": "gen-lang-client-0825603513.firebasestorage.app",
-  "messagingSenderId": "139095543579",
+  "projectId": "semiotic-ion-508913-r1",
+  "projectNumber": "238603325169",
+  "appId": "1:238603325169:web:vantsgamesweb",
+  "apiKey": "",
+  "authDomain": "semiotic-ion-508913-r1.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "semiotic-ion-508913-r1.firebasestorage.app",
+  "messagingSenderId": "238603325169",
   "measurementId": "",
-  "oAuthClientId": "139095543579-1dbrkuvovomeakma1pc9fjt7fcuj2k1g.apps.googleusercontent.com",
+  "oAuthClientId": "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -40,6 +40,9 @@ export class GoogleAuthClientError extends Error {
 export const GOOGLE_CLOUD_PROJECT_ID =
   (import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_ID as string) || "semiotic-ion-508913-r1";
 
+export const GOOGLE_CLOUD_PROJECT_NUMBER =
+  (import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_NUMBER as string) || "238603325169";
+
 const GOOGLE_OAUTH_CLIENT_ID =
   (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string) ||
   "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com";

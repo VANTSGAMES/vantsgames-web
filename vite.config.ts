@@ -90,6 +90,22 @@ export default defineConfig({
     "import.meta.env.VITE_GOOGLE_MAPS_API_KEY": JSON.stringify(
       process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || "",
     ),
+    "import.meta.env.VITE_INT_ORIGIN": JSON.stringify(
+      process.env.VITE_INT_ORIGIN || "https://int.vants.cc",
+    ),
+    "import.meta.env.VITE_FN_ORIGIN": JSON.stringify(
+      process.env.VITE_FN_ORIGIN || "https://fn.vants.cc",
+    ),
+    "import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_ID": JSON.stringify(
+      process.env.VITE_GOOGLE_CLOUD_PROJECT_ID || process.env.GCP_PROJECT_ID || "semiotic-ion-508913-r1",
+    ),
+    "import.meta.env.VITE_GOOGLE_CLOUD_PROJECT_NUMBER": JSON.stringify(
+      process.env.VITE_GOOGLE_CLOUD_PROJECT_NUMBER || process.env.GCP_PROJECT_NUMBER || "238603325169",
+    ),
+    "import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID": JSON.stringify(
+      process.env.VITE_GOOGLE_OAUTH_CLIENT_ID ||
+        "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com",
+    ),
   },
   resolve: {
     alias: {
