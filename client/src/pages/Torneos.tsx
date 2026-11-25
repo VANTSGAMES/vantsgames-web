@@ -19,6 +19,7 @@ import { classifyBracketStatus, filterBracketMatches, type BracketStatusFilter }
 import { useMembresia } from "@/lib/useMembresia";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { useQueryClient } from "@tanstack/react-query";
+import { LanzadorRapidoTorneo } from "@/components/DispositivosJuegos";
 
 const JUEGOS = filtrosJuegos();
 const POR_PAGINA = 12;
@@ -201,6 +202,8 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
           counts={conteosPorJuego}
           totalTodos={todosItems.length}
         />
+
+        {juego ? <LanzadorRapidoTorneo juegoSlug={juego} /> : null}
 
         <div className="panel" data-testid="panel-lista-torneos">
           {q.isLoading ? (
@@ -628,6 +631,11 @@ export function TorneoDetalle() {
           ].map(([k, v]) => <div key={k} className="p-4" style={{ background: "var(--grafito-1)" }}><div className="eyebrow mb-1">{k}</div><div className="num">{v}</div></div>)}
         </div>
       </header>
+      {t.game?.slug && (
+        <div className="wrap mt-6">
+          <LanzadorRapidoTorneo juegoSlug={t.game.slug} nombreTorneo={t.nombre} />
+        </div>
+      )}
       <div className="wrap mt-6">
         <div className="tabs" role="tablist">
           {[["resumen", "Resumen"], ["bracket", "Bracket"], ["partidos", "Partidos"]].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-torneo-" + v}>{l}</button>)}

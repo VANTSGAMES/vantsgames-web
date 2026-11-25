@@ -3,21 +3,39 @@ package cc.vants.app;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
+import com.google.android.gms.games.GamesClient;
+import com.google.android.gms.games.GamesSignInClient;
+import com.google.android.gms.games.PlayGames;
+import com.google.android.gms.games.PlayGamesSdk;
 
 public class MainActivity extends BridgeActivity {
 
+    private static final String TAG = "VantsMainActivity";
+    private boolean startupSignInTriggered = false;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Registra el plugin nativo de juegos y Google Play Juegos
+        // Inicializar Google Play Games Services v2 al arrancar la actividad
+        try {
+            PlayGamesSdk.initialize(this);
+        } catch (Exception e) {
+            Log.w(TAG, "PlayGamesSdk init warning: " + e.getMessage());
+        }
+
+        // Registrar el plugin nativo de juegos y Google Play Juegos
         registerPlugin(VantsGamesPlugin.class);
         super.onCreate(savedInstanceState);
 
-        // Estilo de barras de estado y navegación oscuras acordes a la estética de VANTS (#0A0A0B)
+        // Estilo de barras de estado y navegación oscuras acordes a VANTS (#0A0A0B)
         Window window = getWindow();
         if (window != null) {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
@@ -25,13 +43,54 @@ public class MainActivity extends BridgeActivity {
             window.setNavigationBarColor(Color.parseColor("#0A0A0B"));
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                // Mantener iconos claros sobre fondo negro
                 View decor = window.getDecorView();
                 int flags = decor.getSystemUiVisibility();
                 flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
                 flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
                 decor.setSystemUiVisibility(flags);
             }
+        }
+
+        // Optimización del WebView para móviles y tablets (sin destellos blancos y con DOM storage)
+        if (getBridge() != null && getBridge().getWebView() != null) {
+            WebView webView = getBridge().getWebView();
+            webView.setBackgroundColor(Color.parseColor("#0A0A0B"));
+            WebSettings settings = webView.getSettings();
+            settings.setDomStorageEnabled(true);
+            settings.setDatabaseEnabled(true);
+            settings.setMediaPlaybackRequiresUserGesture(false);
+        }
+
+        // Configurar el anclaje superior de la insignia oficial de bienvenida de Google Play Juegos
+        triggerPlayGamesWelcomeBadge();
+    }
+
+    private void triggerPlayGamesWelcomeBadge() {
+        try {
+            GamesClient gamesClient = PlayGames.getGamesClient(this);
+            gamesClient.setGravityForPopups(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            if (getWindow() != null && getWindow().getDecorView() != null) {
+                View root = getWindow().getDecorView().findViewById(android.R.id.content);
+                if (root != null) {
+                    gamesClient.setViewForPopups(root);
+                }
+            }
+
+            if (!startupSignInTriggered) {
+                startupSignInTriggered = true;
+                GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
+                signInClient.isAuthenticated().addOnCompleteListener(task -> {
+                    boolean authed = task.isSuccessful()
+                        && task.getResult() != null
+                        && task.getResult().isAuthenticated();
+                    if (!authed) {
+                        // Solicita inicio automático al abrir para mostrar la insignia oficial de Google Play Juegos
+                        signInClient.signIn();
+                    }
+                });
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "No se pudo disparar insignia inicial de Play Games: " + e.getMessage());
         }
     }
 }

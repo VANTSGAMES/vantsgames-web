@@ -169,6 +169,19 @@ export async function asegurarAuth(db) {
       creado TEXT NOT NULL DEFAULT (datetime('now'))
     )`),
     db.prepare('CREATE INDEX IF NOT EXISTS idx_auth_otp_email ON integ_auth_otp(email, creado DESC)'),
+    db.prepare(`CREATE TABLE IF NOT EXISTS integ_play_games_xp (
+      canonical_sub TEXT PRIMARY KEY,
+      player_id TEXT NOT NULL,
+      gamer_tag TEXT,
+      title TEXT,
+      current_level INTEGER,
+      next_level INTEGER,
+      current_xp_total INTEGER,
+      level_min_xp INTEGER,
+      level_max_xp INTEGER,
+      avatar_url TEXT,
+      actualizado TEXT NOT NULL DEFAULT (datetime('now'))
+    )`),
   ]);
   tablasListas = true;
 }
@@ -946,6 +959,203 @@ export async function rutasAuth(req, env, url, p, m, H) {
     return new Response(null, { status: 302, headers });
   }
 
+  if (p === '/auth/playgames/xp' && m === 'GET') {
+    const claims = await H.usuarioClaims(req, env);
+    await asegurarAuth(env.DB);
+    const row = await env.DB
+      .prepare('SELECT player_id, gamer_tag, title, current_level, next_level, current_xp_total, level_min_xp, level_max_xp, avatar_url, actualizado FROM integ_play_games_xp WHERE canonical_sub = ?')
+      .bind(claims.sub)
+      .first()
+      .catch(() => null);
+    return H.json({ ok: true, playGames: row || null });
+  }
+
+  if (p === '/auth/playgames/xp' && m === 'POST') {
+    const claims = await H.usuarioClaims(req, env);
+    const b = await req.json().catch(() => ({}));
+    const playerId = String(b.playerId || '').trim().slice(0, 80);
+    if (!playerId) return H.json({ ok: false, error: 'player_id_requerido' }, 400);
+    await asegurarAuth(env.DB);
+    const gamerTag = b.displayName ? String(b.displayName).trim().slice(0, 60) : null;
+    const title = b.title ? String(b.title).trim().slice(0, 80) : null;
+    const currentLevel = Number.isFinite(Number(b.currentLevel)) ? Number(b.currentLevel) : null;
+    const nextLevel = Number.isFinite(Number(b.nextLevel)) ? Number(b.nextLevel) : null;
+    const currentXpTotal = Number.isFinite(Number(b.currentXpTotal)) ? Number(b.currentXpTotal) : null;
+    const levelMinXp = Number.isFinite(Number(b.levelMinXp)) ? Number(b.levelMinXp) : null;
+    const levelMaxXp = Number.isFinite(Number(b.levelMaxXp)) ? Number(b.levelMaxXp) : null;
+    const avatarUrl = b.avatarUrl && /^https:\/\//.test(String(b.avatarUrl)) ? String(b.avatarUrl).slice(0, 400) : null;
+    await env.DB
+      .prepare(
+        `INSERT INTO integ_play_games_xp (canonical_sub, player_id, gamer_tag, title, current_level, next_level, current_xp_total, level_min_xp, level_max_xp, avatar_url, actualizado)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+         ON CONFLICT(canonical_sub) DO UPDATE SET
+           player_id = excluded.player_id,
+           gamer_tag = COALESCE(excluded.gamer_tag, integ_play_games_xp.gamer_tag),
+           title = COALESCE(excluded.title, integ_play_games_xp.title),
+           current_level = COALESCE(excluded.current_level, integ_play_games_xp.current_level),
+           next_level = COALESCE(excluded.next_level, integ_play_games_xp.next_level),
+           current_xp_total = COALESCE(excluded.current_xp_total, integ_play_games_xp.current_xp_total),
+           level_min_xp = COALESCE(excluded.level_min_xp, integ_play_games_xp.level_min_xp),
+           level_max_xp = COALESCE(excluded.level_max_xp, integ_play_games_xp.level_max_xp),
+           avatar_url = COALESCE(excluded.avatar_url, integ_play_games_xp.avatar_url),
+           actualizado = datetime('now')`,
+      )
+      .bind(claims.sub, playerId, gamerTag, title, currentLevel, nextLevel, currentXpTotal, levelMinXp, levelMaxXp, avatarUrl)
+      .run()
+      .catch(() => null);
+    return H.json({
+      ok: true,
+      playGames: {
+        player_id: playerId,
+        gamer_tag: gamerTag,
+        title,
+        current_level: currentLevel,
+        next_level: nextLevel,
+        current_xp_total: currentXpTotal,
+        level_min_xp: levelMinXp,
+        level_max_xp: levelMaxXp,
+      },
+    });
+  }
+
+  // Intercambio 100% in-app para Google Play Games Services v2 / Google Sign-In nativo / GIS
+  if (p === '/auth/playgames/exchange' && m === 'POST') {
+    if (!env.GOOGLE_OAUTH_CLIENT_ID || !env.VANTS_AUTH_PRIVATE_JWK) {
+      return H.json({ ok: false, error: 'vants_auth_no_configurado' }, 503);
+    }
+    const b = await req.json().catch(() => ({}));
+    const clientId = env.GOOGLE_OAUTH_CLIENT_ID;
+    let gUser = null;
+
+    if (b.serverAuthCode && env.GOOGLE_OAUTH_CLIENT_SECRET) {
+      const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code: String(b.serverAuthCode).trim(),
+          client_id: clientId,
+          client_secret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+          redirect_uri: '',
+          grant_type: 'authorization_code',
+        }),
+      });
+      if (!tokenRes.ok) {
+        return H.json({ ok: false, error: 'intercambio_google' }, 401);
+      }
+      const tokenJson = await tokenRes.json().catch(() => null);
+      if (tokenJson && tokenJson.id_token) {
+        try {
+          gUser = await verificarGoogleIdToken(tokenJson.id_token, clientId, null);
+        } catch (e) {
+          return H.json({ ok: false, error: String((e && e.message) || 'id_token_invalido') }, 401);
+        }
+      } else if (tokenJson && tokenJson.access_token) {
+        try {
+          const c = await verificarJwtDual(tokenJson.access_token, env);
+          gUser = {
+            sub: String(c.sub).replace(/^google-oauth2\|/, ''),
+            email: c.email,
+            name: c.name,
+            picture: c.picture,
+          };
+        } catch (e) {
+          return H.json({ ok: false, error: String((e && e.message) || 'access_token_invalido') }, 401);
+        }
+      }
+    } else if (b.idToken) {
+      try {
+        gUser = await verificarGoogleIdToken(String(b.idToken).trim(), clientId, null);
+      } catch (e) {
+        return H.json({ ok: false, error: String((e && e.message) || 'id_token_invalido') }, 401);
+      }
+    } else if (b.accessToken) {
+      try {
+        const c = await verificarJwtDual(String(b.accessToken).trim(), env);
+        gUser = {
+          sub: String(c.sub).replace(/^google-oauth2\|/, ''),
+          email: c.email,
+          name: c.name,
+          picture: c.picture,
+        };
+      } catch (e) {
+        return H.json({ ok: false, error: String((e && e.message) || 'access_token_invalido') }, 401);
+      }
+    } else {
+      return H.json({ ok: false, error: 'credencial_requerida' }, 400);
+    }
+
+    if (!gUser || !gUser.sub) {
+      return H.json({ ok: false, error: 'google_sin_sub' }, 401);
+    }
+
+    const displayName = b.displayName ? String(b.displayName).trim().slice(0, 60) : gUser.name;
+    const avatarUrl = gUser.picture || (b.avatarUrl && /^https:\/\//.test(String(b.avatarUrl)) ? String(b.avatarUrl) : null);
+
+    const canonicalSub = await resolverSubCanonico(env.DB, {
+      provider: 'google',
+      providerSub: gUser.sub,
+      email: gUser.email,
+      name: displayName || gUser.name,
+      avatarUrl,
+    });
+
+    if (b.playerId) {
+      const playerId = String(b.playerId).trim().slice(0, 80);
+      const title = b.title ? String(b.title).trim().slice(0, 80) : null;
+      const currentLevel = Number.isFinite(Number(b.currentLevel)) ? Number(b.currentLevel) : null;
+      const nextLevel = Number.isFinite(Number(b.nextLevel)) ? Number(b.nextLevel) : null;
+      const currentXpTotal = Number.isFinite(Number(b.currentXpTotal)) ? Number(b.currentXpTotal) : null;
+      const levelMinXp = Number.isFinite(Number(b.levelMinXp)) ? Number(b.levelMinXp) : null;
+      const levelMaxXp = Number.isFinite(Number(b.levelMaxXp)) ? Number(b.levelMaxXp) : null;
+      await env.DB
+        .prepare(
+          `INSERT INTO integ_play_games_xp (canonical_sub, player_id, gamer_tag, title, current_level, next_level, current_xp_total, level_min_xp, level_max_xp, avatar_url, actualizado)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(canonical_sub) DO UPDATE SET
+             player_id = excluded.player_id,
+             gamer_tag = COALESCE(excluded.gamer_tag, integ_play_games_xp.gamer_tag),
+             title = COALESCE(excluded.title, integ_play_games_xp.title),
+             current_level = COALESCE(excluded.current_level, integ_play_games_xp.current_level),
+             next_level = COALESCE(excluded.next_level, integ_play_games_xp.next_level),
+             current_xp_total = COALESCE(excluded.current_xp_total, integ_play_games_xp.current_xp_total),
+             level_min_xp = COALESCE(excluded.level_min_xp, integ_play_games_xp.level_min_xp),
+             level_max_xp = COALESCE(excluded.level_max_xp, integ_play_games_xp.level_max_xp),
+             avatar_url = COALESCE(excluded.avatar_url, integ_play_games_xp.avatar_url),
+             actualizado = datetime('now')`,
+        )
+        .bind(canonicalSub, playerId, displayName || null, title, currentLevel, nextLevel, currentXpTotal, levelMinXp, levelMaxXp, avatarUrl)
+        .run()
+        .catch(() => null);
+    }
+
+    const session = await crearSesion(env.DB, env, {
+      canonicalSub,
+      email: gUser.email,
+      name: displayName || gUser.name,
+      avatarUrl,
+      userAgent: req.headers.get('user-agent') || '',
+      amr: ['play_games'],
+    });
+
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        access_token: session.accessToken,
+        refresh_token: session.refreshToken,
+        expires_in: session.expiresIn,
+        user: session.user,
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+          'set-cookie': formatCookie(COOKIE_RT, session.refreshToken, cookieOpts(env, REFRESH_TTL_SEC)),
+        },
+      },
+    );
+  }
+
   if (p === '/auth/email/start' && m === 'POST') {
     const b = await req.json().catch(() => ({}));
     const r = await iniciarOtpEmail(env.DB, env, b.email);
@@ -958,7 +1168,13 @@ export async function rutasAuth(req, env, url, p, m, H) {
     const r = await verificarOtpEmail(env.DB, env, b.email, b.code, req.headers.get('user-agent') || '');
     if (!r.ok) return H.json({ ok: false, error: r.error }, r.status);
     return new Response(
-      JSON.stringify({ ok: true, access_token: r.accessToken, expires_in: r.expiresIn, user: r.user }),
+      JSON.stringify({
+        ok: true,
+        access_token: r.accessToken,
+        refresh_token: r.refreshToken,
+        expires_in: r.expiresIn,
+        user: r.user,
+      }),
       {
         status: 200,
         headers: {
@@ -972,7 +1188,9 @@ export async function rutasAuth(req, env, url, p, m, H) {
 
   if (p === '/auth/refresh' && m === 'POST') {
     const cookies = parseCookies(req);
-    const r = await rotarSesion(env.DB, env, cookies[COOKIE_RT], req.headers.get('user-agent') || '');
+    const b = await req.json().catch(() => ({}));
+    const rt = cookies[COOKIE_RT] || (b && typeof b.refresh_token === 'string' ? b.refresh_token.trim() : '');
+    const r = await rotarSesion(env.DB, env, rt, req.headers.get('user-agent') || '');
     if (!r.ok) {
       return new Response(JSON.stringify({ ok: false, error: r.error }), {
         status: r.status,
@@ -984,7 +1202,13 @@ export async function rutasAuth(req, env, url, p, m, H) {
       });
     }
     return new Response(
-      JSON.stringify({ ok: true, access_token: r.accessToken, expires_in: r.expiresIn, user: r.user }),
+      JSON.stringify({
+        ok: true,
+        access_token: r.accessToken,
+        refresh_token: r.refreshToken,
+        expires_in: r.expiresIn,
+        user: r.user,
+      }),
       {
         status: 200,
         headers: {
@@ -998,7 +1222,9 @@ export async function rutasAuth(req, env, url, p, m, H) {
 
   if (p === '/auth/logout' && m === 'POST') {
     const cookies = parseCookies(req);
-    await revocarSesion(env.DB, cookies[COOKIE_RT]).catch(() => null);
+    const b = await req.json().catch(() => ({}));
+    const rt = cookies[COOKIE_RT] || (b && typeof b.refresh_token === 'string' ? b.refresh_token.trim() : '');
+    await revocarSesion(env.DB, rt).catch(() => null);
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: {

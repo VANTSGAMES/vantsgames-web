@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { Insignia3D, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useApi } from "@/lib/useApi";
 type DirectoInt = { plataforma: "twitch" | "kick"; canal: string; nombre: string | null; en_vivo: boolean; titulo: string | null; juego: string | null; espectadores: number | null; miniatura: string | null; url: string; desde: string | null };
-import { pub, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream } from "@/lib/api";
+import { pub, esAppNativa, type Paged, type Tournament, type Match, type Team, type Article, type YtVideo, type Stream } from "@/lib/api";
 import { Section, Empty, Skel, ErrorBox } from "@/components/ui-vants";
 import { SeccionEmpresas, APP_APK } from "@/components/SeccionEmpresas";
 import { TournamentRow, MatchRow, TeamTile, VideoTile, StreamTile } from "@/components/domain";
@@ -13,6 +13,7 @@ import { PLANES } from "@/lib/planes";
 import { useAuth } from "@/lib/auth";
 import { useRanking, useEventos, FilaEvento } from "./Vants";
 import { NivelFaceit } from "./PerfilFaceit";
+import { LanzadorRapidoTorneo } from "@/components/DispositivosJuegos";
 
 /* ---------- Bloque 1 · Hero: titular + CTAs de bienvenida ---------- */
 function Hero() {
@@ -40,11 +41,17 @@ function Hero() {
             <button type="button" className="btn btn-rojo" data-testid="hero-signup" onClick={() => login({ signup: true, returnTo: "/perfil" })}>
               Crear cuenta gratis <span aria-hidden="true">→</span>
             </button>
-          ) : null}
-          <Link href="/torneos" className={"btn " + (anonimo ? "" : "btn-rojo")} data-testid="hero-torneos">Ver torneos</Link>
-          <a href={APP_APK} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="hero-apk">
-            Descargar App Android (v1.0.0) <span aria-hidden="true">↗</span>
-          </a>
+          ) : (
+            <Link href="/perfil" className="btn btn-rojo" data-testid="hero-perfil">
+              Mi perfil gamer <span aria-hidden="true">→</span>
+            </Link>
+          )}
+          <Link href="/torneos" className={"btn " + (anonimo ? "" : "btn-ghost")} data-testid="hero-torneos">Ver torneos</Link>
+          {!esAppNativa() && (
+            <a href={APP_APK} target="_blank" rel="noopener noreferrer" className="btn btn-ghost" data-testid="hero-apk">
+              Descargar App Android <span aria-hidden="true">↗</span>
+            </a>
+          )}
         </div>
       </div>
     </section>
@@ -351,9 +358,12 @@ export default function Home() {
 
   return (
     <>
-      {/* Bloque 1 · Hero + guía de bienvenida */}
+      {/* Bloque 1 · Hero + lanzador directo de juegos + guía de bienvenida */}
       <Hero />
-      <div className="wrap pt-12">
+      <div className="wrap pt-8">
+        <LanzadorRapidoTorneo compacto />
+      </div>
+      <div className="wrap pt-10">
         <ComoFunciona />
       </div>
       <div className="pt-10">

@@ -2,14 +2,14 @@ apply plugin: 'com.android.application'
 
 android {
     namespace "cc.vants.app"
-    compileSdkVersion 35
+    compileSdk rootProject.ext.has('compileSdkVersion') ? rootProject.ext.compileSdkVersion : 35
 
     defaultConfig {
         applicationId "cc.vants.app"
-        minSdkVersion 24
-        targetSdkVersion 35
-        versionCode Integer.parseInt(System.getenv("APP_VERSION_CODE") ?: "1")
-        versionName System.getenv("APP_VERSION") ?: "1.0.0"
+        minSdkVersion rootProject.ext.has('minSdkVersion') ? rootProject.ext.minSdkVersion : 24
+        targetSdkVersion rootProject.ext.has('targetSdkVersion') ? rootProject.ext.targetSdkVersion : 35
+        versionCode 130
+        versionName "1.3.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets inside the APK/AAB
@@ -53,8 +53,9 @@ dependencies {
     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
     implementation 'androidx.core:core-splashscreen:1.0.1'
 
-    // Google Play Games Services v2
+    // Google Play Games Services v2 + Google Sign-In nativo en app
     implementation 'com.google.android.gms:play-services-games-v2:20.1.2'
+    implementation 'com.google.android.gms:play-services-auth:21.2.0'
 
     // Capacitor Android Core & Plugins
     if (findProject(':capacitor-android')) {

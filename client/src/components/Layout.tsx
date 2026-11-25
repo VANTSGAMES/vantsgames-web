@@ -3,12 +3,13 @@ import { useRol } from "@/pages/Vants";
 import { Link, useLocation } from "wouter";
 import { NAV, PERFIL_LINKS } from "@/lib/nav";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
-import { Wordmark } from "./ui-vants";
+import { Wordmark, Initials } from "./ui-vants";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api } from "@/lib/api";
+import { api, esAppNativa } from "@/lib/api";
 import { CommandPalette } from "./CommandPalette";
 import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
+import { InsigniaBienvenidaPlayGames, LanzadorRapidoTorneo, TarjetaExperienciaPlayGames } from "./DispositivosJuegos";
 
 type Notif = { id: number; tipo: string; titulo: string; cuerpo: string | null; url: string | null; creada: string; leida: boolean };
 
@@ -47,7 +48,15 @@ function Campana() {
           {q.isLoading ? <div className="small muted p-3">Cargando…</div> : q.error ? <div className="small muted p-3">No se pudieron cargar las notificaciones.</div> :
             (q.data?.notificaciones || []).length === 0 ? <div className="small muted p-3">Sin notificaciones. Aquí verás tus partidas de FACEIT y quién entra en directo.</div> :
             q.data!.notificaciones.map((x) => (
-              <a key={x.id} href={x.url || "#"} target={x.url ? "_blank" : undefined} rel="noopener noreferrer" role="menuitem" style={{ opacity: x.leida ? 0.7 : 1 }} data-testid={"notif-" + x.id}>
+              <a
+                key={x.id}
+                href={x.url || "#"}
+                target={x.url && !esAppNativa() ? "_blank" : undefined}
+                rel="noopener noreferrer"
+                role="menuitem"
+                style={{ opacity: x.leida ? 0.7 : 1 }}
+                data-testid={"notif-" + x.id}
+              >
                 <span style={{ fontWeight: x.leida ? 400 : 700 }}>{x.titulo}</span>
                 <small>{[x.cuerpo, fecha(x.creada)].filter(Boolean).join(" · ")}</small>
               </a>
@@ -109,12 +118,21 @@ function EnlacePublicar() {
 function AccountButton() {
   const { status, user, login, logout } = useAuth();
   if (status === "autenticado") {
+    const nombreCorto = user?.nickname || user?.name || "Perfil";
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2">
         <Campana />
         <EnlacePublicar />
-        <Link href="/perfil" className="btn btn-sm" data-testid="link-perfil">Mi perfil</Link>
-        <button className="btn btn-sm btn-ghost" onClick={() => logout()} data-testid="button-logout" aria-label={"Cerrar sesión" + (user?.nickname ? " de " + user.nickname : "")}>Salir</button>
+        <Link href="/perfil" className="btn btn-sm flex items-center gap-2" data-testid="link-perfil">
+          {user?.picture ? (
+            <img src={user.picture} alt="" width={20} height={20} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <Initials name={nombreCorto} size={20} />
+          )}
+          <span className="hidden sm:inline truncate" style={{ maxWidth: 110 }}>Mi perfil</span>
+          <span className="sm:hidden">Perfil</span>
+        </Link>
+        <button className="btn btn-sm btn-ghost hidden md:inline-flex" onClick={() => logout()} data-testid="button-logout" aria-label={"Cerrar sesión" + (user?.nickname ? " de " + user.nickname : "")}>Salir</button>
       </div>
     );
   }
@@ -122,16 +140,17 @@ function AccountButton() {
     return <Link href="/entrar" className="btn btn-sm" data-testid="link-entrar">Entrar</Link>;
   }
   return (
-    <div className="flex items-center gap-2">
-      <button className="btn btn-sm btn-ghost cta-xs-off" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
+    <div className="flex items-center gap-1.5 sm:gap-2">
+      <button className="btn btn-sm btn-rojo sm:btn-ghost" onClick={() => login()} disabled={status === "cargando"} data-testid="button-login">Entrar</button>
       <button className="btn btn-sm btn-rojo cta-xs-off" onClick={() => login({ signup: true })} disabled={status === "cargando"} data-testid="button-signup">Crear cuenta</button>
     </div>
   );
 }
 
-function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => void }) {
+function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpenSearch: () => void; onOpenLauncher: () => void }) {
   const [open, setOpen] = useState(false);
-  const { status, login } = useAuth();
+  const { status, login, logout } = useAuth();
+  const nativo = esAppNativa();
   useEffect(() => setOpen(false), [path]);
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
   return (
@@ -140,18 +159,33 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
         {open ? "Cerrar" : "Menú"}
       </button>
       {open && (
-        <nav id="menu-movil" className="fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto xl:hidden" style={{ background: "var(--negro)" }} aria-label="Menú principal">
+        <nav
+          id="menu-movil"
+          className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto xl:hidden"
+          style={{ top: "calc(64px + var(--safe-top))", paddingBottom: "calc(84px + var(--safe-bottom))", background: "var(--negro)" }}
+          aria-label="Menú principal"
+        >
           <div className="wrap py-6 grid gap-6">
-            <button
-              type="button"
-              className="btn btn-sm w-full justify-between"
-              onClick={() => { setOpen(false); onOpenSearch(); }}
-              data-testid="button-mobile-search"
-            >
-              <span>Buscar secciones y juegos…</span>
-              <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>⌘K</span>
-            </button>
-            <PWAInstallButton compact />
+            <div className="grid sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                className="btn btn-sm w-full justify-between"
+                onClick={() => { setOpen(false); onOpenSearch(); }}
+                data-testid="button-mobile-search"
+              >
+                <span>Buscar secciones y juegos…</span>
+                <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>⌘K</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-rojo w-full justify-center"
+                onClick={() => { setOpen(false); onOpenLauncher(); }}
+                data-testid="button-mobile-launcher"
+              >
+                🎮 Abrir juego para Torneo
+              </button>
+            </div>
+            {!nativo && <PWAInstallButton compact />}
             {AUTH_ENABLED && status === "anonimo" && (
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -172,24 +206,41 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
                 </button>
               </div>
             )}
-            <Link href="/" className="d-2">Inicio</Link>
-            <Link href="/empresas" className="d-2">Empresas</Link>
-            {NAV.map((g) => (
-              <div key={g.base}>
-                <div className="eyebrow mb-2">{g.label}</div>
-                <div className="grid">
-                  {g.links.filter((l) => !l.privado || status === "autenticado").map((l) => (
-                    <Link key={l.to} href={l.to} className="py-2 border-b" style={{ borderColor: "var(--linea-suave)", color: "var(--gris-1)" }}>{l.label}</Link>
+            {status === "autenticado" && (
+              <div className="panel panel-pad grid gap-2" style={{ borderColor: "var(--linea)" }}>
+                <div className="eyebrow">Mi perfil del jugador</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+                  {PERFIL_LINKS.map((l) => (
+                    <Link key={l.to} href={l.to} className="btn btn-sm btn-ghost justify-start">
+                      {l.label}
+                    </Link>
                   ))}
                 </div>
-              </div>
-            ))}
-            {status === "autenticado" && (
-              <div>
-                <div className="eyebrow mb-2">Mi perfil</div>
-                {PERFIL_LINKS.map((l) => <Link key={l.to} href={l.to} className="block py-2" style={{ color: "var(--gris-1)" }}>{l.label}</Link>)}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost w-fit mt-2"
+                  onClick={() => { setOpen(false); logout(); }}
+                >
+                  Cerrar sesión
+                </button>
               </div>
             )}
+            <div className="grid sm:grid-cols-2 gap-6">
+              {NAV.map((g) => (
+                <div key={g.base}>
+                  <div className="eyebrow mb-2">{g.label}</div>
+                  <div className="grid">
+                    {g.links.filter((l) => !l.privado || status === "autenticado").map((l) => (
+                      <Link key={l.to} href={l.to} className="py-2 border-b" style={{ borderColor: "var(--linea-suave)", color: "var(--gris-1)" }}>{l.label}</Link>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-4 pt-2 border-t" style={{ borderColor: "var(--linea-suave)" }}>
+              <Link href="/" className="link-arrow">Inicio</Link>
+              <Link href="/empresas" className="link-arrow">Empresas</Link>
+            </div>
           </div>
         </nav>
       )}
@@ -197,8 +248,104 @@ function MobileNav({ path, onOpenSearch }: { path: string; onOpenSearch: () => v
   );
 }
 
-export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
+/** Cajón modal in-app para abrir cualquier juego instalado en un toque y ver el XP de Google Play Juegos */
+function CajonLanzadorTorneo({ abierto, onCerrar }: { abierto: boolean; onCerrar: () => void }) {
+  useEffect(() => {
+    if (!abierto) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCerrar(); };
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [abierto, onCerrar]);
+
+  if (!abierto) return null;
+
+  return (
+    <div
+      className="modal-fondo"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Lanzador rápido de juegos y experiencia Google Play Juegos"
+      onClick={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
+      data-testid="modal-lanzador-juegos"
+    >
+      <div className="panel panel-pad chamfer grid gap-5 w-full" style={{ maxWidth: 820, maxHeight: "86vh", overflowY: "auto" }}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="eyebrow">Centro Competitivo Móvil & Tablet</div>
+            <h2 className="d-2 mt-1">Abrir juego para el torneo</h2>
+          </div>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onCerrar} aria-label="Cerrar lanzador">
+            ✕ Cerrar
+          </button>
+        </div>
+        <TarjetaExperienciaPlayGames />
+        <LanzadorRapidoTorneo onLaunched={onCerrar} />
+      </div>
+    </div>
+  );
+}
+
+/** Barra inferior nativa para Android, iOS y Tablets (< 1280px) con acceso en 1 toque a Perfil, Torneos y Lanzador */
+function BarraInferiorMovil({ path, onOpenLauncher }: { path: string; onOpenLauncher: () => void }) {
+  const { status, user } = useAuth();
+  const perfilHref = status === "autenticado" ? "/perfil" : "/entrar";
+  const enPerfil = path === "/perfil" || path.startsWith("/perfil/") || path === "/entrar" || path === "/registro";
+  const enTorneos = path === "/torneos" || path.startsWith("/torneos/") || path === "/crear-torneo";
+  const enRanking = path === "/ranking" || path === "/ranked" || path === "/sala";
+
+  return (
+    <nav className="vants-bottom-nav xl:hidden" aria-label="Navegación rápida móvil y tablet" data-testid="bottom-nav-movil">
+      <div className="vants-bottom-nav-grid">
+        <Link href="/" className={"vants-bnav-item" + (path === "/" ? " activo" : "")} data-testid="bnav-inicio">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-10.5z" />
+          </svg>
+          <span>Inicio</span>
+        </Link>
+
+        <Link href="/torneos" className={"vants-bnav-item" + (enTorneos ? " activo" : "")} data-testid="bnav-torneos">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M6 9H4a2 2 0 0 1-2-2V5h4M18 9h2a2 2 0 0 0 2-2V5h-4M6 4h12v5a6 6 0 0 1-12 0V4zM12 15v5M8 20h8" />
+          </svg>
+          <span>Torneos</span>
+        </Link>
+
+        <button type="button" className="vants-bnav-play" onClick={onOpenLauncher} data-testid="bnav-jugar">
+          <span className="vants-bnav-play-pill" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="2" y="6" width="20" height="12" rx="4" />
+              <path d="M6 12h4M8 10v4M15 11h.01M18 13h.01" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span>Jugar</span>
+        </button>
+
+        <Link href="/ranking" className={"vants-bnav-item" + (enRanking ? " activo" : "")} data-testid="bnav-ranking">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" />
+          </svg>
+          <span>Ranking</span>
+        </Link>
+
+        <Link href={perfilHref} className={"vants-bnav-item" + (enPerfil ? " activo" : "")} data-testid="bnav-perfil">
+          {status === "autenticado" && user?.picture ? (
+            <img src={user.picture} alt="" width={21} height={21} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c1.8-3.6 5-5.5 8-5.5s6.2 1.9 8 5.5" strokeLinecap="round" />
+            </svg>
+          )}
+          <span>{status === "autenticado" ? "Mi perfil" : "Perfil"}</span>
+        </Link>
+      </div>
+    </nav>
+  );
+}
+
+export function Header({ onOpenSearch, onOpenLauncher }: { onOpenSearch: () => void; onOpenLauncher: () => void }) {
   const [path] = useLocation();
+  const nativo = esAppNativa();
   return (
     <header className="hdr">
       <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 btn btn-sm">Saltar al contenido</a>
@@ -209,7 +356,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
           <Link href="/empresas" className={"nav-btn" + (path === "/empresas" ? " activo" : "")} data-testid="nav-empresas">Empresas</Link>
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             className="btn btn-sm btn-ghost flex items-center gap-2"
@@ -223,9 +370,9 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
             </svg>
             <span className="sr-only">Buscar</span>
           </button>
-          <span className="hidden sm:inline-flex"><PWAInstallButton /></span>
+          {!nativo && <span className="hidden sm:inline-flex"><PWAInstallButton /></span>}
           <AccountButton />
-          <MobileNav path={path} onOpenSearch={onOpenSearch} />
+          <MobileNav path={path} onOpenSearch={onOpenSearch} onOpenLauncher={onOpenLauncher} />
         </div>
       </div>
     </header>
@@ -235,7 +382,7 @@ export function Header({ onOpenSearch }: { onOpenSearch: () => void }) {
 const APP_APK = "https://vants.cc/VANTSMovil.apk";
 
 /** Columnas del footer: reflejan la navegación principal + legal y app. */
-const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?: boolean }[] }[] = [
+const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?: boolean; ocultarEnApp?: boolean }[] }[] = [
   { titulo: "Competición", enlaces: [
     { label: "Torneos activos", to: "/torneos" },
     { label: "Crear mi torneo", to: "/crear-torneo" },
@@ -257,16 +404,16 @@ const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?
     { label: "Empresas y marcas", to: "/empresas" },
   ]},
   { titulo: "Legal & App", enlaces: [
+    { label: "Mi perfil del jugador", to: "/perfil" },
     { label: "Privacidad", to: "/privacidad" },
     { label: "Términos", to: "/terminos" },
     { label: "Soporte (abrir ticket)", to: "/perfil/soporte" },
-    { label: "App Android (APK v1.0.0)", to: APP_APK, externo: true },
-    { label: "Twitch", to: "https://www.twitch.tv/feisreal", externo: true },
-    { label: "YouTube", to: "https://www.youtube.com/@feispla", externo: true },
+    { label: "App Android (APK)", to: APP_APK, externo: true, ocultarEnApp: true },
   ]},
 ];
 
 export function Footer() {
+  const nativo = esAppNativa();
   return (
     <footer className="mt-16 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
       <div className="wrap py-12 grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">
@@ -280,7 +427,7 @@ export function Footer() {
           <div key={col.titulo}>
             <div className="eyebrow mb-3">{col.titulo}</div>
             <ul className="grid gap-1.5 small">
-              {col.enlaces.map((l) => (
+              {col.enlaces.filter((l) => !(nativo && l.ocultarEnApp)).map((l) => (
                 <li key={l.to}>
                   {l.externo ? (
                     <a href={l.to} target="_blank" rel="noopener noreferrer" className="muted hover:text-white">{l.label}</a>
@@ -298,8 +445,7 @@ export function Footer() {
         <span className="flex gap-4">
           <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
           <Link href="/terminos" className="hover:text-white">Términos</Link>
-          <a href="https://www.twitch.tv/feisreal" target="_blank" rel="noopener noreferrer" className="hover:text-white">Twitch</a>
-          <a href="https://www.youtube.com/@feispla" target="_blank" rel="noopener noreferrer" className="hover:text-white">YouTube</a>
+          <Link href="/perfil" className="hover:text-white">Mi perfil</Link>
         </span>
       </div>
     </footer>
@@ -309,12 +455,16 @@ export function Footer() {
 export function Shell({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   useEffect(() => { window.scrollTo({ top: 0 }); }, [path]);
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header onOpenSearch={() => setSearchOpen(true)} />
+    <div className="min-h-screen flex flex-col vants-shell-body">
+      <InsigniaBienvenidaPlayGames />
+      <Header onOpenSearch={() => setSearchOpen(true)} onOpenLauncher={() => setLauncherOpen(true)} />
       <main id="contenido" className="flex-1">{children}</main>
       <Footer />
+      <BarraInferiorMovil path={path} onOpenLauncher={() => setLauncherOpen(true)} />
+      <CajonLanzadorTorneo abierto={launcherOpen} onCerrar={() => setLauncherOpen(false)} />
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <OfflineIndicator />
     </div>

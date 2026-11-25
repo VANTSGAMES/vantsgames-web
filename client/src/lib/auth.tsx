@@ -1,20 +1,33 @@
 /**
  * Sesión nativa de VANTS GAMES (VANTS Identity en Cloudflare + D1).
- * Soporta Google OpenID Connect (PKCE) y código OTP de 6 dígitos por correo,
- * con Access Token RS256 solo en memoria y Refresh Token rotativo en cookie HttpOnly.
- *
- * `login({ signup, returnTo })` abre /entrar o /registro para que el jugador
- * elija entre Google o correo electrónico, y al entrar regresa a `returnTo`.
+ * Funciona 100% dentro de la aplicación (Android, iOS, Tablets y Web) sin sacar
+ * al jugador al navegador externo:
+ *  - En Android nativo: Google Play Games Services v2 + Google Sign-In nativo + Email OTP.
+ *  - En iOS / Tablet nativo: Google Identity Services in-app + Email OTP de 6 dígitos.
+ *  - En Web (https://vants.cc): Google OIDC PKCE first-party + Email OTP + cookie HttpOnly.
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { setTokenProvider, api } from "./api";
+import { setTokenProvider, api, esAppNativa, INT_ORIGIN } from "./api";
 import { useFeedback } from "../components/FeedbackProvider";
+import {
+  autenticarPlayGames,
+  getCapacitor,
+  obtenerPerfilPlayGames,
+  sincronizarExperienciaPlayGamesEnServidor,
+} from "./dispositivosJuegos";
 
-const ENABLED = import.meta.env.VITE_AUTH_ENABLED === "1";
-const HASH_ROUTER = import.meta.env.VITE_ROUTER !== "history";
+const NATIVE_APP = esAppNativa();
+const ENABLED = import.meta.env.VITE_AUTH_ENABLED === "1" || NATIVE_APP;
+const HASH_ROUTER = import.meta.env.VITE_ROUTER !== "history" || NATIVE_APP;
+const NATIVE_RT_STORAGE_KEY = "vants_native_rt_v1";
 
-/** Base para /auth/*: "" usa same-origin (https://vants.cc/auth/*). */
-const AUTH_ORIGIN = ((import.meta.env.VITE_AUTH_ORIGIN as string | undefined) || "").replace(/\/$/, "");
+const GOOGLE_CLIENT_ID =
+  (import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID as string | undefined) ||
+  "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com";
+
+/** Base para /auth/*: en web "" usa same-origin (https://vants.cc/auth/*); en app nativa usa https://int.vants.cc. */
+const RAW_AUTH_ORIGIN = ((import.meta.env.VITE_AUTH_ORIGIN as string | undefined) || "").replace(/\/$/, "");
+const AUTH_ORIGIN = RAW_AUTH_ORIGIN || (NATIVE_APP ? INT_ORIGIN : "");
 
 export type AuthStatus = "cargando" | "anonimo" | "autenticado" | "no_disponible" | "error";
 
@@ -34,8 +47,10 @@ interface VantsSessionToken {
 interface AuthCtx {
   status: AuthStatus;
   user: VantsUser | null;
+  esNativo: boolean;
   login: (opts?: { signup?: boolean; returnTo?: string }) => Promise<void>;
   loginWithGoogle: (returnTo?: string) => void;
+  loginWithPlayGames: (returnTo?: string) => Promise<boolean>;
   startEmailOtp: (email: string) => Promise<void>;
   verifyEmailOtp: (email: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -44,8 +59,10 @@ interface AuthCtx {
 const Ctx = createContext<AuthCtx>({
   status: "cargando",
   user: null,
+  esNativo: false,
   login: async () => {},
   loginWithGoogle: () => {},
+  loginWithPlayGames: async () => false,
   startEmailOtp: async () => {},
   verifyEmailOtp: async () => {},
   logout: async () => {},
@@ -55,11 +72,39 @@ function vantsAuthUrl(path: string): string {
   return AUTH_ORIGIN + path;
 }
 
+function leerRefreshNativo(): string | null {
+  if (!NATIVE_APP) return null;
+  try {
+    return localStorage.getItem(NATIVE_RT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function guardarRefreshNativo(rt?: string | null) {
+  if (!NATIVE_APP) return;
+  try {
+    if (rt) localStorage.setItem(NATIVE_RT_STORAGE_KEY, rt);
+    else localStorage.removeItem(NATIVE_RT_STORAGE_KEY);
+  } catch {
+    // Ignorar si almacenamiento restringido
+  }
+}
+
 function safePath(raw?: string | null): string {
   const s = String(raw || "").trim();
   if (!s || !s.startsWith("/") || s.startsWith("//") || s.includes("\\")) return "/perfil";
   if (s === "/" || s === "/entrar" || s === "/registro" || s === "/recuperar") return "/perfil";
   return s;
+}
+
+function currentAppPath(): string {
+  if (typeof window === "undefined") return "/perfil";
+  if (HASH_ROUTER) {
+    const h = window.location.hash.replace(/^#/, "").split("?")[0];
+    return h || "/";
+  }
+  return window.location.pathname || "/";
 }
 
 function navigateClient(target: string) {
@@ -84,6 +129,44 @@ function toUser(raw: { sub?: string; email?: string | null; name?: string | null
   };
 }
 
+/** Carga Google Identity Services dentro de la app para obtener un token sin salir del WebView */
+async function obtenerAccessTokenGisInApp(): Promise<string | null> {
+  if (typeof window === "undefined" || typeof document === "undefined") return null;
+  const w = window as any;
+  if (!w.google?.accounts?.oauth2) {
+    await new Promise<void>((resolve, reject) => {
+      const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true });
+        setTimeout(() => resolve(), 1500);
+        return;
+      }
+      const s = document.createElement("script");
+      s.src = "https://accounts.google.com/gsi/client";
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error("gsi_no_disponible"));
+      document.head.appendChild(s);
+    }).catch(() => {});
+  }
+  if (!w.google?.accounts?.oauth2?.initTokenClient) return null;
+  return new Promise<string | null>((resolve) => {
+    try {
+      const client = w.google.accounts.oauth2.initTokenClient({
+        client_id: GOOGLE_CLIENT_ID,
+        scope: "openid email profile",
+        callback: (resp: { access_token?: string; error?: string }) => {
+          resolve(resp?.access_token || null);
+        },
+        error_callback: () => resolve(null),
+      });
+      client.requestAccessToken({ prompt: "select_account" });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(ENABLED ? "cargando" : "no_disponible");
   const [user, setUser] = useState<VantsUser | null>(null);
@@ -93,34 +176,91 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => { statusRef.current = status; }, [status]);
   const { toast } = useFeedback();
 
+  const activarSesionLocal = (d: {
+    access_token: string;
+    refresh_token?: string;
+    expires_in?: number;
+    user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null } | null;
+  }) => {
+    const ttlMs = Math.max(60, Number(d.expires_in) || 3600) * 1000;
+    vantsTokenRef.current = {
+      accessToken: d.access_token,
+      expiresAt: Date.now() + ttlMs,
+    };
+    if (d.refresh_token) guardarRefreshNativo(d.refresh_token);
+    const u = toUser(d.user || null);
+    setUser(u);
+    setStatus("autenticado");
+    api("/int/registro", { method: "POST", auth: true, body: {} }).catch(() => {});
+    // Si estamos en Android nativo, sincronizar también el nivel y XP de Google Play Juegos
+    if (NATIVE_APP) {
+      obtenerPerfilPlayGames({ conSesionVants: true }).catch(() => {});
+    }
+    return u;
+  };
+
   /**
-   * Refresca la sesión con el servidor. El refresh ROTA la cookie compartida por todas
-   * las pestañas, así que se serializa con Web Locks: dos refresh concurrentes con la
-   * misma cookie disparan la detección de reutilización del servidor y revocan TODAS
-   * las sesiones del usuario (cierre de sesión global).
+   * Intercambia credenciales nativas (Play Games serverAuthCode, Google Sign-In idToken o GIS accessToken)
+   * directamente con VANTS Identity sin salir jamás de la aplicación.
    */
+  const intercambiarCredencialInApp = async (payload: Record<string, unknown>): Promise<boolean> => {
+    const r = await fetch(vantsAuthUrl("/auth/playgames/exchange"), {
+      method: "POST",
+      credentials: NATIVE_APP ? "omit" : "include",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const d = (await r.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null };
+    };
+    if (!r.ok || !d.ok || !d.access_token) return false;
+    activarSesionLocal({
+      access_token: d.access_token,
+      refresh_token: d.refresh_token,
+      expires_in: d.expires_in,
+      user: d.user,
+    });
+    return true;
+  };
+
   const refreshVantsSession = async (): Promise<{ token: string; user: VantsUser | null } | null> => {
     const dentro = async (): Promise<{ token: string; user: VantsUser | null } | null> => {
+      const nativeRt = leerRefreshNativo();
+      if (NATIVE_APP && !nativeRt) {
+        return null;
+      }
       try {
+        const headers: Record<string, string> = { accept: "application/json" };
+        let body: string | undefined;
+        if (nativeRt) {
+          headers["content-type"] = "application/json";
+          body = JSON.stringify({ refresh_token: nativeRt });
+        }
         const r = await fetch(vantsAuthUrl("/auth/refresh"), {
           method: "POST",
-          credentials: "include",
-          headers: { accept: "application/json" },
+          credentials: NATIVE_APP ? "omit" : "include",
+          headers,
+          body,
         });
         if (!r.ok) {
           vantsTokenRef.current = null;
-          // Sin sesión válida en el servidor: sincroniza la interfaz. Antes la web
-          // seguía mostrando al usuario dentro y cada guardado daba «sesión caducó».
+          guardarRefreshNativo(null);
           if (statusRef.current === "autenticado") {
             setUser(null);
             setStatus("anonimo");
-            toast({ kind: "error", title: "Tu sesión caducó", description: "Vuelve a iniciar sesión para continuar." });
+            toast({ kind: "error", title: "Tu sesión caducó", description: "Inicia sesión aquí mismo en la app para continuar." });
           }
           return null;
         }
         const d = (await r.json()) as {
           ok?: boolean;
           access_token?: string;
+          refresh_token?: string;
           expires_in?: number;
           user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null };
         };
@@ -128,6 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           vantsTokenRef.current = null;
           return null;
         }
+        if (d.refresh_token) guardarRefreshNativo(d.refresh_token);
         const ttlMs = Math.max(60, Number(d.expires_in) || 3600) * 1000;
         vantsTokenRef.current = {
           accessToken: d.access_token,
@@ -135,7 +276,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
         return { token: d.access_token, user: toUser(d.user || null) };
       } catch {
-        // Red caída: no cierra la sesión local; la siguiente petición lo reintentará.
         return null;
       }
     };
@@ -167,13 +307,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res && res.user) {
         setUser(res.user);
         setStatus("autenticado");
-        // Protocolo de comunicaciones: primera vez del usuario → bienvenida
-        // al canal privado de registros (el endpoint es idempotente).
         api("/int/registro", { method: "POST", auth: true, body: {} }).catch(() => {});
-      } else {
-        setUser(null);
-        setStatus("anonimo");
+        if (NATIVE_APP) {
+          obtenerPerfilPlayGames({ conSesionVants: true }).catch(() => {});
+        }
+        return;
       }
+
+      // En Android nativo: intentar inicio silencioso automático con Google Play Juegos v2
+      if (NATIVE_APP) {
+        try {
+          const pg = await obtenerPerfilPlayGames({ requestAuthCode: true });
+          if (vivo && pg.autenticado && pg.serverAuthCode) {
+            const ok = await intercambiarCredencialInApp({
+              serverAuthCode: pg.serverAuthCode,
+              playerId: pg.playerId,
+              displayName: pg.displayName,
+              title: pg.title,
+              currentLevel: pg.currentLevel,
+              nextLevel: pg.nextLevel,
+              currentXpTotal: pg.currentXpTotal,
+              levelMinXp: pg.levelMinXp,
+              levelMaxXp: pg.levelMaxXp,
+            });
+            if (ok) return;
+          }
+        } catch {
+          // Continuar en modo anónimo dentro de la app
+        }
+      }
+
+      if (!vivo) return;
+      setUser(null);
+      setStatus("anonimo");
     })();
 
     return () => {
@@ -181,18 +347,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const iniciarConPlayGamesONativo = async (returnTo?: string): Promise<boolean> => {
+    const destinoFinal = safePath(returnTo || currentAppPath());
+    const cap = getCapacitor();
+
+    // 1. Android Nativo: Google Play Games Services v2 + Google Sign-In nativo en app
+    if (cap?.Plugins?.VantsGames) {
+      const pg = await autenticarPlayGames({ requestAuthCode: true, sincronizar: false });
+      if (pg.autenticado && pg.serverAuthCode) {
+        const ok = await intercambiarCredencialInApp({
+          serverAuthCode: pg.serverAuthCode,
+          playerId: pg.playerId,
+          displayName: pg.displayName,
+          title: pg.title,
+          currentLevel: pg.currentLevel,
+          nextLevel: pg.nextLevel,
+          currentXpTotal: pg.currentXpTotal,
+          levelMinXp: pg.levelMinXp,
+          levelMaxXp: pg.levelMaxXp,
+        });
+        if (ok) {
+          toast({
+            kind: "ok",
+            title: `Bienvenido, ${pg.displayName || "Jugador"}`,
+            description: pg.currentLevel ? `Google Play Juegos · Nivel ${pg.currentLevel} sincronizado` : "Sesión iniciada con Google Play Juegos.",
+          });
+          navigateClient(destinoFinal);
+          return true;
+        }
+      }
+
+      if (cap.Plugins.VantsGames.signInGoogleNative) {
+        const gRes = await cap.Plugins.VantsGames.signInGoogleNative().catch(() => null);
+        if (gRes?.authenticated && (gRes.idToken || gRes.serverAuthCode)) {
+          const ok = await intercambiarCredencialInApp({
+            idToken: gRes.idToken,
+            serverAuthCode: gRes.serverAuthCode,
+            avatarUrl: gRes.avatarUrl,
+            playerId: pg.playerId,
+            displayName: pg.displayName || gRes.displayName,
+            title: pg.title,
+            currentLevel: pg.currentLevel,
+            nextLevel: pg.nextLevel,
+            currentXpTotal: pg.currentXpTotal,
+            levelMinXp: pg.levelMinXp,
+            levelMaxXp: pg.levelMaxXp,
+          });
+          if (ok) {
+            if (pg.autenticado) {
+              sincronizarExperienciaPlayGamesEnServidor(pg).catch(() => {});
+            }
+            toast({ kind: "ok", title: "Sesión iniciada en VANTS" });
+            navigateClient(destinoFinal);
+            return true;
+          }
+        }
+      }
+    }
+
+    // 2. iOS / Tablet / Respaldo In-App con Google Identity Services (sin abrir navegador externo)
+    const accessToken = await obtenerAccessTokenGisInApp();
+    if (accessToken) {
+      const ok = await intercambiarCredencialInApp({ accessToken });
+      if (ok) {
+        toast({ kind: "ok", title: "Sesión iniciada en VANTS" });
+        navigateClient(destinoFinal);
+        return true;
+      }
+    }
+
+    toast({
+      kind: "info",
+      title: "Acceso directo en la app",
+      description: "Escribe tu correo abajo para recibir tu código de 6 dígitos sin salir de la aplicación.",
+    });
+    return false;
+  };
+
   const value = useMemo<AuthCtx>(
     () => ({
       status,
       user,
+      esNativo: NATIVE_APP,
       loginWithGoogle: (returnTo?: string) => {
-        const back = safePath(returnTo || window.location.pathname);
+        const back = safePath(returnTo || currentAppPath());
+        if (NATIVE_APP) {
+          void iniciarConPlayGamesONativo(back);
+          return;
+        }
         window.location.href = vantsAuthUrl("/auth/google/start?returnTo=" + encodeURIComponent(back));
+      },
+      loginWithPlayGames: async (returnTo?: string) => {
+        return iniciarConPlayGamesONativo(returnTo);
       },
       startEmailOtp: async (email: string) => {
         const r = await fetch(vantsAuthUrl("/auth/email/start"), {
           method: "POST",
-          credentials: "include",
+          credentials: NATIVE_APP ? "omit" : "include",
           headers: { "content-type": "application/json", accept: "application/json" },
           body: JSON.stringify({ email: email.trim() }),
         });
@@ -202,7 +453,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmailOtp: async (email: string, code: string) => {
         const r = await fetch(vantsAuthUrl("/auth/email/verify"), {
           method: "POST",
-          credentials: "include",
+          credentials: NATIVE_APP ? "omit" : "include",
           headers: { "content-type": "application/json", accept: "application/json" },
           body: JSON.stringify({ email: email.trim(), code: code.trim() }),
         });
@@ -210,36 +461,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ok?: boolean;
           error?: string;
           access_token?: string;
+          refresh_token?: string;
           expires_in?: number;
           user?: { sub?: string; email?: string | null; name?: string | null; picture?: string | null };
         };
         if (!r.ok || !d.ok || !d.access_token) throw new Error(d.error || "error_" + r.status);
-        const ttlMs = Math.max(60, Number(d.expires_in) || 3600) * 1000;
-        vantsTokenRef.current = {
-          accessToken: d.access_token,
-          expiresAt: Date.now() + ttlMs,
-        };
-        const u = toUser(d.user || null);
-        setUser(u);
-        setStatus("autenticado");
-        api("/int/registro", { method: "POST", auth: true, body: {} }).catch(() => {});
+        activarSesionLocal({
+          access_token: d.access_token,
+          refresh_token: d.refresh_token,
+          expires_in: d.expires_in,
+          user: d.user,
+        });
       },
       login: async (opts) => {
         const base = opts?.signup ? "/registro" : "/entrar";
-        const back = safePath(opts?.returnTo || window.location.pathname);
+        const back = safePath(opts?.returnTo || currentAppPath());
         const qs = back && back !== "/perfil" ? "?returnTo=" + encodeURIComponent(back) : "";
         navigateClient(base + qs);
       },
       logout: async () => {
+        const rt = leerRefreshNativo();
         vantsTokenRef.current = null;
+        guardarRefreshNativo(null);
         setUser(null);
         setStatus("anonimo");
         await fetch(vantsAuthUrl("/auth/logout"), {
           method: "POST",
-          credentials: "include",
-          headers: { accept: "application/json" },
+          credentials: NATIVE_APP ? "omit" : "include",
+          headers: rt ? { "content-type": "application/json", accept: "application/json" } : { accept: "application/json" },
+          body: rt ? JSON.stringify({ refresh_token: rt }) : undefined,
         }).catch(() => null);
-        window.location.href = "/";
+        navigateClient("/");
       },
     }),
     [status, user],

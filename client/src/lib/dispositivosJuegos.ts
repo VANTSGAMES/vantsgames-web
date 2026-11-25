@@ -1,21 +1,13 @@
 /**
- * Detección de juegos instalados y servicios de Google Play Juegos en Android,
- * tablets, iOS y navegadores.
- *
- * En Android / Tablet (Capacitor nativo):
- * - Consulta al plugin nativo `VantsGames` que usa PackageManager + `<queries>`.
- * - Interactúa con Google Play Games Services v2 (PlayGamesSdk).
- *
- * En iOS (Capacitor nativo o navegador):
- * - Consulta esquemas de URL registrados y enlaces universales.
- *
- * En Web / Escritorio:
- * - Proporciona estado de vinculación (Riot, FACEIT, Epic Games, Steam) y
- *   guía de descarga oficial en Google Play Store / App Store.
+ * Detección de juegos instalados, lanzador rápido para torneos y lectura completa
+ * de experiencia (XP + Nivel + Insignia de bienvenida) de Google Play Games Services v2
+ * en Android, tablets, iOS y navegadores.
  */
+import { api, esAppNativa } from "./api";
 
 export interface DefJuegoDispositivo {
   slug: string;
+  aliases?: string[];
   nombre: string;
   etiqueta: string;
   plataforma: "Móvil" | "PC" | "Consola";
@@ -30,6 +22,7 @@ export interface DefJuegoDispositivo {
 
 export interface EstadoJuegoDetectado extends DefJuegoDispositivo {
   instalado: boolean;
+  activePackage?: string;
   versionName?: string;
   versionCode?: number;
   puedeLanzar: boolean;
@@ -43,9 +36,29 @@ export interface PerfilPlayGames {
   displayName?: string;
   title?: string;
   iconUri?: string;
+  iconBase64?: string;
   bannerUri?: string;
   currentLevel?: number;
+  nextLevel?: number;
+  currentXpTotal?: number;
+  levelMinXp?: number;
+  levelMaxXp?: number;
+  isMaxLevel?: boolean;
+  lastLevelUpTimestamp?: number;
+  serverAuthCode?: string;
+  fuente?: "play_games_nativo" | "vants_cloud";
   error?: string;
+}
+
+export interface ProgresoNivelPlayGames {
+  nivelActual: number;
+  nivelSiguiente: number;
+  xpTotal: number;
+  xpEnNivel: number;
+  xpRangoNivel: number;
+  xpFaltante: number;
+  porcentaje: number;
+  esMaximo: boolean;
 }
 
 export interface InfoDispositivo {
@@ -57,10 +70,11 @@ export interface InfoDispositivo {
   versionSo?: string;
 }
 
-/** Catálogo de juegos móviles y multiplataforma admitidos con sus identificadores de tienda */
+/** Catálogo de juegos móviles y multiplataforma admitidos para abrir directo desde torneos */
 export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   {
     slug: "freefire",
+    aliases: ["free-fire", "garena-free-fire"],
     nombre: "Free Fire",
     etiqueta: "FREE FIRE",
     plataforma: "Móvil",
@@ -74,6 +88,7 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   },
   {
     slug: "wildrift",
+    aliases: ["wild-rift", "lol-wild-rift"],
     nombre: "League of Legends: Wild Rift",
     etiqueta: "WILD RIFT",
     plataforma: "Móvil",
@@ -86,6 +101,7 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   },
   {
     slug: "mlbb",
+    aliases: ["mobile-legends", "mobilelegends"],
     nombre: "Mobile Legends: Bang Bang",
     etiqueta: "MOBILE LEGENDS",
     plataforma: "Móvil",
@@ -98,6 +114,7 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   },
   {
     slug: "clashroyale",
+    aliases: ["clash-royale"],
     nombre: "Clash Royale",
     etiqueta: "CLASH ROYALE",
     plataforma: "Móvil",
@@ -110,19 +127,21 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   },
   {
     slug: "warzone",
-    nombre: "Call of Duty: Warzone Mobile",
-    etiqueta: "WARZONE MOBILE",
+    aliases: ["codm", "cod-mobile", "warzone-mobile"],
+    nombre: "Call of Duty: Warzone / Mobile",
+    etiqueta: "WARZONE / CODM",
     plataforma: "Móvil",
     categoria: "Shooter / Battle Royale",
     androidPackage: "com.activision.callofduty.warzone",
     androidPackagesAlt: ["com.activision.callofduty.shooter"],
     iosScheme: "codm://",
-    playStoreUrl: "https://play.google.com/store/apps/details?id=com.activision.callofduty.warzone",
-    appStoreUrl: "https://apps.apple.com/app/id1638368439",
+    playStoreUrl: "https://play.google.com/store/apps/details?id=com.activision.callofduty.shooter",
+    appStoreUrl: "https://apps.apple.com/app/id1287282214",
     img: "img/juegos/warzone.jpg",
   },
   {
     slug: "fc27",
+    aliases: ["fc-mobile", "fifa", "ea-fc"],
     nombre: "EA SPORTS FC Mobile",
     etiqueta: "FC MOBILE",
     plataforma: "Móvil",
@@ -134,7 +153,21 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
     img: "img/juegos/fc27.jpg",
   },
   {
+    slug: "fortnite",
+    aliases: ["fortnite-mobile"],
+    nombre: "Fortnite Mobile",
+    etiqueta: "FORTNITE",
+    plataforma: "Móvil",
+    categoria: "Battle Royale",
+    androidPackage: "com.epicgames.fortnite",
+    iosScheme: "com.epicgames.fortnite://",
+    playStoreUrl: "https://store.epicgames.com/mobile",
+    appStoreUrl: "https://store.epicgames.com/mobile",
+    img: "img/juegos/fortnite.jpg",
+  },
+  {
     slug: "brawlstars",
+    aliases: ["brawl-stars"],
     nombre: "Brawl Stars",
     etiqueta: "BRAWL STARS",
     plataforma: "Móvil",
@@ -146,6 +179,7 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
   },
   {
     slug: "pubgm",
+    aliases: ["pubg-mobile", "pubg"],
     nombre: "PUBG Mobile",
     etiqueta: "PUBG MOBILE",
     plataforma: "Móvil",
@@ -155,42 +189,87 @@ export const CATALOGO_JUEGOS_DISPOSITIVO: DefJuegoDispositivo[] = [
     playStoreUrl: "https://play.google.com/store/apps/details?id=com.tencent.ig",
     appStoreUrl: "https://apps.apple.com/app/id1330123889",
   },
-  {
-    slug: "fortnite",
-    nombre: "Fortnite Mobile",
-    etiqueta: "FORTNITE",
-    plataforma: "Móvil",
-    categoria: "Battle Royale",
-    androidPackage: "com.epicgames.fortnite",
-    playStoreUrl: "https://store.epicgames.com/mobile",
-    img: "img/juegos/fortnite.jpg",
-  },
 ];
 
+/** Busca la definición móvil/tablet de un juego por su slug de torneo */
+export function buscarJuegoDispositivo(slug?: string | null): DefJuegoDispositivo | null {
+  if (!slug) return null;
+  const norm = slug.trim().toLowerCase();
+  return (
+    CATALOGO_JUEGOS_DISPOSITIVO.find(
+      (j) => j.slug === norm || (j.aliases && j.aliases.includes(norm)),
+    ) || null
+  );
+}
+
+/** Calcula el porcentaje y progreso exacto de nivel y experiencia de Google Play Games */
+export function calcularProgresoNivelPlayGames(pg?: PerfilPlayGames | null): ProgresoNivelPlayGames {
+  const nivelActual = Math.max(1, Number(pg?.currentLevel) || 1);
+  const esMaximo = Boolean(pg?.isMaxLevel);
+  const nivelSiguiente = esMaximo ? nivelActual : Math.max(nivelActual + 1, Number(pg?.nextLevel) || nivelActual + 1);
+  const xpTotal = Math.max(0, Number(pg?.currentXpTotal) || 0);
+  const minXp = Math.max(0, Number(pg?.levelMinXp) || 0);
+  const maxXp = Math.max(minXp, Number(pg?.levelMaxXp) || 0);
+
+  if (esMaximo || maxXp <= minXp) {
+    return {
+      nivelActual,
+      nivelSiguiente,
+      xpTotal,
+      xpEnNivel: xpTotal,
+      xpRangoNivel: xpTotal || 1000,
+      xpFaltante: 0,
+      porcentaje: esMaximo ? 100 : xpTotal > 0 ? 65 : 0,
+      esMaximo,
+    };
+  }
+
+  const xpRangoNivel = maxXp - minXp;
+  const xpEnNivel = Math.min(xpRangoNivel, Math.max(0, xpTotal - minXp));
+  const xpFaltante = Math.max(0, maxXp - xpTotal);
+  const porcentaje = Math.min(100, Math.max(4, Math.round((xpEnNivel / xpRangoNivel) * 100)));
+
+  return {
+    nivelActual,
+    nivelSiguiente,
+    xpTotal,
+    xpEnNivel,
+    xpRangoNivel,
+    xpFaltante,
+    porcentaje,
+    esMaximo: false,
+  };
+}
+
 /** Acceso tipado al objeto Capacitor en window */
-function getCapacitor(): any {
+export function getCapacitor(): any {
   if (typeof window !== "undefined" && (window as any).Capacitor) {
     return (window as any).Capacitor;
   }
   return null;
 }
 
-/** Devuelve información del dispositivo y entorno actual */
+/** Devuelve información del dispositivo y entorno actual (Android, iOS, Tablet o Web) */
 export async function detectarDispositivo(): Promise<InfoDispositivo> {
   const cap = getCapacitor();
   const ua = typeof navigator !== "undefined" ? navigator.userAgent.toLowerCase() : "";
   const esAndroidUA = /android/.test(ua);
-  const esIosUA = /iphone|ipad|ipod/.test(ua);
-  const esTabletUA = /ipad/.test(ua) || (esAndroidUA && !/mobile/.test(ua)) || (typeof window !== "undefined" && window.innerWidth >= 768 && window.innerWidth <= 1366 && "ontouchstart" in window);
+  const esIosUA = /iphone|ipad|ipod/.test(ua) || (/macintosh/.test(ua) && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1);
+  const ancho = typeof window !== "undefined" ? Math.min(window.innerWidth, window.screen?.width || window.innerWidth) : 1024;
+  const esTabletUA =
+    /ipad|tablet|playbook|silk/.test(ua) ||
+    (esAndroidUA && !/mobile/.test(ua)) ||
+    ((esAndroidUA || esIosUA) && ancho >= 600);
 
-  if (cap && cap.isNativePlatform && cap.isNativePlatform()) {
-    const plataforma = cap.getPlatform ? cap.getPlatform() : (esAndroidUA ? "android" : "ios");
+  if ((cap && cap.isNativePlatform && cap.isNativePlatform()) || esAppNativa()) {
+    const platRaw = cap?.getPlatform ? cap.getPlatform() : esIosUA ? "ios" : "android";
+    const plataforma = platRaw === "ios" ? "ios" : "android";
     try {
-      if (cap.Plugins?.VantsGames?.getDeviceInfo) {
+      if (cap?.Plugins?.VantsGames?.getDeviceInfo) {
         const info = await cap.Plugins.VantsGames.getDeviceInfo();
         return {
           esNativo: true,
-          plataforma: plataforma === "android" ? "android" : "ios",
+          plataforma,
           esTablet: Boolean(info.isTablet || esTabletUA),
           marca: info.brand,
           modelo: info.model,
@@ -202,7 +281,7 @@ export async function detectarDispositivo(): Promise<InfoDispositivo> {
     }
     return {
       esNativo: true,
-      plataforma: plataforma === "android" ? "android" : "ios",
+      plataforma,
       esTablet: esTabletUA,
     };
   }
@@ -215,13 +294,12 @@ export async function detectarDispositivo(): Promise<InfoDispositivo> {
 }
 
 /**
- * Escanea y detecta los juegos instalados en el dispositivo Android/Tablet/iOS.
+ * Escanea y detecta los juegos instalados en el teléfono o tablet Android/iOS.
  */
 export async function escanearJuegosInstalados(): Promise<EstadoJuegoDetectado[]> {
   const cap = getCapacitor();
   const dis = await detectarDispositivo();
 
-  // 1. Android Nativo con Plugin VantsGames
   if (dis.esNativo && dis.plataforma === "android" && cap?.Plugins?.VantsGames?.getInstalledGames) {
     try {
       const paquetes = CATALOGO_JUEGOS_DISPOSITIVO.map((j) => ({
@@ -234,6 +312,7 @@ export async function escanearJuegosInstalados(): Promise<EstadoJuegoDetectado[]
       const lista: Array<{
         slug: string;
         packageId: string;
+        activePackage?: string;
         installed: boolean;
         versionName?: string;
         versionCode?: number;
@@ -241,24 +320,36 @@ export async function escanearJuegosInstalados(): Promise<EstadoJuegoDetectado[]
 
       const mapa = new Map(lista.map((x) => [x.slug, x]));
 
-      return CATALOGO_JUEGOS_DISPOSITIVO.map((def) => {
+      const detectados = CATALOGO_JUEGOS_DISPOSITIVO.map((def) => {
         const hit = mapa.get(def.slug);
         const instalado = Boolean(hit?.installed);
         return {
           ...def,
           instalado,
+          activePackage: hit?.activePackage || def.androidPackage,
           versionName: hit?.versionName,
           versionCode: hit?.versionCode,
           puedeLanzar: instalado,
-          fuenteDeteccion: instalado ? "android_package_manager" : "no_detectado",
+          fuenteDeteccion: (instalado ? "android_package_manager" : "no_detectado") as EstadoJuegoDetectado["fuenteDeteccion"],
         };
       });
+
+      // Ordenar primero los juegos instalados en el dispositivo para lanzarlos en un toque
+      return detectados.sort((a, b) => Number(b.instalado) - Number(a.instalado));
     } catch (e) {
       console.warn("[VANTS] Error consultando plugin nativo de juegos:", e);
     }
   }
 
-  // 2. Fallback estándar (Web, iOS o nativo sin respuesta del plugin)
+  if (dis.plataforma === "ios") {
+    return CATALOGO_JUEGOS_DISPOSITIVO.map((def) => ({
+      ...def,
+      instalado: false,
+      puedeLanzar: Boolean(def.iosScheme),
+      fuenteDeteccion: def.iosScheme ? "ios_scheme" : "no_detectado",
+    }));
+  }
+
   return CATALOGO_JUEGOS_DISPOSITIVO.map((def) => ({
     ...def,
     instalado: false,
@@ -268,7 +359,8 @@ export async function escanearJuegosInstalados(): Promise<EstadoJuegoDetectado[]
 }
 
 /**
- * Lanza un juego directamente en el dispositivo o redirige a su tienda de descarga
+ * Lanza directamente el juego en el teléfono o tablet para entrar al torneo,
+ * o abre su ficha en Google Play / App Store si aún no está instalado.
  */
 export async function lanzarJuegoODescargar(juego: DefJuegoDispositivo | EstadoJuegoDetectado): Promise<{
   abierto: boolean;
@@ -277,10 +369,14 @@ export async function lanzarJuegoODescargar(juego: DefJuegoDispositivo | EstadoJ
   const cap = getCapacitor();
   const dis = await detectarDispositivo();
 
-  // En Android nativo: pedir al plugin abrir el juego por su packageId
+  // 1. Android Nativo: abre directamente el paquete instalado (incluyendo ediciones MAX / alternativas)
   if (dis.esNativo && dis.plataforma === "android" && cap?.Plugins?.VantsGames?.launchGame) {
     try {
-      const res = await cap.Plugins.VantsGames.launchGame({ packageId: juego.androidPackage });
+      const targetPkg = ("activePackage" in juego && juego.activePackage) ? juego.activePackage : juego.androidPackage;
+      const res = await cap.Plugins.VantsGames.launchGame({
+        packageId: targetPkg,
+        packagesAlt: juego.androidPackagesAlt || [],
+      });
       if (res?.opened) {
         return { abierto: true, accion: "lanzado" };
       }
@@ -292,80 +388,178 @@ export async function lanzarJuegoODescargar(juego: DefJuegoDispositivo | EstadoJ
     }
   }
 
-  // En iOS con esquema de URL
+  // 2. Android en navegador móvil: Android Intent URI para abrir el juego instalado o caer a Play Store
+  if (!dis.esNativo && dis.plataforma === "android" && typeof window !== "undefined") {
+    const intentUrl = `intent://#Intent;package=${juego.androidPackage};S.browser_fallback_url=${encodeURIComponent(juego.playStoreUrl)};end`;
+    window.location.href = intentUrl;
+    return { abierto: true, accion: "lanzado" };
+  }
+
+  // 3. iOS / iPadOS: esquema directo del juego y respaldo a App Store si no cambia la visibilidad
   if (dis.plataforma === "ios" && juego.iosScheme && typeof window !== "undefined") {
     try {
+      const inicio = Date.now();
       window.location.href = juego.iosScheme;
       setTimeout(() => {
-        if (juego.appStoreUrl) window.open(juego.appStoreUrl, "_blank");
-      }, 1500);
+        if (document.visibilityState === "visible" && Date.now() - inicio < 2200 && juego.appStoreUrl) {
+          window.location.href = juego.appStoreUrl;
+        }
+      }, 1400);
       return { abierto: true, accion: "lanzado" };
     } catch {
-      // Ignorar
+      // Continuar a tienda
     }
   }
 
-  // Redirección a tienda según plataforma
+  // 4. Tienda oficial
   const urlTienda = dis.plataforma === "ios" && juego.appStoreUrl ? juego.appStoreUrl : juego.playStoreUrl;
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && !dis.esNativo) {
     window.open(urlTienda, "_blank", "noopener,noreferrer");
+  } else if (typeof window !== "undefined") {
+    window.location.href = urlTienda;
   }
   return { abierto: false, accion: "tienda" };
 }
 
-/**
- * Consulta el estado y perfil de Google Play Games Services v2
- */
-export async function obtenerPerfilPlayGames(): Promise<PerfilPlayGames> {
-  const cap = getCapacitor();
-  const dis = await detectarDispositivo();
+function mapearRespuestaPlayGames(res: any, fuente: "play_games_nativo" | "vants_cloud" = "play_games_nativo"): PerfilPlayGames {
+  return {
+    disponible: true,
+    autenticado: Boolean(res?.authenticated),
+    playerId: res?.playerId || undefined,
+    displayName: res?.displayName || undefined,
+    title: res?.title || undefined,
+    iconUri: res?.iconUri || undefined,
+    iconBase64: res?.iconBase64 || undefined,
+    bannerUri: res?.bannerUri || undefined,
+    currentLevel: typeof res?.currentLevel === "number" ? res.currentLevel : undefined,
+    nextLevel: typeof res?.nextLevel === "number" ? res.nextLevel : undefined,
+    currentXpTotal: typeof res?.currentXpTotal === "number" ? res.currentXpTotal : undefined,
+    levelMinXp: typeof res?.levelMinXp === "number" ? res.levelMinXp : undefined,
+    levelMaxXp: typeof res?.levelMaxXp === "number" ? res.levelMaxXp : undefined,
+    isMaxLevel: Boolean(res?.isMaxLevel),
+    lastLevelUpTimestamp: typeof res?.lastLevelUpTimestamp === "number" ? res.lastLevelUpTimestamp : undefined,
+    serverAuthCode: res?.serverAuthCode || undefined,
+    fuente,
+    error: res?.error,
+  };
+}
 
-  if (!dis.esNativo || dis.plataforma !== "android" || !cap?.Plugins?.VantsGames?.getPlayGamesProfile) {
-    return {
-      disponible: false,
-      autenticado: false,
-      error: "Google Play Games Services requiere la app nativa VANTS Movil en Android.",
-    };
-  }
-
+/** Sincroniza la experiencia (XP y Nivel) de Google Play Games en la cuenta VANTS del jugador */
+export async function sincronizarExperienciaPlayGamesEnServidor(pg: PerfilPlayGames): Promise<void> {
+  if (!pg.autenticado || !pg.playerId) return;
   try {
-    const res = await cap.Plugins.VantsGames.getPlayGamesProfile();
+    await api("/int/auth/playgames/xp", {
+      method: "POST",
+      auth: true,
+      body: {
+        playerId: pg.playerId,
+        displayName: pg.displayName,
+        title: pg.title,
+        currentLevel: pg.currentLevel,
+        nextLevel: pg.nextLevel,
+        currentXpTotal: pg.currentXpTotal,
+        levelMinXp: pg.levelMinXp,
+        levelMaxXp: pg.levelMaxXp,
+      },
+    });
+  } catch {
+    // Si aún no hay sesión VANTS activa, se sincronizará tras autenticarse
+  }
+}
+
+/** Lee la experiencia de Google Play Games previamente sincronizada en VANTS (útil en iOS / Tablet / PC) */
+export async function leerExperienciaPlayGamesDeServidor(): Promise<PerfilPlayGames | null> {
+  try {
+    const r = await api<{
+      ok: boolean;
+      playGames: {
+        player_id: string;
+        gamer_tag: string | null;
+        title: string | null;
+        current_level: number | null;
+        next_level: number | null;
+        current_xp_total: number | null;
+        level_min_xp: number | null;
+        level_max_xp: number | null;
+        avatar_url: string | null;
+      } | null;
+    }>("/int/auth/playgames/xp", { auth: true });
+    if (!r?.playGames?.player_id) return null;
+    const pg = r.playGames;
     return {
       disponible: true,
-      autenticado: Boolean(res?.authenticated),
-      playerId: res?.playerId,
-      displayName: res?.displayName,
-      title: res?.title,
-      iconUri: res?.iconUri,
-      bannerUri: res?.bannerUri,
-      currentLevel: res?.currentLevel,
-      error: res?.error,
+      autenticado: true,
+      playerId: pg.player_id,
+      displayName: pg.gamer_tag || "Jugador Play Juegos",
+      title: pg.title || undefined,
+      iconBase64: pg.avatar_url || undefined,
+      currentLevel: pg.current_level ?? undefined,
+      nextLevel: pg.next_level ?? undefined,
+      currentXpTotal: pg.current_xp_total ?? undefined,
+      levelMinXp: pg.level_min_xp ?? undefined,
+      levelMaxXp: pg.level_max_xp ?? undefined,
+      fuente: "vants_cloud",
     };
-  } catch (err: any) {
-    return {
-      disponible: true,
-      autenticado: false,
-      error: err?.message || "Error al conectar con Google Play Juegos",
-    };
+  } catch {
+    return null;
   }
 }
 
 /**
- * Inicia la ventana oficial de autenticación de Google Play Juegos Services
+ * Consulta el perfil y la experiencia (XP + Nivel) de Google Play Games Services v2.
+ * En Android nativo consulta directamente PlayGamesSdk; en otros dispositivos recupera
+ * la experiencia vinculada a la cuenta VANTS del jugador.
  */
-export async function autenticarPlayGames(): Promise<PerfilPlayGames> {
+export async function obtenerPerfilPlayGames(opts?: { conSesionVants?: boolean; requestAuthCode?: boolean }): Promise<PerfilPlayGames> {
+  const cap = getCapacitor();
+  const dis = await detectarDispositivo();
+
+  if (dis.esNativo && dis.plataforma === "android" && cap?.Plugins?.VantsGames?.getPlayGamesProfile) {
+    try {
+      const res = await cap.Plugins.VantsGames.getPlayGamesProfile({
+        requestAuthCode: Boolean(opts?.requestAuthCode),
+      });
+      const perfil = mapearRespuestaPlayGames(res, "play_games_nativo");
+      if (perfil.autenticado && opts?.conSesionVants) {
+        sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+      }
+      return perfil;
+    } catch (err: any) {
+      return {
+        disponible: true,
+        autenticado: false,
+        error: err?.message || "Error al conectar con Google Play Juegos",
+      };
+    }
+  }
+
+  if (opts?.conSesionVants) {
+    const remoto = await leerExperienciaPlayGamesDeServidor();
+    if (remoto) return remoto;
+  }
+
+  return {
+    disponible: false,
+    autenticado: false,
+    error: "Inicia desde VANTS Movil en Android para leer tu XP en vivo de Google Play Juegos.",
+  };
+}
+
+/**
+ * Inicia la ventana e insignia oficial de autenticación de Google Play Juegos Services v2
+ */
+export async function autenticarPlayGames(opts?: { requestAuthCode?: boolean; sincronizar?: boolean }): Promise<PerfilPlayGames> {
   const cap = getCapacitor();
   if (cap?.Plugins?.VantsGames?.signInPlayGames) {
     try {
-      const res = await cap.Plugins.VantsGames.signInPlayGames();
-      return {
-        disponible: true,
-        autenticado: Boolean(res?.authenticated),
-        playerId: res?.playerId,
-        displayName: res?.displayName,
-        iconUri: res?.iconUri,
-        currentLevel: res?.currentLevel,
-      };
+      const res = await cap.Plugins.VantsGames.signInPlayGames({
+        requestAuthCode: opts?.requestAuthCode !== false,
+      });
+      const perfil = mapearRespuestaPlayGames(res, "play_games_nativo");
+      if (perfil.autenticado && opts?.sincronizar !== false) {
+        sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+      }
+      return perfil;
     } catch (e: any) {
       return {
         disponible: true,
@@ -374,5 +568,56 @@ export async function autenticarPlayGames(): Promise<PerfilPlayGames> {
       };
     }
   }
-  return obtenerPerfilPlayGames();
+  return obtenerPerfilPlayGames({ conSesionVants: opts?.sincronizar });
+}
+
+/** Abre la interfaz nativa oficial de Logros de Google Play Juegos dentro de la app */
+export async function abrirLogrosPlayGames(): Promise<boolean> {
+  const cap = getCapacitor();
+  if (cap?.Plugins?.VantsGames?.showAchievements) {
+    try {
+      const r = await cap.Plugins.VantsGames.showAchievements();
+      return Boolean(r?.opened);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Abre la interfaz nativa oficial de Clasificaciones de Google Play Juegos dentro de la app */
+export async function abrirRankingsPlayGames(): Promise<boolean> {
+  const cap = getCapacitor();
+  if (cap?.Plugins?.VantsGames?.showLeaderboards) {
+    try {
+      const r = await cap.Plugins.VantsGames.showLeaderboards();
+      return Boolean(r?.opened);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** Escucha en tiempo real cuando Google Play Games autentica al jugador al iniciar la app */
+export function suscribirEventoPlayGames(cb: (pg: PerfilPlayGames) => void): () => void {
+  const cap = getCapacitor();
+  if (!cap?.Plugins?.VantsGames?.addListener) return () => {};
+  let handle: { remove?: () => void } | null = null;
+  Promise.resolve(
+    cap.Plugins.VantsGames.addListener("playGamesAuthenticated", (data: any) => {
+      cb(mapearRespuestaPlayGames(data, "play_games_nativo"));
+    }),
+  )
+    .then((h: any) => {
+      handle = h;
+    })
+    .catch(() => {});
+  return () => {
+    try {
+      handle?.remove?.();
+    } catch {
+      // Ignorar al desmontar
+    }
+  };
 }

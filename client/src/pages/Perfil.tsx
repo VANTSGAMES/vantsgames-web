@@ -7,11 +7,16 @@ import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalo
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil, RiotIdForm } from "./Juegos";
-import { PanelJuegosDispositivo } from "@/components/DispositivosJuegos";
+import {
+  IconoPlayGames,
+  LanzadorRapidoTorneo,
+  PanelJuegosDispositivo,
+  TarjetaExperienciaPlayGames,
+} from "@/components/DispositivosJuegos";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api, pub } from "@/lib/api";
+import { api, esAppNativa, pub } from "@/lib/api";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PERFIL_LINKS } from "@/lib/nav";
 import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
@@ -167,6 +172,10 @@ function Resumen() {
         </div>
       </section>
 
+      {/* EXPERIENCIA GOOGLE PLAY JUEGOS + LANZADOR RÁPIDO DE TORNEO */}
+      <TarjetaExperienciaPlayGames />
+      <LanzadorRapidoTorneo compacto />
+
       {/* RECOMPENSAS Y PRIVILEGIOS VANTS (3 tarjetas estilo Dashboard ID) */}
       <section className="grid gap-4" aria-labelledby="vants-recompensas-t" data-testid="vants-recompensas-grid">
         <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -286,43 +295,43 @@ function Resumen() {
         </div>
       </section>
 
-      {/* MIS APPS Y CAPTURA VANTS (estilo "MIS PRODUCTOS") */}
-      <section className="grid gap-3" aria-labelledby="vants-apps-t">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 id="vants-apps-t" className="eyebrow">Mis apps VANTS (actualización automática)</h2>
-          <Link href="/clips" className="link-arrow text-xs">Cómo funciona la captura →</Link>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <a
-            href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
-          >
-            <span className="w-12 h-12 shrink-0 grid place-items-center text-2xl font-light border" style={{ borderColor: "var(--linea)", background: "var(--grafito)" }}>+</span>
-            <div className="min-w-0">
-              <div className="text-sm font-bold">Instalar VANTS Clipper PC</div>
-              <p className="text-xs muted mt-0.5">
-                Captura tus partidas en Windows, recorta a 9:16 gratis en tu PC y sube Shorts automáticos con tus Créditos VANTS.
-              </p>
-            </div>
-          </a>
-          <a
-            href="https://github.com/VANTSGAMES/banter/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
-          >
-            <span className="w-12 h-12 shrink-0 grid place-items-center text-lg font-black" style={{ background: "var(--rojo)", color: "#fff" }}>B</span>
-            <div className="min-w-0">
-              <div className="text-sm font-bold">Banter Desktop & Android</div>
-              <p className="text-xs muted mt-0.5">
-                App oficial multiplataforma VANTS con auto-updates en PC y Google Play, comunidad y modo 0 anuncios en PRO/CREATOR.
-              </p>
-            </div>
-          </a>
-        </div>
-      </section>
+      {/* MIS APPS Y CAPTURA VANTS (solo en escritorio/web; oculto dentro de la app nativa) */}
+      {!esAppNativa() && (
+        <section className="grid gap-3" aria-labelledby="vants-apps-t">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <h2 id="vants-apps-t" className="eyebrow">Mis apps VANTS (actualización automática)</h2>
+            <Link href="/clips" className="link-arrow text-xs">Cómo funciona la captura →</Link>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <a
+              href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
+            >
+              <span className="w-12 h-12 shrink-0 grid place-items-center text-2xl font-light border" style={{ borderColor: "var(--linea)", background: "var(--grafito)" }}>+</span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold">Instalar VANTS Clipper PC</div>
+                <p className="text-xs muted mt-0.5">
+                  Captura tus partidas en Windows, recorta a 9:16 gratis en tu PC y sube Shorts automáticos con tus Créditos VANTS.
+                </p>
+              </div>
+            </a>
+            <Link
+              href="/perfil/cuentas"
+              className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
+            >
+              <span className="w-12 h-12 shrink-0 grid place-items-center text-lg font-black" style={{ background: "var(--rojo)", color: "#fff" }}>V</span>
+              <div className="min-w-0">
+                <div className="text-sm font-bold">VANTS Movil · Android, iOS & Tablets</div>
+                <p className="text-xs muted mt-0.5">
+                  Conecta Google Play Juegos, lee tu experiencia (XP) y abre tus juegos instalados directo para cada torneo.
+                </p>
+              </div>
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* INSIGNIAS Y LOGROS (conservados intactos) */}
       <div className="panel panel-pad grid gap-4" data-testid="perfil-insignias">
@@ -701,43 +710,44 @@ function Cuentas() {
   };
   const vinculos = perfil.data?.vinculos || [];
   return (
-    <div className="wrap grid gap-4">
-      <p className="small muted" style={{ maxWidth: "70ch" }}>
-        Una cuenta solo figura como conectada cuando el servidor completa la autorización oficial del proveedor (OAuth). Los datos escritos a mano no cuentan como vinculación.
-      </p>
-      {aviso && <p className="small" role="status" style={{ color: aviso.ok ? "var(--ok)" : "#ff5468" }} data-testid="aviso-vinculo">{aviso.m}</p>}
-      <div className="grid-auto grid md:grid-cols-2">
-        {PROVEEDORES.map((p) => {
-          const diag = linker.data?.plataformas?.[p.linker];
-          const configurado = diag === "ok" && linker.data?.plataformas?._linker_url === "ok";
-          const v = vinculos.find((x) => x.plataforma === p.linker);
-          let estado: Estado;
-          if (err[p.id]) estado = "error";
-          else if (v && v.verificada) estado = "conectada";
-          else if (linker.error) estado = "error";
-          else if (linker.data && !configurado) estado = "pendiente";
-          else estado = "desconectada";
-          const ui = ESTADO_UI[estado];
-          return (
-            <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
-              <div className="flex items-center gap-3">
-                {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : <img src={pub(p.logo)} alt="" width={32} height={32} />}
-                <span className="d-3">{p.nombre}</span>
-                <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
+    <div className="wrap grid gap-6">
+      <PanelJuegosDispositivo />
+      <div className="border-t pt-6 grid gap-4" style={{ borderColor: "var(--linea-suave)" }}>
+        <h3 className="d-3">Cuentas competitivas PC & Consola (OAuth Oficial)</h3>
+        <p className="small muted" style={{ maxWidth: "70ch" }}>
+          Una cuenta solo figura como conectada cuando el servidor completa la autorización oficial del proveedor (OAuth). Los datos escritos a mano no cuentan como vinculación.
+        </p>
+        {aviso && <p className="small" role="status" style={{ color: aviso.ok ? "var(--ok)" : "#ff5468" }} data-testid="aviso-vinculo">{aviso.m}</p>}
+        <div className="grid-auto grid md:grid-cols-2">
+          {PROVEEDORES.map((p) => {
+            const diag = linker.data?.plataformas?.[p.linker];
+            const configurado = diag === "ok" && linker.data?.plataformas?._linker_url === "ok";
+            const v = vinculos.find((x) => x.plataforma === p.linker);
+            let estado: Estado;
+            if (err[p.id]) estado = "error";
+            else if (v && v.verificada) estado = "conectada";
+            else if (linker.error) estado = "error";
+            else if (linker.data && !configurado) estado = "pendiente";
+            else estado = "desconectada";
+            const ui = ESTADO_UI[estado];
+            return (
+              <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
+                <div className="flex items-center gap-3">
+                  {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : <img src={pub(p.logo)} alt="" width={32} height={32} />}
+                  <span className="d-3">{p.nombre}</span>
+                  <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
+                </div>
+                {estado === "conectada" && v && <p className="small muted">Cuenta verificada: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b></p>}
+                {estado === "pendiente" && <p className="small muted">La vinculación oficial con {p.nombre} se activará cuando la app de {p.nombre} esté registrada en el servidor.</p>}
+                {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] === "sin_url" ? "No se pudo abrir la vinculación: tu sesión no está activa. Inicia sesión de nuevo e inténtalo." : err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
+                {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
+                {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : "Desconectar"}</button>}
               </div>
-              {estado === "conectada" && v && <p className="small muted">Cuenta verificada: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b></p>}
-              {estado === "pendiente" && <p className="small muted">La vinculación oficial con {p.nombre} se activará cuando la app de {p.nombre} esté registrada en el servidor.</p>}
-              {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] === "sin_url" ? "No se pudo abrir la vinculación: tu sesión no está activa. Inicia sesión de nuevo e inténtalo." : err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
-              {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
-              {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : "Desconectar"}</button>}
-            </div>
-          );
-        })}
-        <TarjetaEpic />
-      </div>
-      <div className="mt-4"><RiotIdForm /></div>
-      <div className="mt-6 border-t pt-6" style={{ borderColor: "var(--linea-suave)" }}>
-        <PanelJuegosDispositivo />
+            );
+          })}
+          <TarjetaEpic />
+        </div>
+        <div className="mt-2"><RiotIdForm /></div>
       </div>
     </div>
   );
@@ -919,7 +929,7 @@ function safeReturnParam(): string {
 
 export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) {
   const [, nav] = useLocation();
-  const { status, loginWithGoogle, startEmailOtp, verifyEmailOtp } = useAuth();
+  const { status, esNativo, loginWithGoogle, loginWithPlayGames, startEmailOtp, verifyEmailOtp } = useAuth();
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpStep, setOtpStep] = useState<"email" | "code">("email");
@@ -946,6 +956,15 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
   const entrarConGoogle = () => {
     if (!exigirTerminos()) return;
     loginWithGoogle(returnTo);
+  };
+  const entrarConPlayGames = async () => {
+    if (!exigirTerminos()) return;
+    setSt({ k: "enviando" });
+    try {
+      await loginWithPlayGames(returnTo);
+    } finally {
+      setSt({ k: "idle" });
+    }
   };
   const enviarOtp = async (e: FormEvent) => {
     e.preventDefault();
@@ -975,28 +994,27 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
   const qsReturn = returnTo !== "/perfil" ? "?returnTo=" + encodeURIComponent(returnTo) : "";
   return (
     <>
-      <PageHead eyebrow="Cuenta" title={titulos[modo]} />
+      <PageHead eyebrow="Cuenta · Acceso 100% en la App" title={titulos[modo]} />
       <div className="wrap">
         <div className="panel panel-pad chamfer grid gap-5 max-w-lg" data-testid={"acceso-" + modo}>
           {status === "autenticado" ? (
-            <><p>Ya tienes la sesión iniciada.</p><Link href={returnTo} className="btn btn-rojo w-fit">Continuar</Link></>
+            <><p>Ya tienes la sesión iniciada.</p><Link href={returnTo} className="btn btn-rojo w-fit">Ir a mi perfil</Link></>
           ) : !AUTH_ENABLED || status === "no_disponible" ? (
             <>
-              <p className="muted">El acceso usa la identidad de VANTS y solo funciona en el dominio registrado de la plataforma. En esta vista previa no se puede iniciar sesión y no se muestra ningún dato privado.</p>
-              <p className="small" style={{ color: "var(--gris-3)" }}>Estado del servicio de identidad: no disponible en este entorno.</p>
+              <p className="muted">El servicio de identidad se está inicializando en este entorno.</p>
             </>
           ) : (
             <>
               {authErrorParam && (
                 <p className="small" style={{ color: "#ff5468" }} role="alert">
-                  No se completó el acceso con Google ({authErrorParam}). Inténtalo de nuevo.
+                  No se completó el acceso con Google ({authErrorParam}). Inténtalo de nuevo o entra con código de 6 dígitos.
                 </p>
               )}
               {modo === "registro" && (
                 <>
                   <p className="muted" data-testid="bienvenida-registro">
-                    Bienvenido a VANTS. Crea tu cuenta gratis en menos de un minuto, vincula tu perfil gamer y
-                    empieza a competir o armar tu propia comunidad.
+                    Bienvenido a VANTS. Crea tu cuenta gratis aquí mismo dentro de la aplicación, sincroniza tu nivel de
+                    Google Play Juegos y empieza a competir.
                   </p>
                   <label
                     className="flex items-start gap-3 text-sm leading-relaxed p-3 rounded-[4px] border transition-colors"
@@ -1023,19 +1041,39 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
                     />
                     <span>
                       Acepto los{" "}
-                      <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline text-white">Términos de Servicio</a>, la{" "}
-                      <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline text-white">Política de Privacidad</a>{" "}
+                      <Link href="/terminos" className="underline text-white">Términos de Servicio</Link>, la{" "}
+                      <Link href="/privacidad" className="underline text-white">Política de Privacidad</Link>{" "}
                       y las normas de conducta y juego limpio de VANTS GAMES.
                     </span>
                   </label>
                 </>
               )}
               {modo !== "registro" && (
-                <p className="muted">Accede con Google o recibe un código de 6 dígitos en tu correo (sin contraseña).</p>
+                <p className="muted">
+                  Inicia sesión directamente dentro de la app con Google Play Juegos, tu cuenta de Google o un código
+                  instantáneo de 6 dígitos en tu correo.
+                </p>
+              )}
+              {esNativo && (
+                <button
+                  type="button"
+                  onClick={entrarConPlayGames}
+                  disabled={status === "cargando" || st.k === "enviando"}
+                  data-testid="button-playgames-signin"
+                  className="inline-flex items-center justify-center gap-3 px-4 h-12 rounded-[4px] font-bold text-sm transition-opacity hover:opacity-95 cursor-pointer w-full"
+                  style={{
+                    backgroundColor: "#00c853",
+                    color: "#06130b",
+                    border: "1px solid #3ddc84",
+                  }}
+                >
+                  <IconoPlayGames size={22} />
+                  <span>{modo === "registro" ? "Registrarse con Google Play Juegos" : "Entrar con Google Play Juegos"}</span>
+                </button>
               )}
               <GoogleSignInButton
                 onClick={entrarConGoogle}
-                disabled={status === "cargando"}
+                disabled={status === "cargando" || st.k === "enviando"}
                 className="w-full"
                 label={modo === "registro" ? "Registrarse con Google" : "Continuar con Google"}
               />

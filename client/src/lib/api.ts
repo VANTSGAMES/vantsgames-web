@@ -1,23 +1,56 @@
 /**
  * Cliente único de la API de Vantsgames (Cloudflare Worker + D1).
- * Las rutas son relativas: en Cloudflare las sirve el Worker de esta web
- * (worker/index.ts) y en el preview local las reenvía server/routes.ts.
- * Aquí no hay secretos: el token de sesión es del usuario y viaja como Bearer.
+ * En web (https://vants.cc) usa rutas relativas; dentro de la app nativa
+ * Capacitor (Android / iOS / Tablet) apunta directamente a https://vants.cc,
+ * https://int.vants.cc y https://fn.vants.cc para que todo funcione 100% in-app.
  */
-const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+
+/** Detecta si la app corre empaquetada de forma nativa (Android, iOS o Tablet vía Capacitor). */
+export function esAppNativa(): boolean {
+  if ((import.meta.env.VITE_NATIVE_APP as string | undefined) === "1") return true;
+  if (typeof window === "undefined") return false;
+  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
+  if (cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform()) return true;
+  const proto = window.location.protocol;
+  if (proto === "capacitor:" || proto === "ionic:") return true;
+  if (
+    window.location.hostname === "localhost" &&
+    proto === "https:" &&
+    (window.location.port === "" || window.location.port === "443")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const PORT_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+const ENV_API_ORIGIN = ((import.meta.env.VITE_API_ORIGIN as string | undefined) || "").replace(/\/$/, "");
+
+function resolverApiBase(): string {
+  if (ENV_API_ORIGIN) return ENV_API_ORIGIN;
+  if (esAppNativa()) return "https://vants.cc";
+  return PORT_BASE;
+}
 
 /** Origen público de la plataforma, para imágenes que la API devuelve con ruta relativa. */
 export const ASSET_ORIGIN: string =
-  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) ?? "https://vants.cc";
+  (import.meta.env.VITE_ASSET_ORIGIN as string | undefined) || "https://vants.cc";
 
 /** En producción (mismo Worker que la API) las funciones se llaman directo a vants-functions (CORS abierto). */
-const FN_ORIGIN: string = (import.meta.env.VITE_FN_ORIGIN as string | undefined) || "";
+const ENV_FN_ORIGIN: string = ((import.meta.env.VITE_FN_ORIGIN as string | undefined) || "").replace(/\/$/, "");
 
-/** Worker vants-integraciones (FACEIT, directos Twitch/Kick, notificaciones). Rutas "/int/...". */
-const INT_ORIGIN: string = (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://int.vants.cc";
+/** Worker vants-integraciones (FACEIT, directos Twitch/Kick, notificaciones, auth). Rutas "/int/...". */
+export const INT_ORIGIN: string = (
+  (import.meta.env.VITE_INT_ORIGIN as string | undefined) || "https://int.vants.cc"
+).replace(/\/$/, "");
+
 function destino(path: string): string {
   if (path.startsWith("/int/")) return INT_ORIGIN + path.slice(4);
-  return (FN_ORIGIN && path.startsWith("/fn/") ? FN_ORIGIN : API_BASE) + path;
+  if (path.startsWith("/fn/")) {
+    const fnBase = ENV_FN_ORIGIN || (esAppNativa() ? "https://fn.vants.cc" : resolverApiBase());
+    return fnBase + path;
+  }
+  return resolverApiBase() + path;
 }
 
 export class ApiError extends Error {
@@ -138,5 +171,5 @@ export interface YtVideo { id: string; titulo: string; fecha: string; mini: stri
 export interface Stream { canal: string; canalNombre: string; perfil: string; titulo: string; juego: string; vistas: number; inicio: string; idioma: string; mini: string }
 export interface Creator { canal: string; enVivo: boolean; deD1: boolean; perfil: string }
 
-/** Ruta a un archivo de /public que funciona con base "./" (preview) y "/" (Cloudflare). */
+/** Ruta a un archivo de /public que funciona con base "./" (app nativa / preview) y "/" (Cloudflare). */
 export const pub = (p: string) => import.meta.env.BASE_URL + p.replace(/^\//, "");

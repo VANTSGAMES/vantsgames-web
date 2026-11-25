@@ -47,7 +47,7 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true">
 
-        <!-- Google Play Games Services v2 Metadata -->
+        <!-- Google Play Games Services v2 Metadata (activa la insignia oficial de bienvenida al abrir) -->
         <meta-data
             android:name="com.google.android.gms.games.APP_ID"
             android:value="@string/game_services_project_id" />

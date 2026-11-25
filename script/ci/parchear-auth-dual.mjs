@@ -230,6 +230,57 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 9) Soporte CORS nativo para la app móvil/tablet Capacitor (Android https://localhost y iOS capacitor://localhost)
+  //    para que todas las rutas /api/* funcionen 100% dentro de la aplicación sin "Origen no permitido".
+  if (!c.includes("/* VANTS_NATIVE_CORS_V1 */")) {
+    const TARGET_CORS_PRE = `    // 2. Activar Sitemap para Google y rutas de Kick`;
+    const REPLACED_CORS_PRE = `    /* VANTS_NATIVE_CORS_V1 */
+    const __natOrigin = (request.headers.get("origin") || "").trim();
+    const __isNatOrigin =
+      __natOrigin === "https://localhost" ||
+      __natOrigin === "capacitor://localhost" ||
+      __natOrigin === "ionic://localhost" ||
+      /^http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(__natOrigin);
+    if (__isNatOrigin && request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": __natOrigin,
+          "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "authorization, content-type, accept",
+          "Access-Control-Max-Age": "86400",
+          "Vary": "Origin"
+        }
+      });
+    }
+
+    // 2. Activar Sitemap para Google y rutas de Kick`;
+    if (c.includes(TARGET_CORS_PRE)) {
+      c = c.replace(TARGET_CORS_PRE, REPLACED_CORS_PRE);
+    }
+
+    const TARGET_CORS_CALL = `      const __r301 = await fetchWorker(__reqV, env, ctx);`;
+    const REPLACED_CORS_CALL = `      if (
+        __isNatOrigin &&
+        (request.method === "GET" ||
+          request.method === "HEAD" ||
+          /^Bearer\\s+\\S+/i.test(request.headers.get("authorization") || ""))
+      ) {
+        const __hNat = new Headers(__reqV.headers);
+        __hNat.set("origin", "${VANTS_ISSUER}");
+        __reqV = new Request(__reqV, { headers: __hNat });
+      }
+      let __r301 = await fetchWorker(__reqV, env, ctx);
+      if (__isNatOrigin && __r301) {
+        __r301 = new Response(__r301.body, __r301);
+        __r301.headers.set("Access-Control-Allow-Origin", __natOrigin);
+        __r301.headers.set("Vary", "Origin");
+      }`;
+    if (c.includes(TARGET_CORS_CALL)) {
+      c = c.replace(TARGET_CORS_CALL, REPLACED_CORS_CALL);
+    }
+  }
+
   return c;
 }
 

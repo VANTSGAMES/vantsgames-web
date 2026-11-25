@@ -34,6 +34,8 @@
   --t-fast: 140ms;
   --t-base: 220ms;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 
   /* variables que esperan los componentes base */
   --background: 240 5% 4%;
@@ -179,7 +181,14 @@ button { font: inherit; color: inherit; }
 .empty .empty-code { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.12em; color: var(--gris-3); text-transform: uppercase; }
 
 /* ---------- Cabecera ---------- */
-.hdr { position: sticky; top: 0; z-index: 50; background: rgba(10,10,11,0.94); border-bottom: 1px solid var(--linea-suave); }
+.hdr {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  padding-top: var(--safe-top);
+  background: rgba(10,10,11,0.96);
+  border-bottom: 1px solid var(--linea-suave);
+}
 .hdr-in { display: flex; align-items: center; gap: 1.25rem; height: 64px; }
 .nav-item { position: relative; }
 .nav-btn {
@@ -468,4 +477,177 @@ select.input { appearance: auto; }
 
 /* Cloudflare Zaraz Consent: evita texto blanco sobre fondo blanco en el modal de cookies */
 .cf_modal_container { color: #111827; }
+
+/* ============================================================
+   VANTS MOVIL · Adaptación nativa Android, iOS y Tablets
+   Insignia flotante Google Play Juegos + Barra inferior táctil
+   ============================================================ */
+@media (hover: none) and (pointer: coarse) {
+  .input, select.input, textarea.input {
+    font-size: 16px; /* Evita auto-zoom al escribir en iOS WKWebView / Safari */
+  }
+}
+
+/* Tablets (768px - 1279px): aprovecha el ancho en 2-3 columnas cómodas */
+@media (min-width: 768px) and (max-width: 1279.98px) {
+  :root {
+    --gutter: 1.75rem;
+  }
+  .hdr-in {
+    height: 68px;
+  }
+}
+
+/* Espacio inferior para la barra de navegación en teléfonos y tablets (< 1280px) */
+@media (max-width: 1279.98px) {
+  .vants-shell-body {
+    padding-bottom: calc(74px + var(--safe-bottom));
+  }
+}
+
+.vants-bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 48;
+  background: rgba(10, 10, 11, 0.97);
+  border-top: 1px solid var(--linea);
+  padding-bottom: var(--safe-bottom);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.vants-bottom-nav-grid {
+  max-width: 760px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: center;
+  height: 64px;
+  padding-inline: 0.35rem;
+}
+
+.vants-bnav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 100%;
+  color: var(--gris-2);
+  font-family: var(--f-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  position: relative;
+  transition: color var(--t-fast);
+}
+
+.vants-bnav-item:hover,
+.vants-bnav-item.activo {
+  color: var(--blanco);
+}
+
+.vants-bnav-item.activo::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 2px;
+  background: var(--rojo);
+}
+
+.vants-bnav-play {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--blanco);
+  font-family: var(--f-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.vants-bnav-play-pill {
+  width: 44px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: var(--rojo);
+  color: #fff;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  box-shadow: 0 4px 16px rgba(255, 13, 46, 0.42);
+}
+
+/* Insignia superior oficial estilo Google Play Juegos al iniciar */
+.vants-pg-insignia-wrap {
+  position: fixed;
+  top: calc(12px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 80;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  pointer-events: auto;
+  animation: pg-badge-drop 420ms cubic-bezier(0.2, 0.85, 0.25, 1) both;
+}
+
+.vants-pg-insignia {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.45rem 0.75rem 0.45rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(17, 20, 19, 0.96);
+  border: 1px solid rgba(61, 220, 132, 0.55);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.65), 0 0 20px rgba(0, 200, 83, 0.22);
+}
+
+.vants-pg-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 200, 83, 0.16);
+  border: 1.5px solid #00c853;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.vants-pg-nivel-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  background: rgba(0, 200, 83, 0.18);
+  color: #3ddc84;
+  border: 1px solid rgba(61, 220, 132, 0.4);
+  white-space: nowrap;
+}
+
+@keyframes pg-badge-drop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -22px) scale(0.92);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
 
