@@ -15,7 +15,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { filtrosJuegos, opcionesJuegos } from "@/lib/juegos";
 import { detectKickClipGame, filterClipsByGame } from "@/lib/clipFiltering";
-import { api, apiForm } from "@/lib/api";
+import { api, apiForm, esAppNativa } from "@/lib/api";
 import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { hace } from "@/lib/format";
@@ -634,29 +634,33 @@ function GuiaCapturaAutomatica() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>
-          <span className="eyebrow">Paso 1 · Instala nuestra app</span>
-          <strong className="text-sm">Banter Desktop o VANTS Clipper</strong>
+          <span className="eyebrow">{esAppNativa() ? "Paso 1 · En tu móvil o tablet" : "Paso 1 · Canal PC Windows"}</span>
+          <strong className="text-sm">{esAppNativa() ? "Sube clips desde tu galería o enlace" : "VANTS Desktop (PC) o VANTS Clipper"}</strong>
           <p className="text-xs muted">
-            Se actualiza automáticamente cada vez que lanzamos una nueva versión (en PC Windows y en Android desde Google Play).
+            {esAppNativa()
+              ? "Estás en VANTS Movil: sube tus jugadas directamente desde la galería de tu teléfono/tablet arriba, o instala VANTS Desktop en tu ordenador Windows."
+              : "Instalador exclusivo para PC Windows (independiente de VANTS Movil Android). Se actualiza automáticamente desde el canal de escritorio."}
           </p>
-          <div className="flex gap-2 flex-wrap mt-1">
-            <a
-              href="https://github.com/VANTSGAMES/banter/releases/latest"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm btn-rojo"
-            >
-              Descargar Banter PC
-            </a>
-            <a
-              href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-sm btn-ghost"
-            >
-              VANTS Clipper
-            </a>
-          </div>
+          {!esAppNativa() && (
+            <div className="flex gap-2 flex-wrap mt-1">
+              <a
+                href="https://github.com/VANTSGAMES/banter/releases/latest"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm btn-rojo"
+              >
+                Descargar VANTS PC (.exe)
+              </a>
+              <a
+                href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm btn-ghost"
+              >
+                VANTS Clipper PC
+              </a>
+            </div>
+          )}
         </div>
 
         <div className="p-3.5 grid gap-1.5 content-start" style={{ background: "var(--grafito)", border: "1px solid var(--linea)" }}>

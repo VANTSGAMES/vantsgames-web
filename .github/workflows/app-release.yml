@@ -18,13 +18,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Versión (x.y.z)"
+        description: "Versión móvil (x.y.z)"
         required: true
-        default: "1.3.0"
+        default: "1.4.0"
       codigo:
-        description: "versionCode (entero creciente)"
+        description: "versionCode Android (entero creciente >= 320)"
         required: false
-        default: "130"
+        default: "320"
 
 concurrency:
   group: app-release
@@ -49,16 +49,19 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Calcular versión y versionCode
+      - name: Calcular versión móvil y versionCode monotónico (aislado de PC)
         id: meta
         run: |
           VER="${{ inputs.version }}"
-          if [ -z "$VER" ]; then VER="1.3.${{ github.run_number }}"; fi
+          if [ -z "$VER" ]; then VER="1.4.${{ github.run_number }}"; fi
+          MIN_COD=$((320 + ${{ github.run_number }}))
           COD="${{ inputs.codigo }}"
-          if [ -z "$COD" ]; then COD="$((200 + ${{ github.run_number }}))"; fi
+          if [ -z "$COD" ] || [ "$COD" -lt "$MIN_COD" ] 2>/dev/null; then
+            COD="$MIN_COD"
+          fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "codigo=$COD" >> "$GITHUB_OUTPUT"
-          echo "Compilando VANTS Movil v$VER (versionCode $COD)"
+          echo "Compilando VANTS Movil (canal exclusivo Android/Tablet) v$VER · versionCode $COD"
 
       - name: Instalar dependencias del proyecto
         run: npm ci --no-audit --no-fund
@@ -82,6 +85,9 @@ jobs:
         run: |
           rm -rf dist-app
           npx vite build --base=./ --outDir ../dist-app --emptyOutDir
+          rm -f dist-app/*.apk dist-app/*.aab dist-app/*.exe dist-app/sw.js dist-app/registerSW.js dist-app/workbox-*.js
+          test ! -f dist-app/VANTSMovil.apk
+          test ! -f dist-app/sw.js
           ls -la dist-app
 
       - name: Componentes del SDK de Android
@@ -180,17 +186,19 @@ jobs:
             VANTSMovil-${{ steps.meta.outputs.version }}.apk
             VANTSMovil.apk
 
-      - name: Publicar en GitHub Releases
+      - name: Publicar en GitHub Releases (Canal exclusivo Móvil · movil-v*)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="v${{ steps.meta.outputs.version }}"
-          ARCHIVOS=("VANTSMovil-${{ steps.meta.outputs.version }}.aab" "VANTSMovil.aab" "VANTSMovil-${{ steps.meta.outputs.version }}.apk" "VANTSMovil.apk")
+          TAG="movil-v${{ steps.meta.outputs.version }}"
+          VER="${{ steps.meta.outputs.version }}"
+          COD="${{ steps.meta.outputs.codigo }}"
+          ARCHIVOS=("VANTSMovil-${VER}.aab" "VANTSMovil.aab" "VANTSMovil-${VER}.apk" "VANTSMovil.apk")
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "${ARCHIVOS[@]}" --clobber -R "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" "${ARCHIVOS[@]}" \
-              --title "VANTS Movil $TAG (Google Play AAB + APK · 100% In-App)" \
-              --notes "App oficial de VANTS GAMES ($TAG) optimizada para Android y Tablets. Inicio de sesión 100% dentro de la app, perfil del jugador, lanzador en un toque de juegos para torneos, lectura de experiencia/XP e insignia oficial de bienvenida de Google Play Juegos." \
+              --title "VANTS Movil v${VER} (Android + Tablets · Google Play AAB + APK)" \
+              --notes "Canal oficial exclusivo de VANTS Movil v${VER} (versionCode ${COD}, appId cc.vants.app) para Android y Tablets — 100% separado de VANTS Desktop PC (VANTSGAMES/banter). Incluye login 100% in-app, perfil del jugador, lanzador de juegos para torneos y sincronización con Google Play Juegos v2." \
               --latest -R "$GITHUB_REPOSITORY"
           fi

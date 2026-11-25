@@ -3,7 +3,9 @@ import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { JUEGOS } from "@/lib/juegos";
 import { normalizeText, searchCommandItems, type CommandItem } from "@/lib/discovery";
-import { api, type Paged, type Team, type Tournament } from "@/lib/api";
+import { api, esAppNativa, type Paged, type Team, type Tournament } from "@/lib/api";
+
+const EN_APP_NATIVA = esAppNativa();
 
 /** Esenciales curados (el resto de la navegación ya vive en el header/menú). */
 const ESPECIALES: CommandItem[] = [
@@ -14,7 +16,9 @@ const ESPECIALES: CommandItem[] = [
   { id: "ir-planes", label: "Planes", hint: "PRO, CREATOR y Pase S4", to: "/membresias", group: "Ir a" },
   { id: "ir-empresas", label: "Empresas", hint: "Patrocinios y alianzas", to: "/empresas", group: "Ir a", keywords: ["b2b", "marcas"] },
   { id: "ir-soporte", label: "Soporte", hint: "Abrir un ticket", to: "/perfil/soporte", group: "Ir a", keywords: ["ticket", "ayuda"] },
-  { id: "ir-app", label: "App Android", hint: "Descargar VANTS Movil APK", to: "https://vants.cc/VANTSMovil.apk", group: "Ir a", keywords: ["apk", "descargar", "movil"] },
+  ...(!EN_APP_NATIVA
+    ? [{ id: "ir-app", label: "App Android", hint: "Descargar VANTS Movil APK", to: "https://vants.cc/VANTSMovil.apk", group: "Ir a", keywords: ["apk", "descargar", "movil"] }]
+    : []),
 ];
 
 const JUEGOS_ITEMS: CommandItem[] = JUEGOS.map((j) => ({

@@ -281,6 +281,28 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 10) Separación estricta de descargas Móvil (vantsgames-web) vs PC (banter):
+  //     /VANTSMovil.apk y /descargas/vants-movil/* sirven exclusivamente VANTS Movil desde este repo,
+  //     mientras que /descargas/vants-pc/* sirve exclusivamente VANTS PC desde VANTSGAMES/banter.
+  if (!c.includes("/* VANTS_DOWNLOADS_SPLIT_V1 */")) {
+    const TARGET_DL = `    // 2. Activar Sitemap para Google y rutas de Kick`;
+    const REPLACED_DL = `    /* VANTS_DOWNLOADS_SPLIT_V1 */
+    if (
+      _vantsInt &&
+      (request.method === "GET" || request.method === "HEAD") &&
+      (__redir301.pathname === "/VANTSMovil.apk" ||
+        __redir301.pathname.startsWith("/descargas/vants-movil") ||
+        __redir301.pathname.startsWith("/descargas/vants-pc"))
+    ) {
+      return _vantsInt.fetch(request);
+    }
+
+    // 2. Activar Sitemap para Google y rutas de Kick`;
+    if (c.includes(TARGET_DL)) {
+      c = c.replace(TARGET_DL, REPLACED_DL);
+    }
+  }
+
   return c;
 }
 

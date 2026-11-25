@@ -13,8 +13,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
 
 import androidx.activity.result.ActivityResult;
 
@@ -31,7 +29,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.api.ApiException;
-import com.google.android.gms.games.GamesClient;
 import com.google.android.gms.games.GamesSignInClient;
 import com.google.android.gms.games.PlayGames;
 import com.google.android.gms.games.PlayGamesSdk;
@@ -70,27 +67,10 @@ public class VantsGamesPlugin extends Plugin {
             try {
                 PlayGamesSdk.initialize(getContext());
                 playGamesInitialized = true;
-                configurePopups();
                 Log.i(TAG, "PlayGamesSdk inicializado con éxito");
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 Log.w(TAG, "No se pudo inicializar PlayGamesSdk: " + e.getMessage());
             }
-        } else {
-            configurePopups();
-        }
-    }
-
-    /**
-     * Ancla la insignia flotante oficial de bienvenida y logros de Google Play Juegos
-     * en la parte superior central de la pantalla de VANTS Movil.
-     */
-    private void configurePopups() {
-        Activity activity = getActivity();
-        if (activity == null) return;
-        try {
-            // PGS v2: los popups se anclan automaticamente (sin GamesClient).
-        } catch (Exception e) {
-            Log.w(TAG, "No se pudo configurar la vista de popups de Play Games: " + e.getMessage());
         }
     }
 
@@ -260,48 +240,75 @@ public class VantsGamesPlugin extends Plugin {
     @PluginMethod
     public void getPlayGamesProfile(PluginCall call) {
         initPlayGames();
-        if (getActivity() == null) {
-            call.reject("Actividad no disponible");
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("available", false);
+            call.resolve(res);
             return;
         }
 
-        boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", false));
-        GamesSignInClient signInClient = PlayGames.getGamesSignInClient(getActivity());
-        signInClient.isAuthenticated().addOnCompleteListener(task -> {
-            if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
-                fetchPlayerProfile(call, signInClient, requestAuthCode);
-            } else {
-                JSObject res = new JSObject();
-                res.put("authenticated", false);
-                res.put("available", true);
-                call.resolve(res);
-            }
-        });
+        try {
+            boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", false));
+            GamesSignInClient signInClient = PlayGames.getGamesSignInClient(activity);
+            signInClient.isAuthenticated().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
+                    fetchPlayerProfile(call, signInClient, requestAuthCode);
+                } else {
+                    JSObject res = new JSObject();
+                    res.put("authenticated", false);
+                    res.put("available", true);
+                    call.resolve(res);
+                }
+            });
+        } catch (Throwable t) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("available", false);
+            res.put("error", t.getMessage());
+            call.resolve(res);
+        }
     }
 
     /**
-     * Inicia el flujo oficial de inicio de sesión de Google Play Juegos (con insignia nativa y XP).
+     * Inicia el flujo oficial de inicio de sesión de Google Play Juegos cuando el jugador lo solicita.
      */
     @PluginMethod
     public void signInPlayGames(PluginCall call) {
         initPlayGames();
-        if (getActivity() == null) {
-            call.reject("Actividad no disponible");
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("error", "actividad_no_disponible");
+            call.resolve(res);
             return;
         }
 
-        boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", true));
-        GamesSignInClient signInClient = PlayGames.getGamesSignInClient(getActivity());
-        signInClient.signIn().addOnCompleteListener(task -> {
-            if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
-                fetchPlayerProfile(call, signInClient, requestAuthCode);
-            } else {
-                JSObject res = new JSObject();
-                res.put("authenticated", false);
-                res.put("error", "No se completó la autenticación con Google Play Juegos");
-                call.resolve(res);
-            }
-        });
+        try {
+            boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", true));
+            GamesSignInClient signInClient = PlayGames.getGamesSignInClient(activity);
+            signInClient.signIn().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
+                    fetchPlayerProfile(call, signInClient, requestAuthCode);
+                } else {
+                    JSObject res = new JSObject();
+                    res.put("authenticated", false);
+                    Exception ex = task.getException();
+                    if (ex instanceof ApiException) {
+                        res.put("statusCode", ((ApiException) ex).getStatusCode());
+                    }
+                    res.put("error", ex != null && ex.getMessage() != null ? ex.getMessage() : "play_games_no_autenticado");
+                    call.resolve(res);
+                }
+            });
+        } catch (Throwable t) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("error", t.getMessage());
+            call.resolve(res);
+        }
     }
 
     /**
@@ -440,7 +447,6 @@ public class VantsGamesPlugin extends Plugin {
     }
 
     private void fetchPlayerProfile(PluginCall call, GamesSignInClient signInClient, boolean requestAuthCode) {
-        configurePopups();
         Activity activity = getActivity();
         if (activity == null) {
             call.reject("Actividad no disponible");

@@ -1,8 +1,8 @@
-import { lazy as reactLazy, Suspense, type ComponentType, type ReactNode } from "react";
+import { lazy as reactLazy, Suspense, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 import { Switch, Route, Router, Redirect } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./lib/queryClient";
+import { esAppNativa } from "./lib/api";
 import { AuthProvider } from "./lib/auth";
 import { Privado } from "./components/MuroAcceso";
 import { PaginaEmpresas } from "./components/SeccionEmpresas";
@@ -97,8 +97,46 @@ function Priv({ seccion, children }: { seccion: string; children: ReactNode }) {
   return <Privado seccion={seccion}>{children}</Privado>;
 }
 
-// En Cloudflare: URLs limpias (history). En la vista previa embebida: hash.
-const HASH = import.meta.env.VITE_ROUTER !== "history";
+// En Cloudflare Web: URLs limpias (history). En App Nativa (Capacitor) o vista embebida: hash limpio con soporte de query (?returnTo=, ?juego=).
+const HASH = esAppNativa() || import.meta.env.VITE_ROUTER !== "history";
+
+function subscribeHashChange(callback: () => void) {
+  window.addEventListener("hashchange", callback);
+  return () => window.removeEventListener("hashchange", callback);
+}
+
+function getHashPathname(): string {
+  const raw = window.location.hash.replace(/^#?\/?/, "");
+  const clean = raw.split(/[?#]/)[0] || "";
+  return "/" + clean;
+}
+
+function getHashSearch(): string {
+  const raw = window.location.hash.replace(/^#/, "");
+  const qIdx = raw.indexOf("?");
+  if (qIdx === -1) return "";
+  return raw.slice(qIdx + 1).split("#")[0] || "";
+}
+
+function navigateHash(to: string, opts?: { replace?: boolean }) {
+  const normalized = "#" + (to.startsWith("/") ? to : "/" + to);
+  if (opts?.replace) {
+    const base = window.location.href.replace(/#.*$/, "");
+    window.history.replaceState(null, "", base + normalized);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  } else {
+    window.location.hash = normalized;
+  }
+}
+
+function useVantsHashLocation(): [string, (to: string, opts?: { replace?: boolean }) => void] {
+  const location = useSyncExternalStore(subscribeHashChange, getHashPathname, () => "/");
+  return [location, navigateHash];
+}
+
+function useVantsHashSearch(): string {
+  return useSyncExternalStore(subscribeHashChange, getHashSearch, () => "");
+}
 
 function Rutas() {
   useSeo();
@@ -176,7 +214,15 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <FeedbackProvider>
           <AuthProvider>
-            {HASH ? <Router hook={useHashLocation}><Rutas /></Router> : <Router><Rutas /></Router>}
+            {HASH ? (
+              <Router hook={useVantsHashLocation} searchHook={useVantsHashSearch}>
+                <Rutas />
+              </Router>
+            ) : (
+              <Router>
+                <Rutas />
+              </Router>
+            )}
           </AuthProvider>
         </FeedbackProvider>
       </QueryClientProvider>

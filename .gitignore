@@ -29,4 +29,9 @@ android/local.properties
 *.jks
 *.keystore
 *.aab
+*.exe
 /VANTSMovil*.apk
+client/public/*.apk
+client/public/*.aab
+client/public/*.exe
+dist-app/

@@ -46,6 +46,8 @@ for (const d of ["mipmap-anydpi-v26"]) rmSync(`${RES}/${d}`, { recursive: true, 
 // Splash: fondo oscuro #0A0A0B con el logo oficial de VANTS centrado
 mkdirSync(`${RES}/drawable`, { recursive: true });
 mkdirSync(`${RES}/drawable-land`, { recursive: true });
+rmSync(`${RES}/drawable/splash.xml`, { force: true });
+rmSync(`${RES}/drawable-land/splash.xml`, { force: true });
 const splashLogo = await renderMarca(360);
 await sharp({ create: { width: 1080, height: 1920, channels: 4, background: FONDO } })
   .composite([{ input: splashLogo, left: 360, top: 780 }])

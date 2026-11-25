@@ -49,7 +49,13 @@ Plataforma competitiva oficial de **VANTS GAMES** en **[https://vants.cc](https:
 - **Detección de Juegos en Dispositivo:** Plugin nativo [`VantsGamesPlugin.java`](./android/app/src/main/java/cc/vants/app/VantsGamesPlugin.java) que consulta el catálogo oficial (Free Fire, Wild Rift, Mobile Legends, Clash Royale, Warzone Mobile, FC Mobile, Brawl Stars, PUBG Mobile, Fortnite) cumpliendo las políticas de Google Play mediante `<queries>` sin permisos invasivos.
 - **Soporte Adaptativo:** Optimizado para smartphones, pantallas plegables y tablets (orientación, multi-window, barras oscuras `#0A0A0B`).
 - **Automatización:** [`script/ci/setup-android.mjs`](./script/ci/setup-android.mjs) y [`script/ci/app-icono.mjs`](./script/ci/app-icono.mjs).
-- **Release CI/CD:** [`.github/workflows/app-release.yml`](./.github/workflows/app-release.yml) publica `VANTSMovil-<version>.aab` y `VANTSMovil-<version>.apk` en GitHub Releases.
+- **Release CI/CD (Canal Móvil aislado):** [`.github/workflows/app-release.yml`](./.github/workflows/app-release.yml) publica exclusivamente tags `movil-v<version>` con `VANTSMovil-<version>.aab` y `VANTSMovil-<version>.apk` en `VANTSGAMES/vantsgames-web` Releases.
+
+### 4. Separación Estricta de Canales: PC (`banter`) vs Móvil (`vantsgames-web`)
+| Canal | Repositorio | App ID | Tags de Release | Endpoints en `vants.cc` / `int.vants.cc` |
+| --- | --- | --- | --- | --- |
+| **PC Windows (`VANTS Desktop`)** | [`VANTSGAMES/banter`](https://github.com/VANTSGAMES/banter) | `cc.vants.desktop` | `v*` (`.github/workflows/release-desktop.yml`) | `/descargas/vants-pc/latest` y `/descargas/vants-pc/<ver>/VANTS-Setup-<ver>.exe` (solo `.exe`) |
+| **Android & Tablets (`VANTS Movil`)** | `VANTSGAMES/vantsgames-web` | `cc.vants.app` | `movil-v*` (`.github/workflows/app-release.yml`) | `/VANTSMovil.apk`, `/descargas/vants-movil/latest` y `/descargas/vants-movil/<ver>/VANTSMovil-<ver>.apk` (solo `.apk` / `.aab`) |
 
 ---
 

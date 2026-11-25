@@ -127,8 +127,8 @@ const PLAY_GAMES_ID = process.env.VANTS_PLAY_GAMES_APP_ID || GCP_PROJECT_NUMBER;
 const WEB_OAUTH_CLIENT_ID =
   process.env.VITE_GOOGLE_OAUTH_CLIENT_ID ||
   "238603325169-k1kv9sd18gj09skun2570etpdnnkqj5b.apps.googleusercontent.com";
-const APP_VERSION = process.env.APP_VERSION || "1.3.0";
-const APP_VERSION_CODE = parseInt(process.env.APP_VERSION_CODE || "130", 10) || 130;
+const APP_VERSION = process.env.APP_VERSION || "1.4.0";
+const APP_VERSION_CODE = Math.max(320, parseInt(process.env.APP_VERSION_CODE || "320", 10) || 320);
 
 const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
@@ -136,10 +136,10 @@ const STRINGS_XML = `<?xml version="1.0" encoding="utf-8"?>
     <string name="title_activity_main">VANTS Movil</string>
     <string name="package_name">cc.vants.app</string>
     <string name="custom_url_scheme">cc.vants.app</string>
-    <string name="game_services_project_id">${PLAY_GAMES_ID}</string>
-    <string name="gcp_project_id">${GCP_PROJECT_ID}</string>
-    <string name="google_cloud_project_number">${GCP_PROJECT_NUMBER}</string>
-    <string name="server_client_id">${WEB_OAUTH_CLIENT_ID}</string>
+    <string name="game_services_project_id" translatable="false">${PLAY_GAMES_ID}</string>
+    <string name="gcp_project_id" translatable="false">${GCP_PROJECT_ID}</string>
+    <string name="google_cloud_project_number" translatable="false">${GCP_PROJECT_NUMBER}</string>
+    <string name="server_client_id" translatable="false">${WEB_OAUTH_CLIENT_ID}</string>
 </resources>
 `;
 writeFileSync(`${RES_VALUES}/strings.xml`, STRINGS_XML.trim() + "\n");
@@ -147,7 +147,7 @@ writeFileSync(`${RES_VALUES}/strings.xml`, STRINGS_XML.trim() + "\n");
 const STYLES_XML = `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Tema oscuro oficial de VANTS GAMES #0A0A0B -->
-    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="colorPrimary">#FF0D2E</item>
         <item name="colorPrimaryDark">#0A0A0B</item>
         <item name="colorAccent">#FF0D2E</item>
@@ -156,12 +156,67 @@ const STYLES_XML = `<?xml version="1.0" encoding="utf-8"?>
         <item name="android:navigationBarColor">#0A0A0B</item>
     </style>
 
-    <style name="AppTheme.NoActionBarLaunch" parent="AppTheme">
-        <item name="android:background">@drawable/splash</item>
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">#0A0A0B</item>
+        <item name="android:statusBarColor">#0A0A0B</item>
+        <item name="android:navigationBarColor">#0A0A0B</item>
+    </style>
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#0A0A0B</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>
 `;
 writeFileSync(`${RES_VALUES}/styles.xml`, STYLES_XML.trim() + "\n");
+
+// Recursos gráficos base de respaldo para compilación local en Android Studio (si aún no corrió app-icono.mjs)
+if (!existsSync(`${APP_SRC}/res/drawable/splash.png`)) {
+  const SPLASH_XML = `<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#0A0A0B" />
+        </shape>
+    </item>
+</layer-list>
+`;
+  writeFileSync(`${APP_SRC}/res/drawable/splash.xml`, SPLASH_XML.trim() + "\n");
+}
+
+if (!existsSync(`${APP_SRC}/res/mipmap-mdpi/ic_launcher.png`)) {
+  mkdirSync(`${APP_SRC}/res/mipmap-anydpi-v26`, { recursive: true });
+  const IC_BG_XML = `<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#0A0A0B" />
+</shape>
+`;
+  const IC_FG_XML = `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FF0D2E"
+        android:pathData="M30,30 L45,30 L54,60 L63,30 L78,30 L60,80 L48,80 Z" />
+</vector>
+`;
+  const IC_ADAPTIVE_XML = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+`;
+  writeFileSync(`${APP_SRC}/res/drawable/ic_launcher_background.xml`, IC_BG_XML.trim() + "\n");
+  writeFileSync(`${APP_SRC}/res/drawable/ic_launcher_foreground.xml`, IC_FG_XML.trim() + "\n");
+  writeFileSync(`${APP_SRC}/res/mipmap-anydpi-v26/ic_launcher.xml`, IC_ADAPTIVE_XML.trim() + "\n");
+  writeFileSync(`${APP_SRC}/res/mipmap-anydpi-v26/ic_launcher_round.xml`, IC_ADAPTIVE_XML.trim() + "\n");
+}
 
 // XML file paths
 mkdirSync(`${APP_SRC}/res/xml`, { recursive: true });
@@ -188,8 +243,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.View;
 
 import androidx.activity.result.ActivityResult;
 
@@ -206,7 +259,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount;
 import com.google.android.gms.auth.api.signin.GoogleSignInClient;
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions;
 import com.google.android.gms.common.api.ApiException;
-import com.google.android.gms.games.GamesClient;
 import com.google.android.gms.games.GamesSignInClient;
 import com.google.android.gms.games.PlayGames;
 import com.google.android.gms.games.PlayGamesSdk;
@@ -245,27 +297,10 @@ public class VantsGamesPlugin extends Plugin {
             try {
                 PlayGamesSdk.initialize(getContext());
                 playGamesInitialized = true;
-                configurePopups();
                 Log.i(TAG, "PlayGamesSdk inicializado con éxito");
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 Log.w(TAG, "No se pudo inicializar PlayGamesSdk: " + e.getMessage());
             }
-        } else {
-            configurePopups();
-        }
-    }
-
-    /**
-     * Ancla la insignia flotante oficial de bienvenida y logros de Google Play Juegos
-     * en la parte superior central de la pantalla de VANTS Movil.
-     */
-    private void configurePopups() {
-        Activity activity = getActivity();
-        if (activity == null) return;
-        try {
-            // PGS v2: los popups se anclan automaticamente (sin GamesClient).
-        } catch (Exception e) {
-            Log.w(TAG, "No se pudo configurar la vista de popups de Play Games: " + e.getMessage());
         }
     }
 
@@ -435,48 +470,75 @@ public class VantsGamesPlugin extends Plugin {
     @PluginMethod
     public void getPlayGamesProfile(PluginCall call) {
         initPlayGames();
-        if (getActivity() == null) {
-            call.reject("Actividad no disponible");
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("available", false);
+            call.resolve(res);
             return;
         }
 
-        boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", false));
-        GamesSignInClient signInClient = PlayGames.getGamesSignInClient(getActivity());
-        signInClient.isAuthenticated().addOnCompleteListener(task -> {
-            if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
-                fetchPlayerProfile(call, signInClient, requestAuthCode);
-            } else {
-                JSObject res = new JSObject();
-                res.put("authenticated", false);
-                res.put("available", true);
-                call.resolve(res);
-            }
-        });
+        try {
+            boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", false));
+            GamesSignInClient signInClient = PlayGames.getGamesSignInClient(activity);
+            signInClient.isAuthenticated().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
+                    fetchPlayerProfile(call, signInClient, requestAuthCode);
+                } else {
+                    JSObject res = new JSObject();
+                    res.put("authenticated", false);
+                    res.put("available", true);
+                    call.resolve(res);
+                }
+            });
+        } catch (Throwable t) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("available", false);
+            res.put("error", t.getMessage());
+            call.resolve(res);
+        }
     }
 
     /**
-     * Inicia el flujo oficial de inicio de sesión de Google Play Juegos (con insignia nativa y XP).
+     * Inicia el flujo oficial de inicio de sesión de Google Play Juegos cuando el jugador lo solicita.
      */
     @PluginMethod
     public void signInPlayGames(PluginCall call) {
         initPlayGames();
-        if (getActivity() == null) {
-            call.reject("Actividad no disponible");
+        Activity activity = getActivity();
+        if (activity == null) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("error", "actividad_no_disponible");
+            call.resolve(res);
             return;
         }
 
-        boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", true));
-        GamesSignInClient signInClient = PlayGames.getGamesSignInClient(getActivity());
-        signInClient.signIn().addOnCompleteListener(task -> {
-            if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
-                fetchPlayerProfile(call, signInClient, requestAuthCode);
-            } else {
-                JSObject res = new JSObject();
-                res.put("authenticated", false);
-                res.put("error", "No se completó la autenticación con Google Play Juegos");
-                call.resolve(res);
-            }
-        });
+        try {
+            boolean requestAuthCode = Boolean.TRUE.equals(call.getBoolean("requestAuthCode", true));
+            GamesSignInClient signInClient = PlayGames.getGamesSignInClient(activity);
+            signInClient.signIn().addOnCompleteListener(task -> {
+                if (task.isSuccessful() && task.getResult() != null && task.getResult().isAuthenticated()) {
+                    fetchPlayerProfile(call, signInClient, requestAuthCode);
+                } else {
+                    JSObject res = new JSObject();
+                    res.put("authenticated", false);
+                    Exception ex = task.getException();
+                    if (ex instanceof ApiException) {
+                        res.put("statusCode", ((ApiException) ex).getStatusCode());
+                    }
+                    res.put("error", ex != null && ex.getMessage() != null ? ex.getMessage() : "play_games_no_autenticado");
+                    call.resolve(res);
+                }
+            });
+        } catch (Throwable t) {
+            JSObject res = new JSObject();
+            res.put("authenticated", false);
+            res.put("error", t.getMessage());
+            call.resolve(res);
+        }
     }
 
     /**
@@ -615,7 +677,6 @@ public class VantsGamesPlugin extends Plugin {
     }
 
     private void fetchPlayerProfile(PluginCall call, GamesSignInClient signInClient, boolean requestAuthCode) {
-        configurePopups();
         Activity activity = getActivity();
         if (activity == null) {
             call.reject("Actividad no disponible");
@@ -706,14 +767,13 @@ public class VantsGamesPlugin extends Plugin {
 `;
 writeFileSync(`${JAVA_DIR}/VantsGamesPlugin.java`, PLUGIN_JAVA.trim() + "\n");
 
-// 4. MainActivity.java (PlayGamesSdk + insignia oficial al iniciar + WebView optimizado + barras oscuras)
+// 4. MainActivity.java (PlayGamesSdk silencioso + insignia oficial al iniciar + WebView optimizado + barras oscuras)
 const MAIN_ACTIVITY_JAVA = `package cc.vants.app;
 
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
@@ -721,7 +781,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
-import com.google.android.gms.games.GamesClient;
 import com.google.android.gms.games.GamesSignInClient;
 import com.google.android.gms.games.PlayGames;
 import com.google.android.gms.games.PlayGamesSdk;
@@ -729,69 +788,73 @@ import com.google.android.gms.games.PlayGamesSdk;
 public class MainActivity extends BridgeActivity {
 
     private static final String TAG = "VantsMainActivity";
-    private boolean startupSignInTriggered = false;
+    private boolean startupCheckDone = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Inicializar Google Play Games Services v2 al arrancar la actividad
+        // Inicializar Google Play Games Services v2 de forma segura al arrancar la actividad
         try {
             PlayGamesSdk.initialize(this);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             Log.w(TAG, "PlayGamesSdk init warning: " + e.getMessage());
         }
 
-        // Registrar el plugin nativo de juegos y Google Play Juegos
+        // Registrar el plugin nativo de juegos y Google Play Juegos antes de super.onCreate
         registerPlugin(VantsGamesPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Estilo de barras de estado y navegación oscuras acordes a VANTS (#0A0A0B)
-        Window window = getWindow();
-        if (window != null) {
-            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-            window.setStatusBarColor(Color.parseColor("#0A0A0B"));
-            window.setNavigationBarColor(Color.parseColor("#0A0A0B"));
+        try {
+            Window window = getWindow();
+            if (window != null) {
+                window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+                window.setStatusBarColor(Color.parseColor("#0A0A0B"));
+                window.setNavigationBarColor(Color.parseColor("#0A0A0B"));
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                View decor = window.getDecorView();
-                int flags = decor.getSystemUiVisibility();
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
-                flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-                decor.setSystemUiVisibility(flags);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    View decor = window.getDecorView();
+                    int flags = decor.getSystemUiVisibility();
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+                    flags &= ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                    decor.setSystemUiVisibility(flags);
+                }
             }
+        } catch (Throwable ignored) {
         }
 
-        // Optimización del WebView para móviles y tablets (sin destellos blancos y con DOM storage)
-        if (getBridge() != null && getBridge().getWebView() != null) {
-            WebView webView = getBridge().getWebView();
-            webView.setBackgroundColor(Color.parseColor("#0A0A0B"));
-            WebSettings settings = webView.getSettings();
-            settings.setDomStorageEnabled(true);
-            settings.setDatabaseEnabled(true);
-            settings.setMediaPlaybackRequiresUserGesture(false);
+        // Optimización del WebView para móviles y tablets (sin destellos blancos, sin popups externos y con DOM storage)
+        try {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                WebView webView = getBridge().getWebView();
+                webView.setBackgroundColor(Color.parseColor("#0A0A0B"));
+                WebSettings settings = webView.getSettings();
+                settings.setDomStorageEnabled(true);
+                settings.setDatabaseEnabled(true);
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setJavaScriptCanOpenWindowsAutomatically(false);
+                settings.setSupportMultipleWindows(false);
+            }
+        } catch (Throwable ignored) {
         }
 
-        // Configurar el anclaje superior de la insignia oficial de bienvenida de Google Play Juegos
-        triggerPlayGamesWelcomeBadge();
+        // Verificación silenciosa de Google Play Juegos (muestra automáticamente la insignia oficial
+        // de bienvenida cuando el jugador está autenticado, sin lanzar diálogos de error si aún no lo está)
+        checkSilentPlayGamesWelcome();
     }
 
-    private void triggerPlayGamesWelcomeBadge() {
+    private void checkSilentPlayGamesWelcome() {
+        if (startupCheckDone) return;
+        startupCheckDone = true;
         try {
-            // PGS v2: los popups/insignia se anclan automaticamente; no hay GamesClient.
-            if (!startupSignInTriggered) {
-                startupSignInTriggered = true;
-                GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
-                signInClient.isAuthenticated().addOnCompleteListener(task -> {
-                    boolean authed = task.isSuccessful()
-                        && task.getResult() != null
-                        && task.getResult().isAuthenticated();
-                    if (!authed) {
-                        // Solicita inicio automático al abrir para mostrar la insignia oficial de Google Play Juegos
-                        signInClient.signIn();
-                    }
-                });
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "No se pudo disparar insignia inicial de Play Games: " + e.getMessage());
+            GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
+            signInClient.isAuthenticated().addOnCompleteListener(task -> {
+                boolean authed = task.isSuccessful()
+                    && task.getResult() != null
+                    && task.getResult().isAuthenticated();
+                Log.i(TAG, "PlayGames silent check authenticated=" + authed);
+            });
+        } catch (Throwable e) {
+            Log.w(TAG, "Verificación silenciosa de Play Games omitida: " + e.getMessage());
         }
     }
 }
@@ -935,10 +998,12 @@ if (existsSync("android/variables.gradle") && tieneCapacitorGenerado) {
 }
 
 if (!tieneCapacitorGenerado) {
-  const SETTINGS_GRADLE = `include ':app'
-rootProject.name = 'VANTS Movil'
-`;
-  writeFileSync("android/settings.gradle", SETTINGS_GRADLE.trim() + "\n");
+  const capLocalPath = "../node_modules/@capacitor/android/capacitor";
+  const capLine = existsSync("node_modules/@capacitor/android/capacitor")
+    ? `\ninclude ':capacitor-android'\nproject(':capacitor-android').projectDir = new File('${capLocalPath}')\n`
+    : "\n";
+  const SETTINGS_GRADLE = `include ':app'${capLine}rootProject.name = 'VANTS Movil'\n`;
+  writeFileSync("android/settings.gradle", SETTINGS_GRADLE);
 }
 
 if (!existsSync("android/gradle.properties")) {

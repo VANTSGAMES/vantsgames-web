@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { esAppNativa } from "../lib/api";
 
 interface Props {
   children: ReactNode;
@@ -65,7 +66,11 @@ export class ErrorBoundary extends Component<Props, State> {
               className="btn btn-rojo btn-sm"
               onClick={() => {
                 this.setState({ hasError: false, message: "" });
-                window.location.href = "/";
+                if (esAppNativa() || import.meta.env.VITE_ROUTER !== "history") {
+                  window.location.hash = "#/";
+                } else {
+                  window.location.href = "/";
+                }
               }}
             >
               Volver al inicio

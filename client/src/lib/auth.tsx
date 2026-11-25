@@ -405,21 +405,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // 2. iOS / Tablet / Respaldo In-App con Google Identity Services (sin abrir navegador externo)
-    const accessToken = await obtenerAccessTokenGisInApp();
-    if (accessToken) {
-      const ok = await intercambiarCredencialInApp({ accessToken });
-      if (ok) {
-        toast({ kind: "ok", title: "Sesión iniciada en VANTS" });
-        navigateClient(destinoFinal);
-        return true;
+    const esAndroidNativo = Boolean(cap?.isNativePlatform?.() && cap?.getPlatform?.() === "android");
+
+    // 2. iOS / Tablet no-Android: respaldo In-App con Google Identity Services (evitado en Android WebView para prevenir 403 disallowed_useragent)
+    if (!esAndroidNativo) {
+      const accessToken = await obtenerAccessTokenGisInApp();
+      if (accessToken) {
+        const ok = await intercambiarCredencialInApp({ accessToken });
+        if (ok) {
+          toast({ kind: "ok", title: "Sesión iniciada en VANTS" });
+          navigateClient(destinoFinal);
+          return true;
+        }
       }
     }
+
+    const rutaActual = currentAppPath();
+    if (rutaActual !== "/entrar" && rutaActual !== "/registro") {
+      const qs = destinoFinal && destinoFinal !== "/perfil" ? "?returnTo=" + encodeURIComponent(destinoFinal) : "";
+      navigateClient("/entrar" + qs);
+    }
+    setTimeout(() => {
+      const campoEmail = document.getElementById("otp-em") as HTMLInputElement | null;
+      campoEmail?.focus?.();
+    }, 120);
 
     toast({
       kind: "info",
       title: "Acceso directo en la app",
-      description: "Escribe tu correo abajo para recibir tu código de 6 dígitos sin salir de la aplicación.",
+      description: "Ingresa tu correo aquí abajo para recibir tu código instantáneo de 6 dígitos sin salir de la aplicación.",
     });
     return false;
   };

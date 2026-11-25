@@ -372,6 +372,26 @@ async function rutas(req, env, url) {
     });
   }
 
+  // 1) CANAL PC EXCLUSIVO (VANTSGAMES/banter -> Windows .exe). Jamás mezcla binarios móviles.
+  if (p === '/descargas/vants-pc/latest' && (m === 'GET' || m === 'HEAD')) {
+    const rel = await fetch('https://api.github.com/repos/VANTSGAMES/banter/releases/latest', {
+      headers: { 'User-Agent': 'VANTS-Store-Proxy/1.0', Accept: 'application/vnd.github+json' },
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const exeAsset = rel && Array.isArray(rel.assets)
+      ? rel.assets.find((a) => /^VANTS-Setup-\d+\.\d+\.\d+\.exe$/i.test(a.name || ''))
+      : null;
+    const target = (exeAsset && exeAsset.browser_download_url) || 'https://github.com/VANTSGAMES/banter/releases/latest';
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: target,
+        'cache-control': 'public, max-age=300',
+        'x-vants-channel': 'pc',
+        'x-vants-repo': 'VANTSGAMES/banter',
+      },
+    });
+  }
+
   // Descarga directa sin redirección 302 del instalador VANTS PC (requerido por Microsoft Store Win32).
   const dlMatch = p.match(/^\/descargas\/vants-pc\/(\d+\.\d+\.\d+)\/(VANTS-(?:Setup|Install)(?:-\d+\.\d+\.\d+)?\.exe)$/);
   if (dlMatch && (m === 'GET' || m === 'HEAD')) {
@@ -391,6 +411,75 @@ async function rutas(req, env, url) {
       'accept-ranges': 'bytes',
       'cache-control': 'public, max-age=86400',
       'access-control-allow-origin': '*',
+      'x-vants-channel': 'pc',
+      'x-vants-repo': 'VANTSGAMES/banter',
+    });
+    for (const k of ['content-length', 'content-range', 'etag', 'last-modified']) {
+      const v = up.headers.get(k);
+      if (v) out.set(k, v);
+    }
+    return new Response(m === 'HEAD' ? null : up.body, { status: up.status, headers: out });
+  }
+
+  // 2) CANAL MÓVIL EXCLUSIVO (VANTSGAMES/vantsgames-web -> Android .apk). Jamás lee releases de PC (banter).
+  const dlMovilVer = p.match(/^\/descargas\/vants-movil\/(\d+\.\d+\.\d+)\/(VANTSMovil(?:-\d+\.\d+\.\d+)?\.apk)$/);
+  if (
+    (p === '/VANTSMovil.apk' ||
+      p === '/descargas/vants-movil/VANTSMovil.apk' ||
+      p === '/descargas/vants-movil/latest' ||
+      dlMovilVer) &&
+    (m === 'GET' || m === 'HEAD')
+  ) {
+    const upHeaders = { 'User-Agent': 'VANTS-Mobile-Proxy/1.0' };
+    const range = req.headers.get('range');
+    if (range) upHeaders['Range'] = range;
+
+    let fileName = 'VANTSMovil.apk';
+    const candidateUrls = [];
+    if (dlMovilVer) {
+      const [, verM, fileM] = dlMovilVer;
+      fileName = fileM;
+      candidateUrls.push(`https://github.com/VANTSGAMES/vantsgames-web/releases/download/movil-v${verM}/${fileM}`);
+      candidateUrls.push(`https://github.com/VANTSGAMES/vantsgames-web/releases/download/v${verM}/${fileM}`);
+    } else {
+      candidateUrls.push('https://github.com/VANTSGAMES/vantsgames-web/releases/latest/download/VANTSMovil.apk');
+    }
+
+    let up = null;
+    for (const candidate of candidateUrls) {
+      const res = await fetch(candidate, { method: m, headers: upHeaders, redirect: 'follow' });
+      if (res.ok || res.status === 206) {
+        up = res;
+        break;
+      }
+    }
+
+    if (!up && !dlMovilVer) {
+      const rels = await fetch('https://api.github.com/repos/VANTSGAMES/vantsgames-web/releases?per_page=8', {
+        headers: { 'User-Agent': 'VANTS-Mobile-Proxy/1.0', Accept: 'application/vnd.github+json' },
+      }).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+      for (const rel of Array.isArray(rels) ? rels : []) {
+        if (rel.draft) continue;
+        const apkAsset = (rel.assets || []).find((a) => /^VANTSMovil(?:-[\w.-]+)?\.apk$/i.test(a.name || ''));
+        if (apkAsset && apkAsset.browser_download_url) {
+          const res = await fetch(apkAsset.browser_download_url, { method: m, headers: upHeaders, redirect: 'follow' });
+          if (res.ok || res.status === 206) {
+            up = res;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!up) return new Response('not found', { status: 404 });
+    const out = new Headers({
+      'content-type': 'application/vnd.android.package-archive',
+      'content-disposition': `attachment; filename="${fileName}"`,
+      'accept-ranges': 'bytes',
+      'cache-control': 'public, max-age=300',
+      'access-control-allow-origin': '*',
+      'x-vants-channel': 'movil',
+      'x-vants-repo': 'VANTSGAMES/vantsgames-web',
     });
     for (const k of ['content-length', 'content-range', 'etag', 'last-modified']) {
       const v = up.headers.get(k);
