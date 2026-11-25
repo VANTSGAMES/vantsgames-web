@@ -263,14 +263,7 @@ public class VantsGamesPlugin extends Plugin {
         Activity activity = getActivity();
         if (activity == null) return;
         try {
-            GamesClient gamesClient = PlayGames.getGamesClient(activity);
-            gamesClient.setGravityForPopups(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            if (activity.getWindow() != null && activity.getWindow().getDecorView() != null) {
-                View contentView = activity.getWindow().getDecorView().findViewById(android.R.id.content);
-                if (contentView != null) {
-                    gamesClient.setViewForPopups(contentView);
-                }
-            }
+            // PGS v2: los popups se anclan automaticamente (sin GamesClient).
         } catch (Exception e) {
             Log.w(TAG, "No se pudo configurar la vista de popups de Play Games: " + e.getMessage());
         }
@@ -783,15 +776,7 @@ public class MainActivity extends BridgeActivity {
 
     private void triggerPlayGamesWelcomeBadge() {
         try {
-            GamesClient gamesClient = PlayGames.getGamesClient(this);
-            gamesClient.setGravityForPopups(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            if (getWindow() != null && getWindow().getDecorView() != null) {
-                View root = getWindow().getDecorView().findViewById(android.R.id.content);
-                if (root != null) {
-                    gamesClient.setViewForPopups(root);
-                }
-            }
-
+            // PGS v2: los popups/insignia se anclan automaticamente; no hay GamesClient.
             if (!startupSignInTriggered) {
                 startupSignInTriggered = true;
                 GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
