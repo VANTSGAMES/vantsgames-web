@@ -67,15 +67,7 @@ public class MainActivity extends BridgeActivity {
 
     private void triggerPlayGamesWelcomeBadge() {
         try {
-            GamesClient gamesClient = PlayGames.getGamesClient(this);
-            gamesClient.setGravityForPopups(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
-            if (getWindow() != null && getWindow().getDecorView() != null) {
-                View root = getWindow().getDecorView().findViewById(android.R.id.content);
-                if (root != null) {
-                    gamesClient.setViewForPopups(root);
-                }
-            }
-
+            // PGS v2: los popups/insignia se anclan automaticamente; no hay GamesClient.
             if (!startupSignInTriggered) {
                 startupSignInTriggered = true;
                 GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
