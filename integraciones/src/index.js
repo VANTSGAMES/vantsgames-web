@@ -28,6 +28,7 @@ import { rutasComunidadMisiones } from './comunidadMisiones.js';
 import { rutasComunidadVotaciones } from './comunidadVotaciones.js';
 import { rutasGooglePro } from './googlePro.js';
 import { rutasVidiqSeo } from './vidiqSeo.js';
+import { rutasSkilling } from './skilling.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -565,7 +566,7 @@ async function rutas(req, env, url) {
   // Fase 5: Eventos y Showmatches con RSVP, lista de espera y check-in
   const rev = await rutasEventosRsvp(req, env, url, p, m, { json, usuarioClaims });
   if (rev) return rev;
-  for (const fn of [rutasComunidadLfg, rutasComunidadForo, rutasComunidadMisiones, rutasComunidadVotaciones, rutasGooglePro]) {
+  for (const fn of [rutasComunidadLfg, rutasComunidadForo, rutasComunidadMisiones, rutasComunidadVotaciones, rutasGooglePro, rutasSkilling]) {
     const r = await fn(req, env, url, p, m, { json, usuarioClaims });
     if (r) return r;
   }

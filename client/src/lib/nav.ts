@@ -23,6 +23,7 @@ export const NAV: NavGroup[] = [
   { label: "Comunidad", base: "/comunidad", links: [
     { label: "Clips destacados", to: "/clips" },
     { label: "Directos Twitch & Kick", to: "/directos", hint: "Canales de la comunidad en vivo" },
+    { label: "Centro de capacitación", to: "/capacitacion", hint: "Preferencias de aprendizaje y recomendaciones" },
     { label: "Noticias y anuncios", to: "/noticias" },
     { label: "Eventos y Showmatches", to: "/eventos", hint: "Inscripción RSVP, lista de espera y check-in en vivo" },
   ]},

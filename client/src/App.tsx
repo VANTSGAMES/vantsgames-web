@@ -67,6 +67,7 @@ const EnVivo = lazy(() => import("./pages/Comunidad").then((m) => ({ default: m.
 const Creadores = lazy(() => import("./pages/Comunidad").then((m) => ({ default: m.Creadores })));
 const Comunidad = lazy(() => import("./pages/Comunidad").then((m) => ({ default: m.Comunidad })));
 const Membresias = lazy(() => import("./pages/Membresias"));
+const CapacitacionPagina = lazy(() => import("./pages/Capacitacion"));
 const Insignias = lazy(() => import("./pages/Membresias").then((m) => ({ default: m.Insignias })));
 const Logros = lazy(() => import("./pages/Membresias").then((m) => ({ default: m.Logros })));
 const Progreso = lazy(() => import("./pages/Membresias").then((m) => ({ default: m.Progreso })));
@@ -188,6 +189,7 @@ function Rutas() {
           <Route path="/directos"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
           <Route path="/creadores"><Priv seccion="Los creadores"><Creadores /></Priv></Route>
           <Route path="/membresias" component={Membresias} />
+          <Route path="/capacitacion" component={CapacitacionPagina} />
           <Route path="/pase-s4" component={Membresias} />
           <Route path="/empresas" component={PaginaEmpresas} />
           <Route path="/insignias"><Priv seccion="Las insignias"><Insignias /></Priv></Route>
