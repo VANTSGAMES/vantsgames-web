@@ -43,13 +43,326 @@ export function useLinker() {
   return useApi<{ plataformas: Record<string, string> }>("/fn/linker/");
 }
 
-function PerfilNav() {
+interface ItemMenuPerfilAndroid {
+  id: string;
+  label: string;
+  subtitulo: string;
+  to: string;
+  icono: JSX.Element;
+  acento?: string;
+}
+
+interface GrupoMenuPerfilAndroid {
+  id: string;
+  titulo: string;
+  kicker: string;
+  items: ItemMenuPerfilAndroid[];
+}
+
+const GRUPOS_PERFIL_ANDROID: GrupoMenuPerfilAndroid[] = [
+  {
+    id: "competicion",
+    kicker: "Actividad competitiva",
+    titulo: "Competición y rendimiento",
+    items: [
+      {
+        id: "estadisticas",
+        label: "Estadísticas",
+        subtitulo: "FACEIT CS2, VALORANT y Fortnite en tiempo real",
+        to: "/perfil/estadisticas",
+        acento: "#ff0d2e",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" />
+          </svg>
+        ),
+      },
+      {
+        id: "torneos",
+        label: "Mis torneos",
+        subtitulo: "Inscripciones activas, check-in y brackets",
+        to: "/perfil/torneos",
+        acento: "#ff0d2e",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 9H4a2 2 0 0 1-2-2V5h4M18 9h2a2 2 0 0 0 2-2V5h-4M6 4h12v5a6 6 0 0 1-12 0V4zM12 15v5M8 20h8" />
+          </svg>
+        ),
+      },
+      {
+        id: "equipos",
+        label: "Mis equipos",
+        subtitulo: "Plantillas, capitanía e invitaciones de squad",
+        to: "/perfil/equipos",
+        acento: "#ff0d2e",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        ),
+      },
+      {
+        id: "insignias",
+        label: "Insignias y logros",
+        subtitulo: "Medallas 3D desbloqueadas y colección de 1.000 logros",
+        to: "/perfil/insignias",
+        acento: "#f59e0b",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="8" r="6" />
+            <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" />
+          </svg>
+        ),
+      },
+    ],
+  },
+  {
+    id: "creadores",
+    kicker: "Creadores y productividad",
+    titulo: "Contenido y Workspace",
+    items: [
+      {
+        id: "clips",
+        label: "Mis clips",
+        subtitulo: "Biblioteca de jugadas, YouTube Shorts y Créditos IA",
+        to: "/perfil/clips",
+        acento: "#38bdf8",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="3" width="20" height="18" rx="2" />
+            <polygon points="10 8 16 12 10 16 10 8" />
+          </svg>
+        ),
+      },
+      {
+        id: "workspace",
+        label: "Workspace Pro",
+        subtitulo: "Drive, Docs, Sheets, Calendar, Meet y notas tácticas",
+        to: "/workspace",
+        acento: "#38bdf8",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="2" y="7" width="20" height="14" rx="2" />
+            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+          </svg>
+        ),
+      },
+    ],
+  },
+  {
+    id: "conexiones",
+    kicker: "Sincronización y beneficios",
+    titulo: "Cuentas y membresía",
+    items: [
+      {
+        id: "cuentas",
+        label: "Cuentas vinculadas",
+        subtitulo: "Google Play Juegos, juegos del móvil, Riot, FACEIT y Epic",
+        to: "/perfil/cuentas",
+        acento: "#3ddc84",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        ),
+      },
+      {
+        id: "membresia",
+        label: "Membresía",
+        subtitulo: "Estado de tu plan PRO / CREATOR, Pase S4 y privilegios",
+        to: "/perfil/membresia",
+        acento: "#ff0d2e",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        ),
+      },
+    ],
+  },
+  {
+    id: "ajustes-ayuda",
+    kicker: "Cuenta y asistencia",
+    titulo: "Ajustes y soporte",
+    items: [
+      {
+        id: "ajustes",
+        label: "Configuración",
+        subtitulo: "Nombre público, foto, banner, vitrina y redes sociales",
+        to: "/perfil/ajustes",
+        acento: "#c4c4c9",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.604.852.997 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
+        ),
+      },
+      {
+        id: "soporte",
+        label: "Soporte",
+        subtitulo: "Abrir ticket oficial VTS y atención directa del equipo",
+        to: "/perfil/soporte",
+        acento: "#c4c4c9",
+        icono: (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        ),
+      },
+    ],
+  },
+];
+
+function MenuPerfilAndroid({ onSelect }: { onSelect?: () => void }) {
   return (
-    <nav className="wrap mb-8" aria-label="Secciones del perfil">
+    <div className="grid gap-4 md:grid-cols-2" data-testid="menu-perfil-android">
+      {GRUPOS_PERFIL_ANDROID.map((grupo) => (
+        <section
+          key={grupo.id}
+          className="panel chamfer overflow-hidden flex flex-col"
+          style={{ borderColor: "var(--linea)" }}
+        >
+          <div
+            className="px-4 py-3 border-b flex items-center justify-between gap-2"
+            style={{ borderColor: "var(--linea-suave)", background: "rgba(255,255,255,0.018)" }}
+          >
+            <div>
+              <div className="eyebrow" style={{ fontSize: "0.68rem" }}>{grupo.kicker}</div>
+              <h3 className="d-3 mt-0.5">{grupo.titulo}</h3>
+            </div>
+          </div>
+          <div className="divide-y" style={{ borderColor: "var(--linea-suave)" }}>
+            {grupo.items.map((item) => (
+              <Link
+                key={item.id}
+                href={item.to}
+                onClick={onSelect}
+                className="vants-android-menu-row"
+                data-testid={"android-perfil-item-" + item.id}
+              >
+                <span
+                  className="vants-android-menu-icon"
+                  style={{
+                    color: item.acento || "var(--rojo)",
+                    borderColor: "var(--linea)",
+                  }}
+                >
+                  {item.icono}
+                </span>
+                <span className="min-w-0 flex-1 grid gap-0.5">
+                  <span className="font-bold text-sm text-white leading-tight">{item.label}</span>
+                  <span className="text-xs muted truncate">{item.subtitulo}</span>
+                </span>
+                <span className="muted text-base shrink-0 pl-1" aria-hidden="true">›</span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function PerfilNav({ pathActual }: { pathActual: string }) {
+  const nativo = esAppNativa();
+  if (nativo) return null;
+  return (
+    <nav className="wrap mb-8 hidden lg:block" aria-label="Secciones del perfil">
       <div className="tabs">
-        {PERFIL_LINKS.map((l) => <Link key={l.to} href={l.to} className="tab" data-testid={"perfil-tab-" + l.to.split("/").pop()}>{l.label}</Link>)}
+        {PERFIL_LINKS.map((l) => (
+          <Link
+            key={l.to}
+            href={l.to}
+            aria-selected={pathActual === l.to}
+            className="tab"
+            data-testid={"perfil-tab-" + l.to.split("/").pop()}
+          >
+            {l.label}
+          </Link>
+        ))}
       </div>
     </nav>
+  );
+}
+
+function BarraSubseccionPerfilAndroid({ sub, titulo }: { sub: string; titulo: string }) {
+  const [cajonAbierto, setCajonAbierto] = useState(false);
+  const nativo = esAppNativa();
+  if (!sub) return null;
+
+  const grupoActual = GRUPOS_PERFIL_ANDROID.find((g) => g.items.some((i) => i.id === sub));
+
+  return (
+    <>
+      <div
+        className={(nativo ? "block " : "lg:hidden ") + "wrap pt-4 pb-5"}
+        data-testid="barra-subseccion-android"
+      >
+        <div
+          className="panel chamfer px-3.5 py-3 flex items-center justify-between gap-2"
+          style={{ borderColor: "var(--linea)", background: "var(--grafito-1)" }}
+        >
+          <Link href="/perfil" className="btn btn-sm btn-ghost px-2.5" data-testid="btn-volver-perfil">
+            ← Mi perfil
+          </Link>
+          <div className="min-w-0 text-center flex-1 px-1">
+            {grupoActual && (
+              <div className="text-[10px] uppercase tracking-widest muted font-bold truncate">
+                {grupoActual.titulo}
+              </div>
+            )}
+            <div className="d-3 truncate text-white">{titulo}</div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => setCajonAbierto(true)}
+            data-testid="btn-secciones-perfil-android"
+          >
+            Secciones ▾
+          </button>
+        </div>
+      </div>
+
+      {cajonAbierto && (
+        <div
+          className="modal-fondo"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Secciones del perfil"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCajonAbierto(false);
+          }}
+        >
+          <div
+            className="panel panel-pad chamfer grid gap-4 w-full"
+            style={{ maxWidth: 680, maxHeight: "84vh", overflowY: "auto" }}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="eyebrow">Navegación del jugador</div>
+                <h2 className="d-2 mt-0.5">Secciones de Mi Perfil</h2>
+              </div>
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCajonAbierto(false)}>
+                ✕ Cerrar
+              </button>
+            </div>
+            <Link
+              href="/perfil"
+              onClick={() => setCajonAbierto(false)}
+              className="btn btn-sm btn-rojo w-full justify-center"
+            >
+              Ir al resumen principal de Mi Perfil
+            </Link>
+            <MenuPerfilAndroid onSelect={() => setCajonAbierto(false)} />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -113,8 +426,9 @@ type CuotaVantsPerfil = {
 };
 
 function Resumen() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const q = useApi<{ nickname: string | null; redes: Record<string, any> }>("/api/account/perfil", { auth: true });
+  const fotoQ = useApi<{ pid: string | null; avatar: string | null; propia: boolean }>("/int/perfil/foto", { auth: true });
   const cuota = useApi<CuotaVantsPerfil>("/int/clips/cuota", { auth: true });
   // El nombre público es el nickname guardado en el servidor. Nunca se sustituye por el correo.
   const nombre = q.data?.nickname || null;
@@ -126,49 +440,103 @@ function Resumen() {
   const shortsRestantes = c?.shorts?.restantes ?? 0;
   const shortsLimite = c?.shorts?.limite ?? 0;
   const totalInsignias = (ins.data?.conseguidas || []).length;
+  const nativo = esAppNativa();
 
   return (
-    <div className="wrap grid gap-8" data-testid="vants-id-dashboard">
-      {/* Banner inmersivo VANTS ID */}
+    <div className={"wrap grid gap-6 " + (nativo ? "pt-4" : "")} data-testid="vants-id-dashboard">
+      {/* Tarjeta VANTS ID adaptada a Android/Móvil y Escritorio */}
       <section
-        className="panel relative overflow-hidden p-6 sm:p-8 flex flex-col items-center text-center gap-4"
+        className="panel chamfer relative overflow-hidden p-5 sm:p-7 grid gap-5"
         style={{
           background:
-            "radial-gradient(circle at 18% 20%, rgba(255,13,46,0.32), transparent 52%), radial-gradient(circle at 82% 25%, rgba(76,201,240,0.22), transparent 50%), linear-gradient(135deg, #111218 0%, #0b0b0f 60%, #160c12 100%)",
+            "radial-gradient(circle at 14% 18%, rgba(255,13,46,0.28), transparent 52%), radial-gradient(circle at 86% 20%, rgba(61,220,132,0.14), transparent 48%), linear-gradient(135deg, #111218 0%, #0b0b0f 62%, #150c11 100%)",
           borderColor: "var(--linea)",
         }}
       >
-        <div className="flex items-center gap-2">
-          <span className="eyebrow">VANTS ID · Panel de miembro</span>
-          {c && (
-            <span className={"tag " + (c.activo ? "tag-rojo" : "")}>
-              {c.label}
-            </span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="eyebrow">VANTS ID · Jugador</span>
+            {c && (
+              <span className={"tag " + (c.activo ? "tag-rojo" : "")}>
+                {c.label}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {fotoQ.data?.pid && (
+              <Link href={"/u/" + fotoQ.data.pid} className="btn btn-sm btn-ghost">
+                Ficha pública
+              </Link>
+            )}
+            <Link href="/perfil/ajustes" className="btn btn-sm">
+              Editar perfil
+            </Link>
+          </div>
         </div>
-        <span className="relative inline-block shrink-0">
-          <FotoPerfil nombre={nombre || "?"} picture={user?.picture || null} size={96} />
-          <SelloAvatar s={ins.data?.sello} />
-        </span>
-        <div className="min-w-0 grid gap-1 justify-items-center">
-          {q.isLoading ? (
-            <div className="sk" style={{ height: 36, width: 220 }} />
-          ) : q.error ? (
-            <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
-          ) : nombre ? (
-            <h2 className="d-1 flex flex-wrap items-center justify-center gap-3">
-              {nombre}
-              <Sello3D s={ins.data?.sello} size={26} />
-            </h2>
-          ) : (
-            <div>
-              <p className="d-3">Sin nombre público</p>
-              <Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir nombre →</Link>
-            </div>
-          )}
-          <span className="text-xs muted">
-            Tus Créditos VANTS y tu cupo de YouTube Shorts se renuevan cada día al entrar.
+
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5 text-center sm:text-left">
+          <span className="relative inline-block shrink-0">
+            <FotoPerfil nombre={nombre || "?"} picture={user?.picture || null} size={84} />
+            <SelloAvatar s={ins.data?.sello} />
           </span>
+          <div className="min-w-0 flex-1 grid gap-1.5 justify-items-center sm:justify-items-start">
+            {q.isLoading ? (
+              <div className="sk" style={{ height: 32, width: 200 }} />
+            ) : q.error ? (
+              <p className="muted small">No se pudo leer tu perfil del servidor ({q.error.code}).</p>
+            ) : nombre ? (
+              <h2 className="d-1 flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
+                {nombre}
+                <Sello3D s={ins.data?.sello} size={26} />
+              </h2>
+            ) : (
+              <div>
+                <p className="d-3">Sin nombre público</p>
+                <Link href="/perfil/ajustes" className="link-arrow mt-1">Elegir mi Nick gamer →</Link>
+              </div>
+            )}
+            {user?.email && <span className="text-xs muted">{user.email}</span>}
+            <span className="text-xs muted">
+              Tus Créditos VANTS IA y tu cupo de Shorts se renuevan automáticamente cada día.
+            </span>
+          </div>
+        </div>
+
+        {/* Barra compacta de métricas diarias estilo app Android */}
+        <div
+          className="grid grid-cols-3 gap-2 pt-3 border-t"
+          style={{ borderColor: "var(--linea-suave)" }}
+        >
+          <Link
+            href={creditosLimite > 0 ? "/perfil/clips" : "/membresias"}
+            className="p-2.5 rounded-[4px] text-center transition-colors hover:bg-[var(--grafito-2)]"
+            style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.28)" }}
+          >
+            <div className="d-3 num" style={{ color: "#fbbf24" }}>
+              {creditosRestantes}<span className="text-xs muted font-normal">/{creditosLimite}</span>
+            </div>
+            <div className="text-[10px] uppercase tracking-wider font-bold muted mt-0.5">Créditos IA</div>
+          </Link>
+
+          <Link
+            href={shortsLimite > 0 ? "/perfil/clips" : "/membresias"}
+            className="p-2.5 rounded-[4px] text-center transition-colors hover:bg-[var(--grafito-2)]"
+            style={{ background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.28)" }}
+          >
+            <div className="d-3 num" style={{ color: "#38bdf8" }}>
+              {shortsRestantes}<span className="text-xs muted font-normal">/{shortsLimite}</span>
+            </div>
+            <div className="text-[10px] uppercase tracking-wider font-bold muted mt-0.5">Shorts hoy</div>
+          </Link>
+
+          <Link
+            href="/perfil/insignias"
+            className="p-2.5 rounded-[4px] text-center transition-colors hover:bg-[var(--grafito-2)]"
+            style={{ background: "rgba(255,13,46,0.1)", border: "1px solid rgba(255,13,46,0.3)" }}
+          >
+            <div className="d-3 num text-white">{totalInsignias}</div>
+            <div className="text-[10px] uppercase tracking-wider font-bold muted mt-0.5">Insignias</div>
+          </Link>
         </div>
       </section>
 
@@ -176,199 +544,54 @@ function Resumen() {
       <TarjetaExperienciaPlayGames />
       <LanzadorRapidoTorneo compacto />
 
-      {/* RECOMPENSAS Y PRIVILEGIOS VANTS (3 tarjetas estilo Dashboard ID) */}
-      <section className="grid gap-4" aria-labelledby="vants-recompensas-t" data-testid="vants-recompensas-grid">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h2 id="vants-recompensas-t" className="eyebrow">Recompensas y privilegios VANTS</h2>
-          <span className="text-xs muted">Renovación diaria · 00:00 UTC</span>
+      {/* CENTRO ORGANIZADO DEL PERFIL (Versión Android / Móvil / Tablet siempre visible; en Web escritorio bajo el hub) */}
+      <section className="grid gap-3" aria-labelledby="vants-hub-android-t">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <h2 id="vants-hub-android-t" className="eyebrow">Centro del jugador · Todo organizado</h2>
+          <span className="text-xs muted">4 categorías · Acceso en 1 toque</span>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
-          {/* Tarjeta 1: Créditos VANTS IA */}
-          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(245,158,11,0.09), var(--grafito-1) 55%)" }}>
-            <div className="flex items-start gap-3.5">
-              <span
-                aria-hidden
-                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
-                style={{ background: "linear-gradient(135deg, #f59e0b, #b45309)", color: "#0b0b0f", boxShadow: "0 0 18px rgba(245,158,11,0.35)" }}
-              >
-                V
-              </span>
-              <div className="min-w-0">
-                <div className="d-2 num leading-none" style={{ color: "#fbbf24" }}>
-                  {creditosRestantes}
-                  <span className="text-xs muted font-normal ml-1">/ {creditosLimite} hoy</span>
-                </div>
-                <div className="text-xs uppercase tracking-wider mt-1 font-bold">Créditos VANTS IA</div>
-                <p className="text-xs muted mt-1.5">
-                  Títulos, hashtags y optimización inteligente de clips con el motor VANTS.
-                </p>
-              </div>
-            </div>
-            <Link
-              href={creditosLimite > 0 ? "/clips" : "/membresias"}
-              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
-              style={{ background: "#f59e0b", color: "#0b0b0f" }}
-            >
-              {creditosLimite > 0 ? "Usar Créditos VANTS" : "Activar Créditos VANTS"}
-            </Link>
-          </article>
-
-          {/* Tarjeta 2: Shorts Automáticos PC */}
-          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(76,201,240,0.09), var(--grafito-1) 55%)" }}>
-            <div className="flex items-start gap-3.5">
-              <span
-                aria-hidden
-                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
-                style={{ background: "linear-gradient(135deg, #38bdf8, #0284c7)", color: "#0b0b0f", boxShadow: "0 0 18px rgba(56,189,248,0.35)" }}
-              >
-                ▶
-              </span>
-              <div className="min-w-0">
-                <div className="d-2 num leading-none" style={{ color: "#38bdf8" }}>
-                  {shortsRestantes}
-                  <span className="text-xs muted font-normal ml-1">/ {shortsLimite} hoy</span>
-                </div>
-                <div className="text-xs uppercase tracking-wider mt-1 font-bold">Shorts Automáticos</div>
-                <p className="text-xs muted mt-1.5">
-                  Auto-subida diaria a YouTube Shorts desde nuestra app de PC en formato 9:16.
-                </p>
-              </div>
-            </div>
-            <Link
-              href={shortsLimite > 0 ? "/clips" : "/membresias"}
-              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
-              style={{ background: "#38bdf8", color: "#0b0b0f" }}
-            >
-              {shortsLimite > 0 ? "Abrir Mis Clips" : "Desbloquear Auto-Shorts"}
-            </Link>
-          </article>
-
-          {/* Tarjeta 3: VANTS Rewards & Membresía */}
-          <article className="panel p-5 flex flex-col justify-between gap-4" style={{ background: "linear-gradient(180deg, rgba(255,13,46,0.12), var(--grafito-1) 55%)" }}>
-            <div className="flex items-start gap-3.5">
-              <span
-                aria-hidden
-                className="shrink-0 w-11 h-11 rounded-full grid place-items-center font-black text-base"
-                style={{ background: "linear-gradient(135deg, #ff0d2e, #99061b)", color: "#fff", boxShadow: "0 0 18px rgba(255,13,46,0.35)" }}
-              >
-                ★
-              </span>
-              <div className="min-w-0">
-                <div className="d-3 leading-tight" style={{ color: "var(--blanco)" }}>
-                  {c?.label || "VANTS Rewards"}
-                </div>
-                <div className="text-xs uppercase tracking-wider mt-1 font-bold" style={{ color: "var(--ok)" }}>
-                  {totalInsignias} {totalInsignias === 1 ? "insignia" : "insignias"} · {c?.activo ? "Plan activo" : "Sin anuncios en PRO"}
-                </div>
-                <p className="text-xs muted mt-1.5">
-                  Desbloquea 0 anuncios en Banter, más Créditos VANTS diarios y sello exclusivo.
-                </p>
-              </div>
-            </div>
-            <Link
-              href="/membresias"
-              className="w-full text-center text-xs font-extrabold uppercase tracking-wider py-2.5 px-3 transition-opacity hover:opacity-90"
-              style={{ background: "var(--rojo)", color: "#fff" }}
-            >
-              Ver privilegios VANTS
-            </Link>
-          </article>
-        </div>
+        <MenuPerfilAndroid />
       </section>
 
-      {/* ACCESOS DIRECTOS */}
-      <section className="grid gap-3" aria-labelledby="vants-accesos-t">
-        <h2 id="vants-accesos-t" className="eyebrow">Accesos directos</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Link href="/perfil/ajustes" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
-            <span className="text-sm font-semibold">Cuenta y perfil público</span>
-            <span className="muted text-xs">→</span>
-          </Link>
-          <Link href="/perfil/cuentas" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
-            <span className="text-sm font-semibold">Cuentas vinculadas</span>
-            <span className="muted text-xs">→</span>
-          </Link>
-          <Link href="/perfil/membresia" className="panel px-4 py-3.5 flex items-center justify-between gap-2 hover:bg-[var(--grafito-2)] transition-colors">
-            <span className="text-sm font-semibold">Membresía y plan</span>
-            <span className="muted text-xs">→</span>
-          </Link>
-        </div>
-      </section>
-
-      {/* MIS APPS Y CAPTURA VANTS (solo en escritorio/web; oculto dentro de la app nativa) */}
-      {!esAppNativa() && (
-        <section className="grid gap-3" aria-labelledby="vants-apps-t">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <h2 id="vants-apps-t" className="eyebrow">Mis apps VANTS (actualización automática)</h2>
-            <Link href="/clips" className="link-arrow text-xs">Cómo funciona la captura →</Link>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            <a
-              href="https://github.com/VANTSGAMES/VANTS-Clipper/releases/latest"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
-            >
-              <span className="w-12 h-12 shrink-0 grid place-items-center text-2xl font-light border" style={{ borderColor: "var(--linea)", background: "var(--grafito)" }}>+</span>
-              <div className="min-w-0">
-                <div className="text-sm font-bold">Instalar VANTS Clipper PC</div>
-                <p className="text-xs muted mt-0.5">
-                  Captura tus partidas en Windows, recorta a 9:16 gratis en tu PC y sube Shorts automáticos con tus Créditos VANTS.
-                </p>
-              </div>
-            </a>
-            <Link
-              href="/perfil/cuentas"
-              className="panel p-5 flex items-center gap-4 hover:bg-[var(--grafito-2)] transition-colors"
-            >
-              <span className="w-12 h-12 shrink-0 grid place-items-center text-lg font-black" style={{ background: "var(--rojo)", color: "#fff" }}>V</span>
-              <div className="min-w-0">
-                <div className="text-sm font-bold">VANTS Movil · Android, iOS & Tablets</div>
-                <p className="text-xs muted mt-0.5">
-                  Conecta Google Play Juegos, lee tu experiencia (XP) y abre tus juegos instalados directo para cada torneo.
-                </p>
-              </div>
-            </Link>
-          </div>
-        </section>
-      )}
-
-      {/* INSIGNIAS Y LOGROS (conservados intactos) */}
-      <div className="panel panel-pad grid gap-4" data-testid="perfil-insignias">
+      {/* MIS INSIGNIAS (Vista rápida 3D) */}
+      <div className="panel panel-pad chamfer grid gap-4" data-testid="perfil-insignias">
         <div className="flex justify-between items-center gap-3">
-          <h2 className="d-3">Mis insignias</h2>
+          <h2 className="d-3">Mis insignias 3D</h2>
           <Link href="/insignias" className="link-arrow">Catálogo →</Link>
         </div>
-        {ins.isLoading ? <div className="sk" style={{ height: 90 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={72} />}
-        <p className="text-xs muted">Se colocan solas cuando cumples el requisito (plan activo, cuentas vinculadas, logros, torneos…).</p>
+        {ins.isLoading ? <div className="sk" style={{ height: 84 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={68} />}
+        <p className="text-xs muted">Se desbloquean automáticamente con tu plan activo, cuentas vinculadas, logros y torneos.</p>
       </div>
 
-      <div className="panel panel-pad grid gap-4">
-        <div className="flex justify-between items-center gap-3">
-          <h2 className="d-3">Logros conseguidos</h2>
-          <Link href="/logros" className="link-arrow">Ver los 1000 →</Link>
+      {/* Tarjetas extra de escritorio solo cuando NO estamos en la app nativa Android */}
+      {!nativo && (
+        <div className="hidden lg:grid gap-6">
+          <div className="panel panel-pad grid gap-4">
+            <div className="flex justify-between items-center gap-3">
+              <h2 className="d-3">Logros conseguidos</h2>
+              <Link href="/logros" className="link-arrow">Ver los 1000 →</Link>
+            </div>
+            <ResumenLogros />
+          </div>
         </div>
-        <ResumenLogros />
-      </div>
+      )}
 
-      {/* ASISTENCIA Y COMUNIDAD */}
-      <section className="grid gap-3" aria-labelledby="vants-comunidad-t">
-        <h2 id="vants-comunidad-t" className="eyebrow">Asistencia y comunidad</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          <Link href="/comunidad" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
-            <div className="eyebrow mb-1">Comunidad VANTS</div>
-            <p className="small muted">LFG, foro, misiones y votaciones del circuito.</p>
-          </Link>
-          <Link href="/torneos" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
-            <div className="eyebrow mb-1">Torneos y rankings</div>
-            <p className="small muted">Inscripciones activas, brackets y estadísticas.</p>
-          </Link>
-          <Link href="/logros" className="panel panel-pad hover:bg-[var(--grafito-2)] transition-colors">
-            <div className="eyebrow mb-1">Insignias y logros</div>
-            <p className="small muted">Validados automáticamente por VANTS.</p>
-          </Link>
+      {/* Pie limpio de cuenta en Android / Móvil */}
+      <div className={(nativo ? "flex " : "flex lg:hidden ") + "flex-wrap items-center justify-between gap-3 pt-2"}>
+        <div className="flex items-center gap-4 text-xs muted">
+          <Link href="/privacidad" className="underline">Privacidad</Link>
+          <Link href="/terminos" className="underline">Términos</Link>
+          <Link href="/perfil/soporte" className="underline">Ayuda</Link>
         </div>
-      </section>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost"
+          onClick={() => logout()}
+          data-testid="btn-perfil-logout-movil"
+        >
+          Cerrar sesión
+        </button>
+      </div>
     </div>
   );
 }
@@ -880,12 +1103,48 @@ function Soporte() {
   );
 }
 
+function InsigniasYLogrosSub() {
+  const ins = useMisInsignias();
+  return (
+    <div className="wrap grid gap-6">
+      <div className="panel panel-pad chamfer grid gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="eyebrow">Colección 3D</div>
+            <h2 className="d-3 mt-0.5">Mis insignias desbloqueadas</h2>
+          </div>
+          <Link href="/insignias" className="btn btn-sm">
+            Ver catálogo completo →
+          </Link>
+        </div>
+        {ins.isLoading ? <div className="sk" style={{ height: 84 }} /> : <FilaInsignias codes={ins.data?.conseguidas || []} size={72} />}
+      </div>
+
+      <VitrinaInsignias />
+
+      <div className="panel panel-pad chamfer grid gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="eyebrow">Progreso competitivo</div>
+            <h2 className="d-3 mt-0.5">Logros conseguidos</h2>
+          </div>
+          <Link href="/logros" className="btn btn-sm btn-rojo">
+            Explorar los 1.000 logros →
+          </Link>
+        </div>
+        <ResumenLogros />
+      </div>
+    </div>
+  );
+}
+
 const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
   "": { t: "Mi perfil", el: Resumen },
   ajustes: { t: "Configuración", el: Ajustes },
   cuentas: { t: "Cuentas vinculadas", el: Cuentas },
   soporte: { t: "Soporte", el: Soporte },
   membresia: { t: "Membresía", el: Membresia },
+  insignias: { t: "Insignias y logros", el: InsigniasYLogrosSub },
   estadisticas: { t: "Estadísticas", el: () => <div className="grid gap-8"><EstadisticasFaceit /><div className="wrap grid gap-3"><h2 className="d-3">VALORANT</h2><PanelValorantPerfil /></div><FortnitePropio /></div> },
   equipos: { t: "Mis equipos", el: () => <div className="wrap grid gap-10"><MisEquiposPanel /></div> },
   torneos: { t: "Mis torneos", el: MisInscripciones },
@@ -893,14 +1152,21 @@ const SUB: Record<string, { t: string; el: () => JSX.Element }> = {
 };
 
 export default function Perfil() {
+  const [path] = useLocation();
   const params = useParams<{ sub?: string }>();
   const sub = SUB[params.sub || ""] ? params.sub || "" : "";
   const S = SUB[sub];
+  const nativo = esAppNativa();
   return (
     <>
-      <PageHead eyebrow="Mi perfil" title={S.t} />
+      {!nativo && (
+        <div className="hidden lg:block">
+          <PageHead eyebrow="Mi perfil" title={S.t} />
+        </div>
+      )}
       <AuthGate what="tu perfil">
-        <PerfilNav />
+        <PerfilNav pathActual={path} />
+        <BarraSubseccionPerfilAndroid sub={sub} titulo={S.t} />
         <S.el />
       </AuthGate>
     </>

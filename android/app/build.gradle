@@ -52,6 +52,7 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.0'
     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.2.0'
     implementation 'androidx.core:core-splashscreen:1.0.1'
+    implementation 'androidx.browser:browser:1.8.0'
 
     // Google Play Games Services v2 + Google Sign-In nativo en app
     implementation 'com.google.android.gms:play-services-games-v2:20.1.2'

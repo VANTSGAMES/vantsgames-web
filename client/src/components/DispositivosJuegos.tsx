@@ -1,18 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "wouter";
-import { pub } from "@/lib/api";
+import { esAppNativa, pub } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useFeedback } from "@/components/FeedbackProvider";
 import {
   abrirLogrosPlayGames,
   abrirRankingsPlayGames,
+  abrirTiendaPlayGamesApp,
   autenticarPlayGames,
   buscarJuegoDispositivo,
   calcularProgresoNivelPlayGames,
+  desvincularPlayGamesEnVants,
   detectarDispositivo,
   escanearJuegosInstalados,
   lanzarJuegoODescargar,
   obtenerPerfilPlayGames,
   suscribirEventoPlayGames,
+  vincularGamerTagPlayGamesEnVants,
   type EstadoJuegoDetectado,
   type InfoDispositivo,
   type PerfilPlayGames,
@@ -131,11 +135,16 @@ export function InsigniaBienvenidaPlayGames() {
  * barra de progreso al siguiente nivel, título gamer y acceso a Logros y Rankings nativos).
  */
 export function TarjetaExperienciaPlayGames() {
-  const { status, user } = useAuth();
+  const { status, user, login, loginWithPlayGames } = useAuth();
+  const { toast } = useFeedback();
   const [dispositivo, setDispositivo] = useState<InfoDispositivo | null>(null);
   const [pg, setPg] = useState<PerfilPlayGames | null>(null);
   const [cargando, setCargando] = useState(true);
   const [conectando, setConectando] = useState(false);
+  const [mostrarFormManual, setMostrarFormManual] = useState(false);
+  const [gamerTagInput, setGamerTagInput] = useState("");
+  const [nivelInput, setNivelInput] = useState("1");
+  const [avisoEstado, setAvisoEstado] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -152,7 +161,13 @@ export function TarjetaExperienciaPlayGames() {
     })();
 
     const unsub = suscribirEventoPlayGames((nuevo) => {
-      if (vivo) setPg(nuevo);
+      if (vivo) {
+        setPg(nuevo);
+        if (nuevo.autenticado) {
+          setMostrarFormManual(false);
+          setAvisoEstado(null);
+        }
+      }
     });
     return () => {
       vivo = false;
@@ -160,11 +175,108 @@ export function TarjetaExperienciaPlayGames() {
     };
   }, [status]);
 
+  useEffect(() => {
+    if (!gamerTagInput && (user?.nickname || user?.name)) {
+      setGamerTagInput((user.nickname || user.name || "").slice(0, 30));
+    }
+  }, [user?.nickname, user?.name, gamerTagInput]);
+
+  const esAndroidNativo = Boolean((dispositivo?.esNativo && dispositivo.plataforma === "android") || esAppNativa());
+
   const conectar = async () => {
+    setAvisoEstado(null);
+    if (status !== "autenticado") {
+      setConectando(true);
+      try {
+        if (esAndroidNativo) {
+          await loginWithPlayGames("/perfil/cuentas");
+        } else {
+          await login({ returnTo: "/perfil/cuentas" });
+        }
+      } finally {
+        setConectando(false);
+      }
+      return;
+    }
+
+    if (!esAndroidNativo) {
+      setMostrarFormManual(true);
+      return;
+    }
+
     setConectando(true);
     try {
-      const nuevo = await autenticarPlayGames({ requestAuthCode: false, sincronizar: status === "autenticado" });
+      const nuevo = await autenticarPlayGames({ requestAuthCode: false, sincronizar: true });
       setPg(nuevo);
+      if (nuevo.autenticado) {
+        setMostrarFormManual(false);
+        toast({
+          kind: "ok",
+          title: `Play Juegos conectado: ${nuevo.displayName || "Jugador"}`,
+          description: nuevo.currentLevel ? `Nivel ${nuevo.currentLevel} sincronizado en VANTS.` : "Perfil sincronizado.",
+        });
+        return;
+      }
+
+      if (nuevo.error === "cancelado" || nuevo.statusCode === 12501 || nuevo.statusCode === 16) {
+        setAvisoEstado("Cancelaste la ventana de Google Play Juegos. Pulsa Vincular cuando quieras o escribe tu GamerTag abajo.");
+        setMostrarFormManual(true);
+        return;
+      }
+
+      if (nuevo.playGamesAppInstalled === false) {
+        setAvisoEstado("No detectamos la app Google Play Juegos instalada en este dispositivo. Puedes instalarla o vincular tu GamerTag directamente abajo.");
+        setMostrarFormManual(true);
+        return;
+      }
+
+      setAvisoEstado("Vincula tu GamerTag de Google Play Juegos aquí mismo para activar tu insignia de bienvenida y tu nivel en VANTS inmediatamente.");
+      setMostrarFormManual(true);
+    } finally {
+      setConectando(false);
+    }
+  };
+
+  const guardarGamerTagManual = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!gamerTagInput.trim() || gamerTagInput.trim().length < 2) {
+      toast({ kind: "error", title: "Escribe un GamerTag válido (mínimo 2 caracteres)." });
+      return;
+    }
+    setConectando(true);
+    try {
+      const vinculado = await vincularGamerTagPlayGamesEnVants({
+        gamerTag: gamerTagInput.trim(),
+        nivel: Math.max(1, Math.min(999, Number(nivelInput) || 1)),
+        avatarUrl: user?.picture || null,
+      });
+      setPg(vinculado);
+      setMostrarFormManual(false);
+      setAvisoEstado(null);
+      toast({
+        kind: "ok",
+        title: `¡Play Juegos vinculado como ${vinculado.displayName}!`,
+        description: `Insignia de bienvenida y Nivel ${vinculado.currentLevel} activos en la app.`,
+      });
+    } catch (err: any) {
+      toast({
+        kind: "error",
+        title: "No se pudo guardar el vínculo",
+        description: err?.message || "Verifica tu sesión e inténtalo de nuevo.",
+      });
+    } finally {
+      setConectando(false);
+    }
+  };
+
+  const desvincular = async () => {
+    setConectando(true);
+    try {
+      await desvincularPlayGamesEnVants();
+      setPg({ disponible: true, autenticado: false });
+      toast({ kind: "info", title: "Perfil de Play Juegos desvinculado de VANTS." });
+    } catch {
+      toast({ kind: "error", title: "No se pudo desvincular en este momento." });
     } finally {
       setConectando(false);
     }
@@ -172,7 +284,6 @@ export function TarjetaExperienciaPlayGames() {
 
   const prog = useMemo(() => calcularProgresoNivelPlayGames(pg), [pg]);
   const avatar = pg?.iconBase64 || user?.picture || null;
-  const esAndroidNativo = Boolean(dispositivo?.esNativo && dispositivo.plataforma === "android");
 
   return (
     <section
@@ -202,10 +313,10 @@ export function TarjetaExperienciaPlayGames() {
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-extrabold uppercase tracking-wider" style={{ color: "#3ddc84" }}>
-                Google Play Juegos · Experiencia Oficial
+                Google Play Juegos · Experiencia
               </span>
               {pg?.autenticado ? (
-                <span className="tag tag-ok">Sincronizado</span>
+                <span className="tag tag-ok">Vinculado</span>
               ) : (
                 <span className="tag">Play Games v2</span>
               )}
@@ -218,7 +329,7 @@ export function TarjetaExperienciaPlayGames() {
                   : "Conecta tu perfil de Google Play Juegos"}
             </h3>
             {pg?.autenticado && pg.title && (
-              <p className="text-xs muted mt-0.5">Rango Play Juegos: <strong className="text-white">{pg.title}</strong></p>
+              <p className="text-xs muted mt-0.5">Rango: <strong className="text-white">{pg.title}</strong></p>
             )}
           </div>
         </div>
@@ -236,7 +347,7 @@ export function TarjetaExperienciaPlayGames() {
             </div>
             <div className="d-2 num leading-none mt-0.5 text-white">{prog.nivelActual}</div>
           </div>
-        ) : esAndroidNativo ? (
+        ) : (esAndroidNativo || status === "autenticado") ? (
           <button
             type="button"
             className="btn btn-sm"
@@ -247,7 +358,16 @@ export function TarjetaExperienciaPlayGames() {
           >
             {conectando ? "Conectando…" : "Vincular Play Juegos"}
           </button>
-        ) : null}
+        ) : (
+          <Link
+            href="/entrar?returnTo=%2Fperfil%2Fcuentas"
+            className="btn btn-sm"
+            style={{ background: "#00c853", borderColor: "#00c853", color: "#07120b" }}
+            data-testid="btn-login-playgames"
+          >
+            Iniciar y vincular
+          </Link>
+        )}
       </div>
 
       {pg?.autenticado ? (
@@ -284,43 +404,154 @@ export function TarjetaExperienciaPlayGames() {
             </div>
           </div>
 
-          {esAndroidNativo && (
-            <div className="flex flex-wrap items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            {esAndroidNativo && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => abrirLogrosPlayGames()}
+                  data-testid="btn-logros-playgames"
+                >
+                  🏆 Logros
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => abrirRankingsPlayGames()}
+                  data-testid="btn-rankings-playgames"
+                >
+                  📊 Rankings
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              disabled={conectando}
+              onClick={() => {
+                setGamerTagInput(pg.displayName || user?.nickname || "");
+                setNivelInput(String(prog.nivelActual || 1));
+                setMostrarFormManual((v) => !v);
+              }}
+            >
+              {mostrarFormManual ? "Cerrar edición" : "Editar GamerTag"}
+            </button>
+            {esAndroidNativo && (
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                onClick={() => abrirLogrosPlayGames()}
-                data-testid="btn-logros-playgames"
-              >
-                🏆 Logros de Play Juegos
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => abrirRankingsPlayGames()}
-                data-testid="btn-rankings-playgames"
-              >
-                📊 Clasificaciones
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost ml-auto"
                 disabled={conectando}
                 onClick={conectar}
               >
-                Actualizar XP
+                Sincronizar SDK
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost ml-auto"
+              style={{ color: "var(--gris-2)" }}
+              disabled={conectando}
+              onClick={desvincular}
+              data-testid="btn-desvincular-playgames"
+            >
+              Desvincular
+            </button>
+          </div>
         </div>
       ) : (
         <p className="small muted">
           {esAndroidNativo
-            ? "Activa tu insignia oficial de bienvenida de Google Play Juegos y muestra tu Nivel y puntos de experiencia (XP) en tu perfil competitivo de VANTS."
-            : dispositivo?.plataforma === "ios"
-              ? "En iOS / iPad tu perfil VANTS sincroniza automáticamente la experiencia de Google Play Juegos que hayas vinculado en Android y lanza tus juegos instalados al instante."
-              : "Al entrar desde la app oficial VANTS Movil en Android o Tablet, leemos tu Nivel, experiencia (XP) e insignia oficial de Google Play Juegos automáticamente."}
+            ? "Activa tu insignia de bienvenida de Google Play Juegos y muestra tu Nivel y puntos de experiencia (XP) en tu perfil competitivo de VANTS."
+            : "Vincula tu GamerTag de Google Play Juegos en tu cuenta VANTS para mostrar tu nivel e insignia al competir en móvil o tablet."}
         </p>
+      )}
+
+      {avisoEstado && (
+        <div
+          className="p-3 rounded-[4px] border text-xs grid gap-2"
+          style={{ borderColor: "rgba(61, 220, 132, 0.35)", background: "rgba(0, 200, 83, 0.07)", color: "var(--blanco)" }}
+        >
+          <p>{avisoEstado}</p>
+          {pg?.playGamesAppInstalled === false && (
+            <button
+              type="button"
+              className="btn btn-sm w-fit"
+              style={{ background: "#00c853", borderColor: "#00c853", color: "#07120b" }}
+              onClick={() => abrirTiendaPlayGamesApp()}
+            >
+              Instalar app Google Play Juegos
+            </button>
+          )}
+        </div>
+      )}
+
+      {mostrarFormManual && status === "autenticado" && (
+        <form
+          onSubmit={guardarGamerTagManual}
+          className="p-3.5 rounded-[4px] border grid gap-3"
+          style={{ borderColor: "var(--linea)", background: "rgba(10, 10, 11, 0.8)" }}
+          data-testid="form-playgames-manual"
+        >
+          <div className="eyebrow" style={{ color: "#3ddc84" }}>Vincular GamerTag de Google Play Juegos</div>
+          <div className="grid sm:grid-cols-[1fr_130px] gap-3">
+            <div className="field">
+              <label htmlFor="pg-gamertag-input">Tu GamerTag en Play Juegos</label>
+              <input
+                id="pg-gamertag-input"
+                type="text"
+                className="input"
+                required
+                minLength={2}
+                maxLength={32}
+                placeholder="Ej. VantsProPlayer"
+                value={gamerTagInput}
+                onChange={(e) => setGamerTagInput(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="pg-nivel-input">Nivel actual</label>
+              <input
+                id="pg-nivel-input"
+                type="number"
+                min={1}
+                max={999}
+                className="input num"
+                value={nivelInput}
+                onChange={(e) => setNivelInput(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              className="btn btn-sm"
+              style={{ background: "#00c853", borderColor: "#00c853", color: "#07120b" }}
+              disabled={conectando}
+              data-testid="btn-guardar-gamertag-pg"
+            >
+              {conectando ? "Guardando…" : "Guardar y activar insignia"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost"
+              onClick={() => {
+                setMostrarFormManual(false);
+                setAvisoEstado(null);
+              }}
+            >
+              Cancelar
+            </button>
+          </div>
+          {pg?.apkSha1 && (
+            <details className="text-[11px] muted">
+              <summary className="cursor-pointer select-none">Diagnóstico técnico Play Console (opcional)</summary>
+              <p className="mt-1 font-mono break-all">
+                Paquete: cc.vants.app · App ID: 238603325169 · SHA-1: {pg.apkSha1}
+              </p>
+            </details>
+          )}
+        </form>
       )}
     </section>
   );

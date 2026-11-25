@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useRol } from "@/pages/Vants";
 import { Link, useLocation } from "wouter";
-import { NAV, PERFIL_LINKS } from "@/lib/nav";
+import { NAV } from "@/lib/nav";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { Wordmark, Initials } from "./ui-vants";
 import { useQueryClient } from "@tanstack/react-query";
@@ -149,32 +149,32 @@ function AccountButton() {
 
 function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpenSearch: () => void; onOpenLauncher: () => void }) {
   const [open, setOpen] = useState(false);
-  const { status, login, logout } = useAuth();
+  const { status, user, login, logout } = useAuth();
   const nativo = esAppNativa();
   useEffect(() => setOpen(false), [path]);
   useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
   return (
     <>
       <button className="btn btn-sm xl:hidden" aria-expanded={open} aria-controls="menu-movil" onClick={() => setOpen((o) => !o)} data-testid="button-menu">
-        {open ? "Cerrar" : "Menú"}
+        {open ? "✕" : "Menú"}
       </button>
       {open && (
         <nav
           id="menu-movil"
           className="fixed inset-x-0 bottom-0 z-40 overflow-y-auto xl:hidden"
-          style={{ top: "calc(64px + var(--safe-top))", paddingBottom: "calc(84px + var(--safe-bottom))", background: "var(--negro)" }}
+          style={{ top: "calc(64px + var(--safe-top))", paddingBottom: "calc(88px + var(--safe-bottom))", background: "var(--negro)" }}
           aria-label="Menú principal"
         >
-          <div className="wrap py-6 grid gap-6">
-            <div className="grid sm:grid-cols-2 gap-2">
+          <div className="wrap py-5 grid gap-5">
+            <div className="grid sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 className="btn btn-sm w-full justify-between"
                 onClick={() => { setOpen(false); onOpenSearch(); }}
                 data-testid="button-mobile-search"
               >
-                <span>Buscar secciones y juegos…</span>
-                <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>⌘K</span>
+                <span>Buscar torneos y juegos…</span>
+                <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>🔍</span>
               </button>
               <button
                 type="button"
@@ -185,7 +185,9 @@ function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpe
                 🎮 Abrir juego para Torneo
               </button>
             </div>
+
             {!nativo && <PWAInstallButton compact />}
+
             {AUTH_ENABLED && status === "anonimo" && (
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -206,40 +208,68 @@ function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpe
                 </button>
               </div>
             )}
+
             {status === "autenticado" && (
-              <div className="panel panel-pad grid gap-2" style={{ borderColor: "var(--linea)" }}>
-                <div className="eyebrow">Mi perfil del jugador</div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
-                  {PERFIL_LINKS.map((l) => (
-                    <Link key={l.to} href={l.to} className="btn btn-sm btn-ghost justify-start">
-                      {l.label}
-                    </Link>
-                  ))}
+              <div className="panel chamfer p-4 grid gap-3" style={{ borderColor: "var(--linea)" }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {user?.picture ? (
+                      <img src={user.picture} alt="" width={38} height={38} className="w-9 h-9 rounded-full object-cover shrink-0" referrerPolicy="no-referrer" />
+                    ) : (
+                      <Initials name={user?.nickname || user?.name || "V"} size={36} />
+                    )}
+                    <div className="min-w-0">
+                      <div className="eyebrow" style={{ fontSize: "0.66rem" }}>VANTS ID</div>
+                      <div className="font-bold text-sm text-white truncate">{user?.nickname || user?.name || "Mi cuenta"}</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-ghost"
+                    onClick={() => { setOpen(false); logout(); }}
+                  >
+                    Salir
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost w-fit mt-2"
-                  onClick={() => { setOpen(false); logout(); }}
-                >
-                  Cerrar sesión
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link href="/perfil" className="btn btn-sm btn-rojo justify-center">
+                    Abrir Mi Perfil
+                  </Link>
+                  <Link href="/perfil/cuentas" className="btn btn-sm justify-center">
+                    Play Juegos y Cuentas
+                  </Link>
+                </div>
               </div>
             )}
-            <div className="grid sm:grid-cols-2 gap-6">
+
+            <div className="grid sm:grid-cols-2 gap-4">
               {NAV.map((g) => (
-                <div key={g.base}>
-                  <div className="eyebrow mb-2">{g.label}</div>
-                  <div className="grid">
+                <div key={g.base} className="panel chamfer overflow-hidden" style={{ borderColor: "var(--linea-suave)" }}>
+                  <div className="px-4 py-2.5 border-b" style={{ borderColor: "var(--linea-suave)", background: "rgba(255,255,255,0.02)" }}>
+                    <div className="eyebrow" style={{ fontSize: "0.7rem" }}>{g.label}</div>
+                  </div>
+                  <div className="divide-y" style={{ borderColor: "var(--linea-suave)" }}>
                     {g.links.filter((l) => !l.privado || status === "autenticado").map((l) => (
-                      <Link key={l.to} href={l.to} className="py-2 border-b" style={{ borderColor: "var(--linea-suave)", color: "var(--gris-1)" }}>{l.label}</Link>
+                      <Link
+                        key={l.to}
+                        href={l.to}
+                        className="px-4 py-3 flex items-center justify-between gap-2 text-sm hover:bg-[var(--grafito-2)]"
+                        style={{ color: "var(--blanco)" }}
+                      >
+                        <span>{l.label}</span>
+                        <span className="muted" aria-hidden="true">›</span>
+                      </Link>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-            <div className="flex flex-wrap gap-4 pt-2 border-t" style={{ borderColor: "var(--linea-suave)" }}>
+
+            <div className="flex flex-wrap gap-4 pt-2 border-t text-sm" style={{ borderColor: "var(--linea-suave)" }}>
               <Link href="/" className="link-arrow">Inicio</Link>
+              <Link href="/workspace" className="link-arrow">Workspace Pro</Link>
               <Link href="/empresas" className="link-arrow">Empresas</Link>
+              <Link href="/perfil/soporte" className="link-arrow">Soporte</Link>
             </div>
           </div>
         </nav>
@@ -344,13 +374,40 @@ function BarraInferiorMovil({ path, onOpenLauncher }: { path: string; onOpenLaun
 }
 
 export function Header({ onOpenSearch, onOpenLauncher }: { onOpenSearch: () => void; onOpenLauncher: () => void }) {
-  const [path] = useLocation();
+  const [path, setLocation] = useLocation();
   const nativo = esAppNativa();
+  const esRaizPrincipal = path === "/" || path === "/torneos" || path === "/ranking" || path === "/perfil";
+
+  const volverAtras = () => {
+    if (path.startsWith("/perfil/")) {
+      setLocation("/perfil");
+      return;
+    }
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    setLocation("/");
+  };
+
   return (
     <header className="hdr">
       <a href="#contenido" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 btn btn-sm">Saltar al contenido</a>
       <div className="wrap hdr-in">
-        <Wordmark />
+        <div className="flex items-center gap-2 min-w-0">
+          {!esRaizPrincipal && (
+            <button
+              type="button"
+              onClick={volverAtras}
+              className="btn btn-sm btn-ghost xl:hidden px-2"
+              aria-label="Volver atrás"
+              data-testid="btn-header-back"
+            >
+              ←
+            </button>
+          )}
+          <Wordmark />
+        </div>
         <nav className="hidden xl:flex items-center ml-4" aria-label="Principal">
           <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} data-testid="nav-inicio">Inicio</Link>
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
@@ -414,6 +471,20 @@ const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?
 
 export function Footer() {
   const nativo = esAppNativa();
+  if (nativo) {
+    return (
+      <footer className="mt-8 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--negro)" }}>
+        <div className="wrap py-4 flex flex-wrap gap-x-4 gap-y-1.5 items-center justify-between text-xs muted">
+          <span>VANTS Movil · Circuito Oficial</span>
+          <span className="flex items-center gap-4">
+            <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
+            <Link href="/terminos" className="hover:text-white">Términos</Link>
+            <Link href="/perfil/soporte" className="hover:text-white">Soporte</Link>
+          </span>
+        </div>
+      </footer>
+    );
+  }
   return (
     <footer className="mt-16 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
       <div className="wrap py-12 grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">

@@ -342,8 +342,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus("anonimo");
     })();
 
+    const procesarCallbackNativo = async (data: { rt?: string; returnTo?: string; authError?: string } | null) => {
+      if (!vivo || !data) return;
+      if (data.authError) {
+        toast({
+          kind: "error",
+          title: "Acceso cancelado",
+          description: "Puedes volver a intentarlo o usar tu código de 6 dígitos por correo.",
+        });
+        return;
+      }
+      if (!data.rt) return;
+      guardarRefreshNativo(data.rt);
+      const res = await refreshVantsSession();
+      if (!vivo || !res || !res.user) return;
+      setUser(res.user);
+      setStatus("autenticado");
+      api("/int/registro", { method: "POST", auth: true, body: {} }).catch(() => {});
+      obtenerPerfilPlayGames({ conSesionVants: true }).catch(() => {});
+      toast({ kind: "ok", title: `Bienvenido, ${res.user.nickname || res.user.name || "Jugador"}` });
+      navigateClient(safePath(data.returnTo || "/perfil"));
+    };
+
+    const cap = getCapacitor();
+    let authListenerHandle: { remove?: () => void } | null = null;
+    if (NATIVE_APP && cap?.Plugins?.VantsGames) {
+      if (cap.Plugins.VantsGames.consumePendingAuthRedirect) {
+        cap.Plugins.VantsGames.consumePendingAuthRedirect()
+          .then((pending: any) => {
+            if (pending?.hasCallback) void procesarCallbackNativo(pending);
+          })
+          .catch(() => {});
+      }
+      if (cap.Plugins.VantsGames.addListener) {
+        Promise.resolve(
+          cap.Plugins.VantsGames.addListener("nativeAuthCallback", (payload: any) => {
+            void procesarCallbackNativo(payload);
+          }),
+        )
+          .then((h: any) => {
+            authListenerHandle = h;
+          })
+          .catch(() => {});
+      }
+    }
+
     return () => {
       vivo = false;
+      try {
+        authListenerHandle?.remove?.();
+      } catch {
+        // Ignorar
+      }
     };
   }, []);
 
@@ -402,12 +452,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return true;
           }
         }
+        // Si el usuario canceló explícitamente el selector de cuentas, no abrir otra hoja
+        if (gRes?.statusCode === 12501 || gRes?.statusCode === 16 || gRes?.error === "cancelado") {
+          return false;
+        }
+      }
+
+      // Respaldo 100% in-app mediante Custom Tab oficial (#0A0A0B) + retorno cc.vants.app://auth-callback
+      if (cap.Plugins.VantsGames.openInAppAuth) {
+        const oauthInAppUrl = vantsAuthUrl("/auth/google/start?native=1&returnTo=" + encodeURIComponent(destinoFinal));
+        const opened = await cap.Plugins.VantsGames.openInAppAuth({ url: oauthInAppUrl }).catch(() => null);
+        if (opened?.opened) {
+          return true;
+        }
       }
     }
 
     const esAndroidNativo = Boolean(cap?.isNativePlatform?.() && cap?.getPlatform?.() === "android");
 
-    // 2. iOS / Tablet no-Android: respaldo In-App con Google Identity Services (evitado en Android WebView para prevenir 403 disallowed_useragent)
+    // 2. iOS / Tablet no-Android: respaldo In-App con Google Identity Services
     if (!esAndroidNativo) {
       const accessToken = await obtenerAccessTokenGisInApp();
       if (accessToken) {

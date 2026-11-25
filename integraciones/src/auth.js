@@ -848,13 +848,14 @@ export async function rutasAuth(req, env, url, p, m, H) {
     }
 
     const returnTo = safeReturnTo(url.searchParams.get('returnTo'));
+    const nativeApp = url.searchParams.get('native') === '1';
     const state = randomB64u(24);
     const verifier = randomB64u(32);
     const challenge = bytesToB64u(await sha256Bytes(verifier));
     const nonce = randomB64u(16);
 
     const signedState = await firmarEstadoOidc(
-      { state, verifier, nonce, returnTo, exp: Date.now() + OIDC_STATE_TTL_SEC * 1000 },
+      { state, verifier, nonce, returnTo, native: nativeApp, exp: Date.now() + OIDC_STATE_TTL_SEC * 1000 },
       env,
     );
 
@@ -949,6 +950,20 @@ export async function rutasAuth(req, env, url, p, m, H) {
       amr: ['google_oidc'],
     });
 
+    if (st && st.native) {
+      const appCallback =
+        'cc.vants.app://auth-callback?rt=' +
+        encodeURIComponent(session.refreshToken) +
+        '&returnTo=' +
+        encodeURIComponent(safeReturnTo(st.returnTo));
+      const nativeHeaders = new Headers({
+        location: appCallback,
+        'cache-control': 'no-store',
+      });
+      nativeHeaders.append('set-cookie', formatCookie(COOKIE_OIDC, '', cookieOpts(env, 0)));
+      return new Response(null, { status: 302, headers: nativeHeaders });
+    }
+
     const headers = new Headers({
       location: siteBase + safeReturnTo(st.returnTo),
       'cache-control': 'no-store',
@@ -968,6 +983,17 @@ export async function rutasAuth(req, env, url, p, m, H) {
       .first()
       .catch(() => null);
     return H.json({ ok: true, playGames: row || null });
+  }
+
+  if (p === '/auth/playgames/xp' && m === 'DELETE') {
+    const claims = await H.usuarioClaims(req, env);
+    await asegurarAuth(env.DB);
+    await env.DB
+      .prepare('DELETE FROM integ_play_games_xp WHERE canonical_sub = ?')
+      .bind(claims.sub)
+      .run()
+      .catch(() => null);
+    return H.json({ ok: true, deleted: true });
   }
 
   if (p === '/auth/playgames/xp' && m === 'POST') {

@@ -124,10 +124,14 @@ jobs:
       - name: Inyectar firma de release
         env:
           VANTS_KEYSTORE_B64: ${{ secrets.VANTS_ANDROID_KEYSTORE }}
+          VANTS_KEYSTORE_PASSWORD: ${{ secrets.VANTS_KEYSTORE_PASSWORD }}
+          VANTS_KEY_ALIAS: ${{ secrets.VANTS_KEY_ALIAS }}
         run: |
           set -euo pipefail
           printf '%s' "$VANTS_KEYSTORE_B64" | base64 -d > vants-release.jks
           export VANTS_KEYSTORE_FILE="$PWD/vants-release.jks"
+          echo "Huellas públicas del certificado de firma para Google Play Console (238603325169):"
+          keytool -list -v -keystore vants-release.jks -storepass "$VANTS_KEYSTORE_PASSWORD" -alias "$VANTS_KEY_ALIAS" | grep -E "SHA1:|SHA256:" || true
           node -e '
             const fs=require("fs");
             const f="android/app/build.gradle";

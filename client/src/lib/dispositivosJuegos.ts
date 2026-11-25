@@ -47,6 +47,9 @@ export interface PerfilPlayGames {
   lastLevelUpTimestamp?: number;
   serverAuthCode?: string;
   fuente?: "play_games_nativo" | "vants_cloud";
+  statusCode?: number;
+  playGamesAppInstalled?: boolean;
+  apkSha1?: string;
   error?: string;
 }
 
@@ -423,13 +426,13 @@ export async function lanzarJuegoODescargar(juego: DefJuegoDispositivo | EstadoJ
 
 function mapearRespuestaPlayGames(res: any, fuente: "play_games_nativo" | "vants_cloud" = "play_games_nativo"): PerfilPlayGames {
   return {
-    disponible: true,
+    disponible: res?.available !== false,
     autenticado: Boolean(res?.authenticated),
     playerId: res?.playerId || undefined,
     displayName: res?.displayName || undefined,
     title: res?.title || undefined,
     iconUri: res?.iconUri || undefined,
-    iconBase64: res?.iconBase64 || undefined,
+    iconBase64: res?.iconBase64 || res?.avatarUrl || undefined,
     bannerUri: res?.bannerUri || undefined,
     currentLevel: typeof res?.currentLevel === "number" ? res.currentLevel : undefined,
     nextLevel: typeof res?.nextLevel === "number" ? res.nextLevel : undefined,
@@ -440,8 +443,20 @@ function mapearRespuestaPlayGames(res: any, fuente: "play_games_nativo" | "vants
     lastLevelUpTimestamp: typeof res?.lastLevelUpTimestamp === "number" ? res.lastLevelUpTimestamp : undefined,
     serverAuthCode: res?.serverAuthCode || undefined,
     fuente,
+    statusCode: typeof res?.statusCode === "number" ? res.statusCode : undefined,
+    playGamesAppInstalled: typeof res?.playGamesAppInstalled === "boolean" ? res.playGamesAppInstalled : undefined,
+    apkSha1: res?.apkSha1 || undefined,
     error: res?.error,
   };
+}
+
+export function emitirEventoPlayGamesLocal(pg: PerfilPlayGames): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent("vants:playgames-updated", { detail: pg }));
+  } catch {
+    // Ignorar
+  }
 }
 
 /** Sincroniza la experiencia (XP y Nivel) de Google Play Games en la cuenta VANTS del jugador */
@@ -513,6 +528,7 @@ export async function leerExperienciaPlayGamesDeServidor(): Promise<PerfilPlayGa
 export async function obtenerPerfilPlayGames(opts?: { conSesionVants?: boolean; requestAuthCode?: boolean }): Promise<PerfilPlayGames> {
   const cap = getCapacitor();
   const dis = await detectarDispositivo();
+  let falloLocal: PerfilPlayGames | null = null;
 
   if (dis.esNativo && dis.plataforma === "android" && cap?.Plugins?.VantsGames?.getPlayGamesProfile) {
     try {
@@ -520,12 +536,15 @@ export async function obtenerPerfilPlayGames(opts?: { conSesionVants?: boolean; 
         requestAuthCode: Boolean(opts?.requestAuthCode),
       });
       const perfil = mapearRespuestaPlayGames(res, "play_games_nativo");
-      if (perfil.autenticado && opts?.conSesionVants) {
-        sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+      if (perfil.autenticado) {
+        if (opts?.conSesionVants) {
+          sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+        }
+        return perfil;
       }
-      return perfil;
+      falloLocal = perfil;
     } catch (err: any) {
-      return {
+      falloLocal = {
         disponible: true,
         autenticado: false,
         error: err?.message || "Error al conectar con Google Play Juegos",
@@ -535,8 +554,16 @@ export async function obtenerPerfilPlayGames(opts?: { conSesionVants?: boolean; 
 
   if (opts?.conSesionVants) {
     const remoto = await leerExperienciaPlayGamesDeServidor();
-    if (remoto) return remoto;
+    if (remoto) {
+      return {
+        ...remoto,
+        playGamesAppInstalled: falloLocal?.playGamesAppInstalled ?? remoto.playGamesAppInstalled,
+        apkSha1: falloLocal?.apkSha1 ?? remoto.apkSha1,
+      };
+    }
   }
+
+  if (falloLocal) return falloLocal;
 
   return {
     disponible: false,
@@ -556,8 +583,11 @@ export async function autenticarPlayGames(opts?: { requestAuthCode?: boolean; si
         requestAuthCode: opts?.requestAuthCode !== false,
       });
       const perfil = mapearRespuestaPlayGames(res, "play_games_nativo");
-      if (perfil.autenticado && opts?.sincronizar !== false) {
-        sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+      if (perfil.autenticado) {
+        if (opts?.sincronizar !== false) {
+          await sincronizarExperienciaPlayGamesEnServidor(perfil).catch(() => {});
+        }
+        emitirEventoPlayGamesLocal(perfil);
       }
       return perfil;
     } catch (e: any) {
@@ -569,6 +599,85 @@ export async function autenticarPlayGames(opts?: { requestAuthCode?: boolean; si
     }
   }
   return obtenerPerfilPlayGames({ conSesionVants: opts?.sincronizar });
+}
+
+/**
+ * Vincula directamente el GamerTag y nivel de Google Play Juegos en la cuenta VANTS del jugador
+ * (respaldo instantáneo cuando Play Console aún propaga credenciales o en dispositivos sin Play Games Services activo).
+ */
+export async function vincularGamerTagPlayGamesEnVants(datos: {
+  gamerTag: string;
+  nivel?: number;
+  xpTotal?: number;
+  avatarUrl?: string | null;
+}): Promise<PerfilPlayGames> {
+  const cleanTag = datos.gamerTag.trim().slice(0, 40);
+  if (cleanTag.length < 2) {
+    throw new Error("gamertag_invalido");
+  }
+  const nivel = Math.min(999, Math.max(1, Math.round(Number(datos.nivel) || 1)));
+  const minXp = (nivel - 1) * 1000;
+  const maxXp = nivel * 1000;
+  const xpTotal =
+    typeof datos.xpTotal === "number" && datos.xpTotal >= 0
+      ? Math.round(datos.xpTotal)
+      : minXp + 350;
+  const playerId = "vpg_" + cleanTag.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32) + "_" + Date.now().toString(36).slice(-4);
+
+  await api("/int/auth/playgames/xp", {
+    method: "POST",
+    auth: true,
+    body: {
+      playerId,
+      displayName: cleanTag,
+      title: "Gamer VANTS · Play Juegos",
+      currentLevel: nivel,
+      nextLevel: nivel + 1,
+      currentXpTotal: xpTotal,
+      levelMinXp: minXp,
+      levelMaxXp: maxXp,
+      avatarUrl: datos.avatarUrl || undefined,
+    },
+  });
+
+  const vinculado: PerfilPlayGames = {
+    disponible: true,
+    autenticado: true,
+    playerId,
+    displayName: cleanTag,
+    title: "Gamer VANTS · Play Juegos",
+    iconBase64: datos.avatarUrl || undefined,
+    currentLevel: nivel,
+    nextLevel: nivel + 1,
+    currentXpTotal: xpTotal,
+    levelMinXp: minXp,
+    levelMaxXp: maxXp,
+    fuente: "vants_cloud",
+  };
+  emitirEventoPlayGamesLocal(vinculado);
+  return vinculado;
+}
+
+/** Desvincula el perfil de Google Play Juegos guardado en VANTS */
+export async function desvincularPlayGamesEnVants(): Promise<void> {
+  await api("/int/auth/playgames/xp", { method: "DELETE", auth: true });
+  emitirEventoPlayGamesLocal({ disponible: true, autenticado: false });
+}
+
+/** Abre o instala la app oficial Google Play Juegos en Android */
+export async function abrirTiendaPlayGamesApp(): Promise<void> {
+  const cap = getCapacitor();
+  if (cap?.Plugins?.VantsGames?.launchGame) {
+    try {
+      await cap.Plugins.VantsGames.launchGame({ packageId: "com.google.android.play.games", packagesAlt: [] });
+      return;
+    } catch {
+      // Continuar al enlace Play Store
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.location.href = "https://play.google.com/store/apps/details?id=com.google.android.play.games";
+  }
 }
 
 /** Abre la interfaz nativa oficial de Logros de Google Play Juegos dentro de la app */
@@ -599,25 +708,38 @@ export async function abrirRankingsPlayGames(): Promise<boolean> {
   return false;
 }
 
-/** Escucha en tiempo real cuando Google Play Games autentica al jugador al iniciar la app */
+/** Escucha en tiempo real cuando Google Play Games autentica o vincula al jugador */
 export function suscribirEventoPlayGames(cb: (pg: PerfilPlayGames) => void): () => void {
   const cap = getCapacitor();
-  if (!cap?.Plugins?.VantsGames?.addListener) return () => {};
   let handle: { remove?: () => void } | null = null;
-  Promise.resolve(
-    cap.Plugins.VantsGames.addListener("playGamesAuthenticated", (data: any) => {
-      cb(mapearRespuestaPlayGames(data, "play_games_nativo"));
-    }),
-  )
-    .then((h: any) => {
-      handle = h;
-    })
-    .catch(() => {});
+  if (cap?.Plugins?.VantsGames?.addListener) {
+    Promise.resolve(
+      cap.Plugins.VantsGames.addListener("playGamesAuthenticated", (data: any) => {
+        cb(mapearRespuestaPlayGames(data, "play_games_nativo"));
+      }),
+    )
+      .then((h: any) => {
+        handle = h;
+      })
+      .catch(() => {});
+  }
+
+  const onCustom = (ev: Event) => {
+    const custom = ev as CustomEvent<PerfilPlayGames>;
+    if (custom?.detail) cb(custom.detail);
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("vants:playgames-updated", onCustom);
+  }
+
   return () => {
     try {
       handle?.remove?.();
     } catch {
       // Ignorar al desmontar
+    }
+    if (typeof window !== "undefined") {
+      window.removeEventListener("vants:playgames-updated", onCustom);
     }
   };
 }

@@ -1,5 +1,6 @@
 package cc.vants.app;
 
+import android.content.Intent;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
@@ -32,6 +33,10 @@ public class MainActivity extends BridgeActivity {
         // Registrar el plugin nativo de juegos y Google Play Juegos antes de super.onCreate
         registerPlugin(VantsGamesPlugin.class);
         super.onCreate(savedInstanceState);
+
+        if (getIntent() != null && getIntent().getData() != null) {
+            VantsGamesPlugin.onNativeAuthRedirect(getIntent().getData());
+        }
 
         // Estilo de barras de estado y navegación oscuras acordes a VANTS (#0A0A0B)
         try {
@@ -67,9 +72,16 @@ public class MainActivity extends BridgeActivity {
         } catch (Throwable ignored) {
         }
 
-        // Verificación silenciosa de Google Play Juegos (muestra automáticamente la insignia oficial
-        // de bienvenida cuando el jugador está autenticado, sin lanzar diálogos de error si aún no lo está)
         checkSilentPlayGamesWelcome();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (intent != null && intent.getData() != null) {
+            VantsGamesPlugin.onNativeAuthRedirect(intent.getData());
+        }
     }
 
     private void checkSilentPlayGamesWelcome() {
@@ -77,7 +89,7 @@ public class MainActivity extends BridgeActivity {
         startupCheckDone = true;
         try {
             GamesSignInClient signInClient = PlayGames.getGamesSignInClient(this);
-            signInClient.isAuthenticated().addOnCompleteListener(task -> {
+            signInClient.isAuthenticated().addOnCompleteListener(this, task -> {
                 boolean authed = task.isSuccessful()
                     && task.getResult() != null
                     && task.getResult().isAuthenticated();
