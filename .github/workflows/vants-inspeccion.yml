@@ -83,20 +83,17 @@ jobs:
             }
             (async () => {
               const vants = (await getWorkerSrc("vants")).split(/\r?\n/);
-              console.log("=== VANTS jwksCache / AUTH0_TENANT / verificarJwt hits ===");
-              for (let i = 0; i < vants.length; i++) {
-                if (/jwksCache|AUTH0_TENANT|infoDeSesion|verificarToken|validarJwt|verifyJwt/i.test(vants[i])) {
-                  const a = Math.max(0, i - 2), b = Math.min(vants.length - 1, i + 12);
-                  console.log(`--- hit at ${i + 1} ---`);
-                  for (let k = a; k <= b; k++) console.log(`${k + 1}: ${vants[k]}`);
-                  i = b;
-                }
-              }
+              console.log("=== VANTS lines 1-140 (manejarRutasSeoYKick) ===");
+              for (let i = 0; i < Math.min(140, vants.length); i++) console.log(`${i + 1}: ${vants[i]}`);
 
               const fn = (await getWorkerSrc("vants-functions")).split(/\r?\n/);
-              console.log("=== VANTS-FUNCTIONS lines 1605-1648 ===");
-              for (let i = 1604; i < 1648; i++) console.log(`${i + 1}: ${fn[i]}`);
-              console.log("=== VANTS-FUNCTIONS lines 1805-1848 ===");
-              for (let i = 1804; i < 1848; i++) console.log(`${i + 1}: ${fn[i]}`);
+              console.log("=== VANTS-FUNCTIONS lines 55-95 (linker top) ===");
+              for (let i = 54; i < Math.min(95, fn.length); i++) console.log(`${i + 1}: ${fn[i]}`);
+              console.log("=== VANTS-FUNCTIONS lines 1775-2584 (stripe-checkout, stripe-webhook, router) ===");
+              for (let i = 1774; i < fn.length; i++) console.log(`${i + 1}: ${fn[i]}`);
+
+              const bus = (await getWorkerSrc("vants-bus")).split(/\r?\n/);
+              console.log("=== VANTS-BUS full source ===");
+              for (let i = 0; i < bus.length; i++) console.log(`${i + 1}: ${bus[i]}`);
             })();
           '
