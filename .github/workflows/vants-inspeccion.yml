@@ -82,12 +82,15 @@ jobs:
               return buf.toString("utf8");
             }
             (async () => {
-              const vants = (await getWorkerSrc("vants")).split(/\r?\n/);
-              console.log("=== VANTS lines 130-220 (manejarRutasSeoYKick end) ===");
-              for (let i = 129; i < Math.min(220, vants.length); i++) console.log(`${i + 1}: ${vants[i]}`);
-
               const fn = (await getWorkerSrc("vants-functions")).split(/\r?\n/);
-              console.log("=== VANTS-FUNCTIONS lines 230-560 (linker handler) ===");
-              for (let i = 229; i < Math.min(560, fn.length); i++) console.log(`${i + 1}: ${fn[i]}`);
+              console.log("=== VANTS-FUNCTIONS module boundaries ===");
+              for (let i = 0; i < fn.length; i++) {
+                if (/^\/\/ |^import |^var FUNCIONES/i.test(fn[i])) console.log(`${i + 1}: ${fn[i]}`);
+              }
             })();
           '
+      - name: Ajustes de vants-bus y vants-recursos
+        run: |
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-bus/settings" | jq '.result | {compatibility_date, compatibility_flags, bindings: [.bindings[] | del(.text, .json)]}'
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-bus/schedules" | jq -c .result
+          curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-recursos/settings" | jq '.result | {compatibility_date, compatibility_flags, bindings: [.bindings[] | del(.text, .json)]}'
