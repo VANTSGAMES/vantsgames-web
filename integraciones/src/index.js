@@ -29,6 +29,7 @@ import { rutasComunidadVotaciones } from './comunidadVotaciones.js';
 import { rutasGooglePro } from './googlePro.js';
 import { rutasVidiqSeo } from './vidiqSeo.js';
 import { rutasSkilling } from './skilling.js';
+import { rutasVantsAi } from './vantsAi.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -370,6 +371,7 @@ async function rutas(req, env, url) {
         faceit: !!env.FACEIT_API_KEY, twitch: !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
         kick: !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET), discord: !!env.DISCORD_BOT_TOKEN, db: !!env.DB,
         epic: !!(env.EPIC_CLIENT_ID && env.EPIC_CLIENT_SECRET), fortnite: !!env.FORTNITE_API_KEY,
+        gemini: !!env.GEMINI_API_KEY,
         webhooks_discord: ['REGISTROS', 'COMUNIDAD', 'B2B', 'TICKETS'].filter((k) => env['DISCORD_WEBHOOK_' + k]).length,
       },
     });
@@ -575,6 +577,11 @@ async function rutas(req, env, url) {
 
   const rc = await rutasComunidad(req, env, url, p, m, { json, cacheado, usuario, usuarioClaims, perfilFaceit, notificar, discord });
   if (rc) return rc;
+
+  const rai = await rutasVantsAi(req, env, url, p, m, {
+    json, cacheado, usuario, usuarioClaims, fx, perfilFaceit, notificar, discord,
+  });
+  if (rai) return rai;
 
   // ---- privadas (Auth0)
   const sub = await usuario(req, env);

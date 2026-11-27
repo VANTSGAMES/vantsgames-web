@@ -13,6 +13,7 @@
  */
 import { enviarEmail, plantillaEmail, guardarEmailSub, emailDe } from './email.js';
 import { invalidarIdentidades } from './perfiles.js';
+import { preEvaluarAlianzaB2B } from './vantsAi.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -249,6 +250,9 @@ export async function rutasComms(req, env, url, p, m, H) {
         planes: false,
       }),
     }).catch(() => null);
+    if (env.GEMINI_API_KEY) {
+      await preEvaluarAlianzaB2B(env, { empresa, tipo, web, mensaje }).catch(() => null);
+    }
     return H.json({ ok: true });
   }
 

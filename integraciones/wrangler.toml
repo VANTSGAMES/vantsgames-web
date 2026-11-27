@@ -53,6 +53,7 @@ CANALES_KICK = "feispla"
 # Tope diario global de llamadas a vidIQ MCP (5 créditos/llamada; 20 = máx 100 créditos/día).
 # Sube este número cuando el plan de vidIQ escale con los ingresos de membresías.
 VIDIQ_DAILY_GLOBAL_CAP = "20"
+VANTS_BUS_PROJECT = "vants-ai"
 
 # Clips subidos desde el ordenador (vÃ­deo en trozos de 20 MB + miniatura).
 [[kv_namespaces]]
@@ -64,3 +65,8 @@ id = "41ab2fde4424430c9702509ed3b4236f"
 binding = "ACH_DB"
 database_name = "vants-logros-db"
 database_id = "481584c7-bc47-434b-aa73-3aa066b440f7"
+
+# Service Binding hacia vants-bus (misma cuenta Cloudflare, sin error 1042).
+[[services]]
+binding = "VANTS_BUS_SERVICE"
+service = "vants-bus"

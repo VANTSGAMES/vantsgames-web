@@ -17,7 +17,10 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Sintaxis
-        run: node --check src/index.js
+        run: |
+          node --check src/index.js
+          node --check src/vantsAi.js
+          node --check src/comms.js
       - name: Migraciones D1 (idempotentes)
         run: |
           for f in migraciones/*.sql; do
@@ -28,7 +31,7 @@ jobs:
           done
       - name: Deploy
         run: npx -y wrangler@4 deploy
-      - name: Secretos de Epic / Fortnite y VANTS Identity
+      - name: Secretos de Epic / Fortnite, VANTS Identity y VANTS Core AI
         env:
           EPIC_CLIENT_SECRET: ${{ secrets.EPIC_CLIENT_SECRET }}
           FORTNITE_API_KEY: ${{ secrets.FORTNITE_API_KEY }}
@@ -38,6 +41,10 @@ jobs:
           VIDIQ_MCP_TOKEN: ${{ secrets.VIDIQ_MCP_TOKEN }}
           PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
           DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          AI_GATEWAY_URL: ${{ secrets.AI_GATEWAY_URL }}
+          VANTS_BUS_SECRET: ${{ secrets.VANTS_BUS_SECRET }}
+          VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
         run: |
           if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
           if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
@@ -47,5 +54,57 @@ jobs:
           if [ -n "$VIDIQ_MCP_TOKEN" ]; then printf '%s' "$VIDIQ_MCP_TOKEN" | npx -y wrangler@4 secret put VIDIQ_MCP_TOKEN; fi
           if [ -n "$PAGERDUTY_ROUTING_KEY" ]; then printf '%s' "$PAGERDUTY_ROUTING_KEY" | npx -y wrangler@4 secret put PAGERDUTY_ROUTING_KEY; fi
           if [ -n "$DD_API_KEY" ]; then printf '%s' "$DD_API_KEY" | npx -y wrangler@4 secret put DD_API_KEY; fi
+          if [ -n "$GEMINI_API_KEY" ]; then printf '%s' "$GEMINI_API_KEY" | npx -y wrangler@4 secret put GEMINI_API_KEY; fi
+          if [ -n "$AI_GATEWAY_URL" ]; then printf '%s' "$AI_GATEWAY_URL" | npx -y wrangler@4 secret put AI_GATEWAY_URL; fi
+          if [ -n "$VANTS_BUS_SECRET" ]; then printf '%s' "$VANTS_BUS_SECRET" | npx -y wrangler@4 secret put VANTS_BUS_SECRET; fi
+          if [ -n "$VANTS_INTERNAL_SECRET" ]; then printf '%s' "$VANTS_INTERNAL_SECRET" | npx -y wrangler@4 secret put VANTS_INTERNAL_SECRET; fi
+      - name: Sincronizar secretos compartidos en Cloudflare (idempotente, sin sobrescribir)
+        run: |
+          node -e '
+            const crypto = require("node:crypto");
+            const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
+            const tok = process.env.CLOUDFLARE_API_TOKEN;
+            const api = `https://api.cloudflare.com/client/v4/accounts/${acct}/workers/scripts`;
+            const hdr = { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" };
+
+            async function getSecretNames(script) {
+              const r = await fetch(`${api}/${script}/settings`, { headers: hdr });
+              const j = await r.json().catch(() => null);
+              if (!r.ok || !j?.success) throw new Error(`settings ${script}: HTTP ${r.status}`);
+              return new Set((j.result?.bindings || []).filter((b) => b.type === "secret_text").map((b) => b.name));
+            }
+
+            async function putSecret(script, name, text) {
+              const r = await fetch(`${api}/${script}/secrets`, {
+                method: "PUT",
+                headers: hdr,
+                body: JSON.stringify({ name, text, type: "secret_text" }),
+              });
+              const j = await r.json().catch(() => null);
+              if (!r.ok || !j?.success) throw new Error(`putSecret ${script}/${name}: HTTP ${r.status}`);
+            }
+
+            (async () => {
+              const pairs = [
+                { label: "VantsBus AI", a: ["vants-bus", "SECRET_VANTS_AI"], b: ["vants-integraciones", "VANTS_BUS_SECRET"] },
+                { label: "Puente interno AI", a: ["vants-integraciones", "VANTS_INTERNAL_SECRET"], b: ["vantsbot", "VANTS_INTERNAL_SECRET"] },
+              ];
+              for (const p of pairs) {
+                const [sa, sb] = await Promise.all([getSecretNames(p.a[0]), getSecretNames(p.b[0])]);
+                const hasA = sa.has(p.a[1]);
+                const hasB = sb.has(p.b[1]);
+                if (hasA && hasB) {
+                  console.log(`[ok] ${p.label}: ya configurado en ${p.a[0]} (${p.a[1]}) y ${p.b[0]} (${p.b[1]}).`);
+                } else {
+                  const val = crypto.randomBytes(32).toString("hex");
+                  await putSecret(p.a[0], p.a[1], val);
+                  await putSecret(p.b[0], p.b[1], val);
+                  console.log(`[sync] ${p.label}: sincronizado nuevo secreto compartido en ${p.a[0]} (${p.a[1]}) y ${p.b[0]} (${p.b[1]}) [previo: ${hasA}/${hasB}].`);
+                }
+              }
+              const sInt = await getSecretNames("vants-integraciones");
+              console.log(`[estado] vants-integraciones GEMINI_API_KEY presente: ${sInt.has("GEMINI_API_KEY")}`);
+            })().catch((e) => { console.error(String(e)); process.exit(1); });
+          '
       - name: Salud
         run: curl -fsS -A "Mozilla/5.0 (compatible; VANTSHealthCheck/1.0; +https://vants.cc)" https://vants-integraciones.vants.workers.dev/salud

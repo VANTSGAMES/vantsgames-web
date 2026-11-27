@@ -363,6 +363,31 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 12) Proxy /api/ai y /api/ai/* -> Service Binding VANTS_INT (vants-integraciones /ai/*)
+  if (!c.includes("/* VANTS_AI_CORE_PROXY_V1 */")) {
+    const AI_PROXY = `    /* VANTS_AI_CORE_PROXY_V1 */
+    if (
+      _vantsInt &&
+      (__redir301.pathname === "/api/ai" || __redir301.pathname.startsWith("/api/ai/"))
+    ) {
+      const __aiUrl = new URL(request.url);
+      __aiUrl.pathname = __redir301.pathname.replace(/^\\/api/, "");
+      return _vantsInt.fetch(new Request(__aiUrl.toString(), request));
+    }`;
+    const ANCHOR_OIDC = `        __redir301.pathname === "/maps/config")
+    ) {
+      return _vantsInt.fetch(request);
+    }`;
+    const ANCHOR_FALLBACK = `    // 2. Activar Sitemap para Google y rutas de Kick`;
+    if (c.includes(ANCHOR_OIDC)) {
+      c = c.replace(ANCHOR_OIDC, ANCHOR_OIDC + "\n\n" + AI_PROXY);
+    } else if (c.includes(ANCHOR_FALLBACK)) {
+      c = c.replace(ANCHOR_FALLBACK, AI_PROXY + "\n\n" + ANCHOR_FALLBACK);
+    } else {
+      throw new Error("vants: ancla para VANTS_AI_CORE_PROXY_V1 no encontrada");
+    }
+  }
+
   return c;
 }
 

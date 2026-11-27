@@ -129,6 +129,7 @@ jobs:
           grep -c "VANTS_AUTH_DUAL_V1" src/worker.js
           grep -c "VANTS_AUTH_DUAL_V2" src/worker.js
           grep -c "VANTS_SEO_KICK_ABSORB_V1" src/worker.js
+          grep -c "VANTS_AI_CORE_PROXY_V1" src/worker.js
 
       - name: Prueba en seco
         working-directory: vants
@@ -173,6 +174,7 @@ jobs:
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/googlec8812910616d7748.html); [ "$c" = 200 ] || { echo "/googlec8812910616d7748.html -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/sitemap.xml); [ "$c" = 200 ] || { echo "/sitemap.xml -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/kick/webhook); [ "$c" = 410 ] || { echo "/kick/webhook -> $c"; ok=0; }
+          c=$(curl -s -A ci -o ai.json -w '%{http_code}' $U/api/ai/estado); [ "$c" = 401 ] && jq -e '.error == "sin_sesion"' ai.json >/dev/null || { echo "/api/ai/estado (sin sesión) -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
           c=$(curl -s -A ci -o acc.json -w '%{http_code}' $U/api/account/perfil); [ "$c" = 401 ] && jq -e '.error == "sin_sesion"' acc.json >/dev/null || { echo "/api/account/perfil (sin sesión) -> $c"; ok=0; }

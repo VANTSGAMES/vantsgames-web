@@ -446,6 +446,7 @@ async function fetch(request, env, ctx) {
   assert.match(v1, /VANTS_AUTH_DUAL_V2/);
   assert.match(v1, /new Request\("https:\/\/vants\.cc\/auth\/me"/);
   assert.match(v1, /VANTS_UA_VERIFIER_V1/);
+  assert.match(v1, /VANTS_AI_CORE_PROXY_V1/);
   assert.equal(parchearVantsWorker(v1), v1);
 
   const sampleFn = `var jwksCache = null;
