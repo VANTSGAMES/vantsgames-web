@@ -80,12 +80,6 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       if (texto) await this.aviso({ tipo: "chat", de: nick, texto });
       return;
     }
-    if (ev.tipo === "marcador") {
-      // El marcador queda persistido en la sala (SQLite del DO): quien entre
-      // tarde lo recupera con el método RPC `estado()` desde el Worker.
-      await this.ctx.storage.put("marcador", ev.datos ?? null);
-      await this.aviso({ tipo: "marcador", de: nick, datos: ev.datos });
-    }
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {

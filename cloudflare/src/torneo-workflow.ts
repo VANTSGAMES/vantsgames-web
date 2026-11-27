@@ -84,11 +84,11 @@ export class TorneoWorkflow extends WorkflowEntrypoint<WorkflowEnv, TorneoParams
         { retries: { limit: 6, delay: "15 minutes", backoff: "exponential" } },
         async () => {
           const { results } = await this.env.DB.prepare(
-            "SELECT ganador FROM partidas WHERE torneo_id = ? AND ronda = ? AND estado = 'verificada'",
+            "SELECT ganador FROM partidas WHERE torneo_id = ? AND ronda = ? AND estado IN ('verificada', 'terminada') AND ganador IS NOT NULL",
           )
             .bind(torneoId, ronda)
             .all<{ ganador: string }>();
-          const esperadas = enfrentamientos.filter((p) => p.b !== null).length;
+          const esperadas = enfrentamientos.length;
           if (!results || results.length < esperadas) {
             throw new Error(`Faltan resultados verificados en la ronda ${ronda}`);
           }
@@ -137,11 +137,19 @@ export class TorneoWorkflow extends WorkflowEntrypoint<WorkflowEnv, TorneoParams
   }
 
   private async guardarRonda(torneoId: string, ronda: number, pares: Emparejamiento[]): Promise<void> {
-    const stmts = pares.map((p) =>
-      this.env.DB.prepare(
-        "INSERT INTO partidas (torneo_id, ronda, jugador_a, jugador_b, estado) VALUES (?, ?, ?, ?, 'pendiente')",
-      ).bind(torneoId, ronda, p.a.jugador_id, p.b?.jugador_id ?? null),
-    );
+    const stmts = pares.map((p) => {
+      const esBye = p.b === null;
+      return this.env.DB.prepare(
+        "INSERT INTO partidas (torneo_id, ronda, jugador_a, jugador_b, estado, ganador) VALUES (?, ?, ?, ?, ?, ?)",
+      ).bind(
+        torneoId,
+        ronda,
+        p.a.jugador_id,
+        p.b?.jugador_id ?? null,
+        esBye ? "verificada" : "pendiente",
+        esBye ? p.a.jugador_id : null,
+      );
+    });
     if (stmts.length) await this.env.DB.batch(stmts);
   }
 }

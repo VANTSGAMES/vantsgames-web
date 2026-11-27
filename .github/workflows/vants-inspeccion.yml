@@ -39,7 +39,7 @@ jobs:
           jq '.result | {compatibility_date, compatibility_flags, usage_model, observability, bindings: [.bindings[] | {name, type, service, database_id, text: (if .type == "plain_text" then .text else null end)}]}' sb.json
           curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vantsbot/schedules" | jq -c .result
           curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vantsbot/deployments" | jq -c '.result.deployments[0]'
-      - name: Sincronizar CLOUDFLARE_API_TOKEN válido en VANTSGAMES/vantsbot-cf y relanzar deploy
+      - name: Sincronizar CLOUDFLARE_API_TOKEN válido en VANTSGAMES/vantsbot-cf y VANTSGAMES/vants-faceit-webhook
         env:
           PAT1: ${{ secrets.VANTS_GH_PAT_SECRETS }}
           PAT2: ${{ secrets.GHPAT_VANTS }}
@@ -49,6 +49,8 @@ jobs:
             if GH_TOKEN="$P" gh secret set CLOUDFLARE_API_TOKEN --repo VANTSGAMES/vantsbot-cf --body "$TOKEN"; then
               echo "CLOUDFLARE_API_TOKEN actualizado en VANTSGAMES/vantsbot-cf"
               GH_TOKEN="$P" gh workflow run deploy.yml --repo VANTSGAMES/vantsbot-cf || true
+              GH_TOKEN="$P" gh secret set CLOUDFLARE_API_TOKEN --repo VANTSGAMES/vants-faceit-webhook --body "$TOKEN" || true
+              GH_TOKEN="$P" gh workflow run deploy.yml --repo VANTSGAMES/vants-faceit-webhook || true
               break
             fi
           done

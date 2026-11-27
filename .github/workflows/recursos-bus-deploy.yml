@@ -1,0 +1,133 @@
+name: "Recursos y Bus · deploy de vants-recursos y vants-bus"
+
+# Despliega los parches de seguridad/workflow en `vants-recursos` (cloudflare/)
+# y la limpieza ISO por `ts < ?` en `vants-bus` conservando todos sus bindings,
+# variables, secretos y crons.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cloudflare/**"
+      - ".github/workflows/recursos-bus-deploy.yml"
+  workflow_dispatch:
+
+concurrency: { group: recursos-bus-deploy, cancel-in-progress: false }
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-recursos:
+    name: Deploy vants-recursos (torneos-realtime)
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: cloudflare } }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Generar wrangler.jsonc con D1 real (vants-db)
+        run: |
+          set -euo pipefail
+          sed 's/PEGA_AQUI_EL_ID_DE_LA_D1/11e5d82c-307b-44ba-9682-501d8df593d3/g; s/"database_name": "vants"/"database_name": "vants-db"/g' wrangler.ejemplo.jsonc > wrangler.jsonc
+      - name: Prueba en seco vants-recursos
+        run: npx -y wrangler@4 deploy --dry-run --outdir seco
+      - name: Deploy vants-recursos
+        run: npx -y wrangler@4 deploy
+      - name: Verificar cierre de rutas de control
+        run: |
+          sleep 4
+          c=$(curl -s -X POST -o /dev/null -w '%{http_code}' https://vants-recursos.vants.workers.dev/webhooks/faceit)
+          echo "/webhooks/faceit sin secreto -> $c"
+          case "$c" in 401|503) ;; *) echo "Se esperaba 401 o 503, recibido $c"; exit 1 ;; esac
+          c2=$(curl -s -o /dev/null -w '%{http_code}' https://vants-recursos.vants.workers.dev/torneos/test/estado-instancia)
+          echo "/torneos/test/estado-instancia sin secreto -> $c2"
+          case "$c2" in 401|503) ;; *) echo "Se esperaba 401 o 503, recibido $c2"; exit 1 ;; esac
+
+  deploy-bus:
+    name: Deploy vants-bus (deleteOlderThan ts < ?)
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+      CF: https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants-bus
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Descargar, parchear y desplegar vants-bus
+        run: |
+          set -euo pipefail
+          mkdir -p bus && cd bus
+          H="Authorization: Bearer $TOKEN"
+          curl -fsS -H "$H" "$CF/settings" > settings.json
+          curl -fsS -H "$H" "$CF/schedules" | jq -c '[.result.schedules[].cron]' > crons.json
+          curl -fsS -D h.txt -H "$H" "$CF/content/v2" -o contenido.bin
+          node -e '
+            const fs = require("fs");
+            const ct = fs.readFileSync("h.txt", "utf8").match(/boundary=([^\r\n;]+)/i)[1].trim();
+            const b = fs.readFileSync("contenido.bin");
+            const sep = Buffer.from("--" + ct);
+            let i = b.indexOf(sep), n = 0;
+            while (i >= 0) {
+              const j = b.indexOf(sep, i + sep.length);
+              if (j < 0) break;
+              const p = b.subarray(i + sep.length + 2, j - 2);
+              const k = p.indexOf("\r\n\r\n");
+              const cab = p.subarray(0, k).toString();
+              const nm = (cab.match(/name="([^"]+)"/) || [])[1];
+              if (nm === "index.js" || nm === "worker.js") {
+                fs.mkdirSync("src", { recursive: true });
+                let code = p.subarray(k + 4).toString("utf8");
+                code = code.replace(
+                  "DELETE FROM vants_events WHERE created_at < ?",
+                  "DELETE FROM vants_events WHERE ts < ?"
+                );
+                if (!code.includes("DELETE FROM vants_events WHERE ts < ?")) {
+                  console.error("No se encontró la consulta de deleteOlderThan en vants-bus");
+                  process.exit(1);
+                }
+                fs.writeFileSync("src/index.js", code, "utf8");
+                n++;
+              }
+              i = j;
+            }
+            if (!n) { console.error("Módulo principal no encontrado en vants-bus"); process.exit(1); }
+          '
+          node --input-type=module --check < src/index.js
+          node -e '
+            const fs = require("fs");
+            const set = JSON.parse(fs.readFileSync("settings.json", "utf8")).result;
+            const crons = JSON.parse(fs.readFileSync("crons.json", "utf8"));
+            const vars = {}, d1 = [];
+            for (const b of set.bindings || []) {
+              if (b.type === "plain_text") vars[b.name] = b.text;
+              else if (b.type === "json") vars[b.name] = b.json;
+              else if (b.type === "d1") d1.push({ binding: b.name, database_id: b.database_id || b.id });
+              else if (b.type === "secret_text" || b.type === "secret_key") {}
+              else throw new Error("Binding no soportado en vants-bus: " + b.type + ":" + b.name);
+            }
+            const cfg = {
+              name: "vants-bus",
+              main: "src/index.js",
+              no_bundle: true,
+              compatibility_date: set.compatibility_date || "2025-01-01",
+              compatibility_flags: set.compatibility_flags || [],
+              workers_dev: true,
+              keep_vars: false,
+              vars,
+              d1_databases: d1,
+              triggers: { crons },
+            };
+            fs.writeFileSync("wrangler.json", JSON.stringify(cfg, null, 2));
+          '
+          jq -r '[.result.bindings[].name]|sort|join(",")' settings.json > bindings-antes.txt
+          npx -y wrangler@4 deploy --dry-run --outdir seco
+          npx -y wrangler@4 deploy
+          sleep 4
+          D=$(curl -fsS -H "$H" "$CF/settings" | jq -r '[.result.bindings[].name]|sort|join(",")')
+          [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos en vants-bus: $D"; exit 1; }
+          curl -fsS https://vants-bus.vants.workers.dev/health | jq -e '.ok == true'

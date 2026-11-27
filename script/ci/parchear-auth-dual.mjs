@@ -303,6 +303,66 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 11) Absorbe #5 (riot.txt) y #6 (googlec8812910616d7748.html) y cierra /kick/webhook (410 Gone)
+  if (!c.includes("/* VANTS_SEO_KICK_ABSORB_V1 */")) {
+    const OLD_ROBOTS = `  if (path === "/robots.txt") {
+    return new Response(generarRobots(), {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" }
+    });
+  }`;
+    const NEW_ROBOTS = `  if (path === "/robots.txt") {
+    return new Response(generarRobots(), {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" }
+    });
+  }
+  /* VANTS_SEO_KICK_ABSORB_V1 */
+  if (path === "/riot.txt") {
+    return new Response("383dea30-3123-4203-b2f8-367829724230", {
+      status: 200,
+      headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=300" }
+    });
+  }
+  if (path === "/googlec8812910616d7748.html") {
+    return new Response("google-site-verification: googlec8812910616d7748.html", {
+      status: 200,
+      headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" }
+    });
+  }`;
+    if (c.includes(OLD_ROBOTS)) {
+      c = c.replace(OLD_ROBOTS, NEW_ROBOTS);
+    }
+
+    const OLD_KICK_WEBHOOK = `  if (path === "/kick/webhook" && request.method === "POST") {
+    try {
+      const payload = await request.json();
+      const eventType = request.headers.get("Kick-Event-Type") || payload.event || payload.type || payload.event_type;
+      const isLive = eventType === "livestream.status.updated" ? payload.is_live === true : (eventType === "stream.online" || eventType === "live");
+      if (isLive && DISCORD_WEBHOOK) {
+        const channelName = payload.broadcaster?.username || payload.channel?.name || payload.user?.username || "Un creador de VANTS";
+        const streamTitle = payload.livestream?.session_title || payload.title || "Transmitiendo en directo en el circuito VANTS";
+        await fetch(DISCORD_WEBHOOK, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: \`🚀 **¡DIRECTO ACTIVO EN VANTS!** 🚀\\n\\n**\${channelName}** está en vivo en Kick: *\${streamTitle}*\\n👉 https://kick.com/\${channelName}\`
+          })
+        });
+      }
+      return new Response("OK", { status: 200 });
+    } catch (err) {
+      return new Response("Error en webhook: " + err.message, { status: 500 });
+    }
+  }`;
+    const NEW_KICK_WEBHOOK = `  if (path === "/kick/webhook") {
+    return new Response("Webhook movido a https://bot.vants.cc/kick", { status: 410 });
+  }`;
+    if (c.includes(OLD_KICK_WEBHOOK)) {
+      c = c.replace(OLD_KICK_WEBHOOK, NEW_KICK_WEBHOOK);
+    }
+  }
+
   return c;
 }
 
@@ -400,7 +460,7 @@ async function validarJWT(token) {
   }
 
   // 2) Módulo intermedio: jwks2() + validarJwt()
-  if (!c.includes("/* VANTS_FN_DUAL_2 */")) {
+  if (!c.includes("/* VANTS_FN_DUAL_2 */") && c.includes("async function jwks2(f, dominio)")) {
     const OLD_2 = `async function jwks2(f, dominio) {
   if (jwksCache2 && Date.now() - jwksCache2.at < JWKS_TTL_MS) return jwksCache2.claves;
   const r = await f(\`https://\${dominio}/.well-known/jwks.json\`, { signal: AbortSignal.timeout(8e3) });
@@ -554,6 +614,358 @@ async function validarJWT2(token) {
 }`;
     if (!c.includes(OLD_3)) throw new Error("vants-functions: bloque validarJWT2 (3) no encontrado");
     c = c.replace(OLD_3, NEW_3);
+  }
+
+  // 4) Linker VANTS_SITE_URL + env, Stripe Checkout configStripe(env) + USD, Stripe Webhook secret/expiresAt ISO, y limpieza de los 4 módulos obsoletos
+  if (!c.includes("/* VANTS_FN_STRIPE_ENV_V1 */")) {
+    // 4a) Linker: fallback https://vants.cc y actualización desde env en handler(req, env)
+    c = c.replace(
+      'var APP_URL = (process.env.VANTS_SITE_URL ?? "https://feispla.github.io/Vants").replace(/\\/$/, "");',
+      '/* VANTS_FN_STRIPE_ENV_V1 */\nvar APP_URL = (process.env.VANTS_SITE_URL ?? "https://vants.cc").replace(/\\/$/, "");',
+    );
+    const OLD_LINKER_HANDLER = `async function handler(req, env) {
+  if (env && env.DB) pool = crearSql(env.DB);`;
+    const NEW_LINKER_HANDLER = `async function handler(req, env) {
+  if (env) {
+    APP_URL = String(env.VANTS_SITE_URL || process.env.VANTS_SITE_URL || "https://vants.cc").replace(/\\/$/, "");
+    if (env.LINKER_URL) URL_API = String(env.LINKER_URL).replace(/\\/$/, "");
+    if (env.AUTH0_DOMAIN) AUTH0_DOMAIN = String(env.AUTH0_DOMAIN).replace(/^https?:\\/\\//, "");
+    if (env.AUTH0_AUDIENCE) AUTH0_AUDIENCE = String(env.AUTH0_AUDIENCE);
+  }
+  if (env && env.DB) pool = crearSql(env.DB);`;
+    if (c.includes(OLD_LINKER_HANDLER)) {
+      c = c.replace(OLD_LINKER_HANDLER, NEW_LINKER_HANDLER);
+    }
+
+    // 4b) Stripe Checkout: configStripe(env), retornoSeguro2(return_to, appUrl), stripeCrearSesion(params, secretKey), crearCheckout(sub, email, body, cfg), currency = "usd"
+    c = c.replace(
+      'var APP_URL2 = (process.env.VANTS_SITE_URL ?? "https://feispla.github.io/Vants").replace(/\\/$/, "");',
+      'var APP_URL2 = (process.env.VANTS_SITE_URL ?? "https://vants.cc").replace(/\\/$/, "");',
+    );
+    const OLD_CHECKOUT = `function retornoSeguro2(return_to) {
+  if (!return_to) return APP_URL2 + "/";
+  try {
+    const u = new URL(return_to);
+    if (u.origin === APP_URL2 || u.origin === LOCAL_URL2) return u.origin + u.pathname;
+  } catch {
+  }
+  return APP_URL2 + "/";
+}
+__name(retornoSeguro2, "retornoSeguro");
+async function stripeCrearSesion(params) {
+  const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + STRIPE_SECRET_KEY,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams(params).toString()
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("stripe_" + r.status + (d?.error?.message ? ": " + d.error.message : ""));
+  return d;
+}
+__name(stripeCrearSesion, "stripeCrearSesion");
+async function crearCheckout(sub, email, body) {
+  const plan = String(body?.plan ?? "");
+  const period = plan === "fee" ? "one_time" : body?.period === "yr" ? "yr" : "mo";
+  if (plan !== "fee" && plan !== "pase" && plan !== "pro" && plan !== "creator") {
+    return json5({ error: "plan_desconocido", plan }, 400);
+  }
+  const return_to = retornoSeguro2(String(body?.return_to ?? ""));
+  const exito = return_to + "?paid=" + encodeURIComponent(plan);
+  const fallo = return_to + "?paid=cancel";
+  const params = {
+    mode: plan === "pase" || plan === "fee" ? "payment" : "subscription",
+    success_url: exito,
+    cancel_url: fallo,
+    client_reference_id: sub,
+    "metadata[app]": "vants-games",
+    "metadata[plan]": plan,
+    "metadata[period]": period,
+    "line_items[0][quantity]": "1"
+  };
+  if (email) params["customer_email"] = email;
+  if (params.mode === "subscription") {
+    params["subscription_data[metadata][app]"] = "vants-games";
+    params["subscription_data[metadata][plan]"] = plan;
+    params["subscription_data[metadata][period]"] = period;
+  }
+  if (plan === "fee") {
+    const cents = Math.round(Number(body?.fee_cents ?? 0));
+    if (!Number.isFinite(cents) || cents < 50 || cents > 1e6) {
+      return json5({ error: "fee_invalido", detalle: "El importe del fee esta fuera de rango" }, 400);
+    }
+    const nombre = "Fee de inscripci\\xF3n \\xB7 " + String(body?.name ?? "Torneo VANTS").slice(0, 80);
+    params["line_items[0][price_data][currency]"] = "eur";
+    params["line_items[0][price_data][unit_amount]"] = String(cents);
+    params["line_items[0][price_data][tax_behavior]"] = "inclusive";
+    params["line_items[0][price_data][product_data][name]"] = nombre;
+    params["line_items[0][price_data][product_data][metadata][app]"] = "vants-games";
+    params["line_items[0][price_data][product_data][metadata][plan]"] = "fee";
+  } else {
+    const precio = PRECIOS[plan + "_" + period] ?? PRECIOS[plan];
+    if (!precio) return json5({ error: "precio_faltante", plan, period }, 500);
+    params["line_items[0][price]"] = precio;
+  }
+  const sesion = await stripeCrearSesion(params);
+  const url = sesion.url;
+  if (!url) throw new Error("sin_url_checkout");
+  return json5({ ok: true, url });
+}
+__name(crearCheckout, "crearCheckout");
+async function handler3(req, env) {
+  if (env && env.DB) pool3 = crearSql(env.DB);
+  if (!pool3) return json5({ error: "d1_no_configurado: falta el binding DB" }, 500);
+  const url = new URL(req.url);
+  const ruta = url.pathname.replace(/\\/$/, "");
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors5 });
+  if (ruta === "" || ruta === "/") {
+    const estado = {
+      _version: "v7-rk-live",
+      _stripe_secret_key: STRIPE_SECRET_KEY ? /^(sk|rk)_live_/.test(STRIPE_SECRET_KEY) ? "ok (live, sk/rk)" : "cargada pero NO es live (revisar modo)" : "falta STRIPE_SECRET_KEY (clave live sk_live_ o rk_live_ con permiso Checkout Sessions: Write)",
+      _vants_site_url: "ok (" + APP_URL2 + ")",
+      _tabla: "purchases + entitlements (migracion 05-pagos.sql)"
+    };
+    for (const [k, v] of Object.entries(PRECIOS)) estado["precio " + k] = v ? "ok (" + v.slice(0, 12) + "\\u2026)" : "falta";
+    return json5({ ok: true, function: "stripe-checkout", estado });
+  }
+  if (ruta === "/api/checkout/start" && req.method === "POST") {
+    if (!STRIPE_SECRET_KEY) {
+      return json5({ error: "falta_clave", env: "STRIPE_SECRET_KEY", nota: "Cargar la clave live sk_live_... en las variables de esta funcion" }, 500);
+    }
+    try {
+      const auth = req.headers.get("authorization") ?? "";
+      if (!auth.startsWith("Bearer ")) return json5({ error: "sin_sesion" }, 401);
+      const { sub, email } = await validarJWT2(auth.slice(7));
+      const body = await req.json().catch(() => ({}));
+      return await crearCheckout(sub, email, body);
+    } catch (e) {`;
+
+    const NEW_CHECKOUT = `function configStripe(env) {
+  return {
+    secretKey: env?.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY || "",
+    appUrl: String(env?.VANTS_SITE_URL || process.env.VANTS_SITE_URL || "https://vants.cc").replace(/\\/$/, ""),
+    precios: {
+      pro_mo: env?.STRIPE_PRICE_PRO_MO || process.env.STRIPE_PRICE_PRO_MO || "price_1UQbuSEamHVhBbtrZvi0ck4v",
+      pro_yr: env?.STRIPE_PRICE_PRO_YR || process.env.STRIPE_PRICE_PRO_YR || "price_1UQbuSEamHVhBbtroeerOl5q",
+      creator_mo: env?.STRIPE_PRICE_CREATOR_MO || process.env.STRIPE_PRICE_CREATOR_MO || "price_1UQbuSEamHVhBbtrYT9nich8",
+      creator_yr: env?.STRIPE_PRICE_CREATOR_YR || process.env.STRIPE_PRICE_CREATOR_YR || "price_1UQbuSEamHVhBbtr699fCPMX",
+      pase: env?.STRIPE_PRICE_PASE || process.env.STRIPE_PRICE_PASE || "price_1UQbuSEamHVhBbtrzOfVkmPs"
+    }
+  };
+}
+__name(configStripe, "configStripe");
+function retornoSeguro2(return_to, appUrl = APP_URL2) {
+  if (!return_to) return appUrl + "/";
+  try {
+    const u = new URL(return_to);
+    if (u.origin === appUrl || u.origin === LOCAL_URL2) return u.origin + u.pathname;
+  } catch {
+  }
+  return appUrl + "/";
+}
+__name(retornoSeguro2, "retornoSeguro");
+async function stripeCrearSesion(params, secretKey = STRIPE_SECRET_KEY) {
+  const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + secretKey,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams(params).toString()
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("stripe_" + r.status + (d?.error?.message ? ": " + d.error.message : ""));
+  return d;
+}
+__name(stripeCrearSesion, "stripeCrearSesion");
+async function crearCheckout(sub, email, body, cfg = configStripe({})) {
+  const plan = String(body?.plan ?? "");
+  const period = plan === "fee" ? "one_time" : body?.period === "yr" ? "yr" : "mo";
+  if (plan !== "fee" && plan !== "pase" && plan !== "pro" && plan !== "creator") {
+    return json5({ error: "plan_desconocido", plan }, 400);
+  }
+  const return_to = retornoSeguro2(String(body?.return_to ?? ""), cfg.appUrl);
+  const exito = return_to + "?paid=" + encodeURIComponent(plan);
+  const fallo = return_to + "?paid=cancel";
+  const params = {
+    mode: plan === "pase" || plan === "fee" ? "payment" : "subscription",
+    success_url: exito,
+    cancel_url: fallo,
+    client_reference_id: sub,
+    "metadata[app]": "vants-games",
+    "metadata[plan]": plan,
+    "metadata[period]": period,
+    "line_items[0][quantity]": "1"
+  };
+  if (email) params["customer_email"] = email;
+  if (params.mode === "subscription") {
+    params["subscription_data[metadata][app]"] = "vants-games";
+    params["subscription_data[metadata][plan]"] = plan;
+    params["subscription_data[metadata][period]"] = period;
+  }
+  if (plan === "fee") {
+    const cents = Math.round(Number(body?.fee_cents ?? 0));
+    if (!Number.isFinite(cents) || cents < 50 || cents > 1e6) {
+      return json5({ error: "fee_invalido", detalle: "El importe del fee esta fuera de rango" }, 400);
+    }
+    const nombre = "Fee de inscripci\\xF3n \\xB7 " + String(body?.name ?? "Torneo VANTS").slice(0, 80);
+    params["line_items[0][price_data][currency]"] = "usd";
+    params["line_items[0][price_data][unit_amount]"] = String(cents);
+    params["line_items[0][price_data][tax_behavior]"] = "inclusive";
+    params["line_items[0][price_data][product_data][name]"] = nombre;
+    params["line_items[0][price_data][product_data][metadata][app]"] = "vants-games";
+    params["line_items[0][price_data][product_data][metadata][plan]"] = "fee";
+  } else {
+    const precio = cfg.precios[plan + "_" + period] ?? cfg.precios[plan];
+    if (!precio) return json5({ error: "precio_faltante", plan, period }, 500);
+    params["line_items[0][price]"] = precio;
+  }
+  const sesion = await stripeCrearSesion(params, cfg.secretKey);
+  const url = sesion.url;
+  if (!url) throw new Error("sin_url_checkout");
+  return json5({ ok: true, url });
+}
+__name(crearCheckout, "crearCheckout");
+async function handler3(req, env) {
+  if (env && env.DB) pool3 = crearSql(env.DB);
+  if (!pool3) return json5({ error: "d1_no_configurado: falta el binding DB" }, 500);
+  const cfg = configStripe(env);
+  const url = new URL(req.url);
+  const ruta = url.pathname.replace(/\\/$/, "");
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors5 });
+  if (ruta === "" || ruta === "/") {
+    const estado = {
+      _version: "v7-rk-live",
+      _stripe_secret_key: cfg.secretKey ? /^(sk|rk)_live_/.test(cfg.secretKey) ? "ok (live, sk/rk)" : "cargada pero NO es live (revisar modo)" : "falta STRIPE_SECRET_KEY (clave live sk_live_ o rk_live_ con permiso Checkout Sessions: Write)",
+      _vants_site_url: "ok (" + cfg.appUrl + ")",
+      _tabla: "purchases + entitlements (migracion 05-pagos.sql)"
+    };
+    for (const [k, v] of Object.entries(cfg.precios)) estado["precio " + k] = v ? "ok (" + v.slice(0, 12) + "\\u2026)" : "falta";
+    return json5({ ok: true, function: "stripe-checkout", estado });
+  }
+  if (ruta === "/api/checkout/start" && req.method === "POST") {
+    if (!cfg.secretKey) {
+      return json5({ error: "falta_clave", env: "STRIPE_SECRET_KEY", nota: "Cargar la clave live sk_live_... en las variables de esta funcion" }, 500);
+    }
+    try {
+      const auth = req.headers.get("authorization") ?? "";
+      if (!auth.startsWith("Bearer ")) return json5({ error: "sin_sesion" }, 401);
+      const { sub, email } = await validarJWT2(auth.slice(7));
+      const body = await req.json().catch(() => ({}));
+      return await crearCheckout(sub, email, body, cfg);
+    } catch (e) {`;
+    if (c.includes(OLD_CHECKOUT)) {
+      c = c.replace(OLD_CHECKOUT, NEW_CHECKOUT);
+    }
+
+    // 4c) Stripe Webhook: verificarFirma2(payload, header, secret), expiresAt.toISOString(), webhookSecret desde env
+    const OLD_FIRMA2 = `function verificarFirma2(payload, header) {
+  if (!header) return { ok: false, motivo: "sin_firma" };
+  let t = "";
+  const v1s = [];
+  for (const parte of header.split(",")) {
+    const i = parte.indexOf("=");
+    if (i <= 0) continue;
+    const k = parte.slice(0, i).trim();
+    const v = parte.slice(i + 1).trim();
+    if (k === "t") t = v;
+    else if (k === "v1") v1s.push(v);
+  }
+  if (!t || v1s.length === 0) return { ok: false, motivo: "firma_malformada" };
+  const edad = Math.abs(Date.now() / 1e3 - Number(t));
+  if (!Number.isFinite(edad) || edad > 300) return { ok: false, motivo: "timestamp_viejo" };
+  const esperado = crypto4.createHmac("sha256", STRIPE_WEBHOOK_SECRET).update(t + "." + payload).digest();
+  for (const v of v1s) {
+    const recibido = Buffer.from(v, "hex");
+    if (recibido.length === esperado.length && crypto4.timingSafeEqual(esperado, recibido)) return { ok: true };
+  }
+  return { ok: false, motivo: "firma_invalida" };
+}`;
+    const NEW_FIRMA2 = `function verificarFirma2(payload, header, secret) {
+  if (!header) return { ok: false, motivo: "sin_firma" };
+  let t = "";
+  const v1s = [];
+  for (const parte of header.split(",")) {
+    const i = parte.indexOf("=");
+    if (i <= 0) continue;
+    const k = parte.slice(0, i).trim();
+    const v = parte.slice(i + 1).trim();
+    if (k === "t") t = v;
+    else if (k === "v1") v1s.push(v);
+  }
+  if (!t || v1s.length === 0) return { ok: false, motivo: "firma_malformada" };
+  const edad = Math.abs(Date.now() / 1e3 - Number(t));
+  if (!Number.isFinite(edad) || edad > 300) return { ok: false, motivo: "timestamp_viejo" };
+  const esperado = crypto4.createHmac("sha256", secret).update(t + "." + payload).digest();
+  for (const v of v1s) {
+    const recibido = Buffer.from(v, "hex");
+    if (recibido.length === esperado.length && crypto4.timingSafeEqual(esperado, recibido)) return { ok: true };
+  }
+  return { ok: false, motivo: "firma_invalida" };
+}`;
+    if (c.includes(OLD_FIRMA2)) {
+      c = c.replace(OLD_FIRMA2, NEW_FIRMA2);
+    }
+
+    c = c.replace(
+      'const expiresAt = period === "one_time" ? null : sumaVencimiento(now, period);',
+      'const expiresAt = period === "one_time" ? null : sumaVencimiento(now, period).toISOString();',
+    );
+
+    const OLD_HANDLER4 = `  if (req.method !== "POST") return json6({ error: "method_not_allowed" }, 405);
+  if (!STRIPE_WEBHOOK_SECRET) {
+    return json6({ error: "falta_webhook_secret", env: "STRIPE_WEBHOOK_SECRET" }, 503);
+  }
+  try {
+    const signature = req.headers.get("stripe-signature") ?? "";
+    const payload = await req.text();
+    const firma = verificarFirma2(payload, signature);`;
+    const NEW_HANDLER4 = `  if (req.method !== "POST") return json6({ error: "method_not_allowed" }, 405);
+  const webhookSecret = env?.STRIPE_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "";
+  if (!webhookSecret) {
+    return json6({ error: "falta_webhook_secret", env: "STRIPE_WEBHOOK_SECRET" }, 503);
+  }
+  try {
+    const signature = req.headers.get("stripe-signature") ?? "";
+    const payload = await req.text();
+    const firma = verificarFirma2(payload, signature, webhookSecret);`;
+    if (c.includes(OLD_HANDLER4)) {
+      c = c.replace(OLD_HANDLER4, NEW_HANDLER4);
+    }
+
+    // 4d) Eliminar los 4 módulos obsoletos (vantsdata, vantsbot, discord-notify, supervisor) y dejar las 4 funciones vivas en FUNCIONES
+    const idxVantsdata = c.indexOf("// functions/vantsdata/index.ts");
+    const idxMm = c.indexOf("// functions/mm/index.ts");
+    if (idxVantsdata > 0 && idxMm > idxVantsdata) {
+      c = c.slice(0, idxVantsdata) + c.slice(idxMm);
+    }
+    const idxDiscordNotify = c.indexOf("// functions/discord-notify/index.ts");
+    const idxWorkerJs = c.indexOf("// worker.js");
+    if (idxDiscordNotify > 0 && idxWorkerJs > idxDiscordNotify) {
+      c = c.slice(0, idxDiscordNotify) + c.slice(idxWorkerJs);
+    }
+
+    const OLD_FUNCIONES = `var FUNCIONES = {
+  linker: handler,
+  vantsdata: handler2,
+  vantsbot: vantsbot_default,
+  mm: mm_default,
+  "stripe-checkout": handler3,
+  "stripe-webhook": handler4,
+  "discord-notify": handler5,
+  supervisor: handler6
+};`;
+    const NEW_FUNCIONES = `var FUNCIONES = {
+  linker: handler,
+  mm: mm_default,
+  "stripe-checkout": handler3,
+  "stripe-webhook": handler4
+};`;
+    if (c.includes(OLD_FUNCIONES)) {
+      c = c.replace(OLD_FUNCIONES, NEW_FUNCIONES);
+    }
   }
 
   return c;

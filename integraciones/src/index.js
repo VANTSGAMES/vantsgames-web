@@ -325,7 +325,9 @@ async function procesarFaceit(env) {
           res = (gano ? 'Victoria' : 'Derrota') + (fac && otro ? ' ' + sc[fac] + '-' + sc[otro] : '');
         } catch { /* sin detalle */ }
         await notificar(env, l.auth0_sub, 'faceit', 'FACEIT · ' + res, (p.entity && p.entity.name) || 'CS2', url);
-        await discord(env, 'resultados', { embeds: [{ title: l.handle + ' · ' + res, description: (p.entity && p.entity.name) || 'CS2', url, color: res.startsWith('Victoria') ? 0x2ecc71 : 0xe74c3c, footer: { text: 'FACEIT · VANTS' } }] });
+        if (env.FACEIT_DISCORD_DIRECT === '1') {
+          await discord(env, 'resultados', { embeds: [{ title: l.handle + ' · ' + res, description: (p.entity && p.entity.name) || 'CS2', url, color: res.startsWith('Victoria') ? 0x2ecc71 : 0xe74c3c, footer: { text: 'FACEIT · VANTS' } }] });
+        }
       } else if (e.event_type === 'match_status_cancelled' || e.event_type === 'match_status_aborted') {
         await notificar(env, l.auth0_sub, 'faceit', 'Partida de FACEIT cancelada', null, url);
       }

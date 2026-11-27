@@ -16,7 +16,16 @@ import { encolarWebhook, procesarLote, type ColaEnv, type WebhookFaceit } from "
 export { SalaTorneo, TorneoWorkflow };
 
 export interface Env extends SalaEnv, WorkflowEnv, ColaEnv {
-  WEBHOOK_SECRETO?: string; // secreto opcional para validar el webhook de FACEIT
+  WEBHOOK_SECRETO?: string; // secreto para validar el webhook de FACEIT
+  TORNEOS_ADMIN_SECRET?: string; // secreto admin para rutas de control de torneos
+}
+
+function secretOk(a: string | null, b: string | undefined): boolean {
+  const sa = String(a || ""), sb = String(b || "");
+  if (!sb || sa.length !== sb.length) return false;
+  let d = 0;
+  for (let i = 0; i < sa.length; i++) d |= sa.charCodeAt(i) ^ sb.charCodeAt(i);
+  return d === 0;
 }
 
 type WebhookQueue = Queue<WebhookFaceit>;
@@ -32,7 +41,8 @@ export default {
     // 1) Receptor de webhook FACEIT: guardar el crudo y responder ya;
     //    el procesamiento pesado lo hace la cola.
     if (url.pathname === "/webhooks/faceit" && request.method === "POST") {
-      if (env.WEBHOOK_SECRETO && request.headers.get("x-vants-secreto") !== env.WEBHOOK_SECRETO) {
+      if (!env.WEBHOOK_SECRETO) return new Response("WEBHOOK_SECRETO no configurado", { status: 503 });
+      if (!secretOk(request.headers.get("x-vants-secreto"), env.WEBHOOK_SECRETO)) {
         return new Response("No autorizado", { status: 401 });
       }
       const cuerpo = (await request.json().catch(() => null)) as Partial<WebhookFaceit> | null;
@@ -49,6 +59,10 @@ export default {
     // 2) Arrancar el workflow de un torneo (idempotente por id de instancia).
     const iniciar = url.pathname.match(/^\/torneos\/([^/]+)\/iniciar$/);
     if (iniciar && request.method === "POST") {
+      if (!env.TORNEOS_ADMIN_SECRET) return new Response("TORNEOS_ADMIN_SECRET no configurado", { status: 503 });
+      if (!secretOk(request.headers.get("x-vants-admin"), env.TORNEOS_ADMIN_SECRET)) {
+        return new Response("No autorizado", { status: 401 });
+      }
       const torneoId = iniciar[1];
       const instancia = await env.TORNEO_WORKFLOW.create({
         id: `torneo-${torneoId}`,
@@ -60,6 +74,10 @@ export default {
     // 3) Estado del workflow (qué ronda corre, qué paso falló, reintentos...).
     const estado = url.pathname.match(/^\/torneos\/([^/]+)\/estado-instancia$/);
     if (estado && request.method === "GET") {
+      if (!env.TORNEOS_ADMIN_SECRET) return new Response("TORNEOS_ADMIN_SECRET no configurado", { status: 503 });
+      if (!secretOk(request.headers.get("x-vants-admin"), env.TORNEOS_ADMIN_SECRET)) {
+        return new Response("No autorizado", { status: 401 });
+      }
       const instancia = await env.TORNEO_WORKFLOW.get(`torneo-${estado[1]}`);
       return Response.json(await instancia.status());
     }

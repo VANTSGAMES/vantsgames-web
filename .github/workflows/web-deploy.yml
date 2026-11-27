@@ -162,10 +162,14 @@ jobs:
           c=$(curl -s -A ci -o oidc.json -w '%{http_code}' $U/.well-known/openid-configuration); [ "$c" = 200 ] && jq -e '.issuer' oidc.json >/dev/null || { echo "/.well-known/openid-configuration -> $c"; ok=0; }
           gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' $U/auth/google/start)
           case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) echo "/auth/google/start -> $gs"; ok=0 ;; esac
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/riot.txt); [ "$c" = 200 ] || { echo "/riot.txt -> $c"; ok=0; }
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/googlec8812910616d7748.html); [ "$c" = 200 ] || { echo "/googlec8812910616d7748.html -> $c"; ok=0; }
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/sitemap.xml); [ "$c" = 200 ] || { echo "/sitemap.xml -> $c"; ok=0; }
+          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/kick/webhook); [ "$c" = 410 ] || { echo "/kick/webhook -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
           c=$(curl -s -A ci -o acc.json -w '%{http_code}' $U/api/account/perfil); [ "$c" = 401 ] && jq -e '.error == "sin_sesion"' acc.json >/dev/null || { echo "/api/account/perfil (sin sesión) -> $c"; ok=0; }
-          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS verificados)"; exit 0; fi
+          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS + SEO/Kick verificados)"; exit 0; fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
           exit 1
