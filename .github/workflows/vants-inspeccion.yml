@@ -96,3 +96,12 @@ jobs:
           curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-bus/settings" | jq '.result | {compatibility_date, compatibility_flags, bindings: [.bindings[] | del(.text, .json)]}'
           curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-bus/schedules" | jq -c .result
           curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/vants-recursos/settings" | jq '.result | {compatibility_date, compatibility_flags, bindings: [.bindings[] | del(.text, .json)]}'
+          for W in vants-kick vants-riot-verify vants-google-verify vants-sitemap; do
+            echo "=== $W ==="
+            curl -sS -H "Authorization: Bearer $TOKEN" "$CF/scripts/$W/content/v2" | head -n 40 || true
+          done
+          Z=$(curl -sS -H "Authorization: Bearer $TOKEN" "https://api.cloudflare.com/client/v4/zones?name=vants.cc" | jq -r '.result[0].id // empty')
+          if [ -n "$Z" ]; then
+            echo "=== Zone routes ($Z) ==="
+            curl -sS -H "Authorization: Bearer $TOKEN" "https://api.cloudflare.com/client/v4/zones/$Z/workers/routes" | jq -c '.result'
+          fi
