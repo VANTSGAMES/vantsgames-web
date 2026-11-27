@@ -128,6 +128,7 @@ jobs:
           grep -c "VANTS_AUTH_PROXY_V1" src/worker.js
           grep -c "VANTS_AUTH_DUAL_V1" src/worker.js
           grep -c "VANTS_AUTH_DUAL_V2" src/worker.js
+          grep -c "VANTS_SEO_KICK_ABSORB_V1" src/worker.js
 
       - name: Prueba en seco
         working-directory: vants
@@ -143,7 +144,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
         run: npx -y wrangler@4 deploy
 
-      - name: Verificación (y vuelta atrás si falla)
+      - name: Retirar rutas obsoletas de zona y verificar (con vuelta atrás si falla)
         working-directory: vants
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -152,8 +153,14 @@ jobs:
         run: |
           set -u
           ok=1
+          Z="5daba54cd10cf38639be8ba157930b50"
+          H="Authorization: Bearer $TOKEN"
+          for RID in $(curl -sS -H "$H" "https://api.cloudflare.com/client/v4/zones/$Z/workers/routes" | jq -r '.result[] | select(.script == "vants-kick" or .script == "vants-riot-verify" or .script == "vants-google-verify" or .script == "vants-sitemap") | .id'); do
+            echo "Eliminando ruta obsoleta $RID de zona $Z"
+            curl -sS -X DELETE -H "$H" "https://api.cloudflare.com/client/v4/zones/$Z/workers/routes/$RID" || true
+          done
           sleep 8
-          D=$(curl -fsS -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants/settings | jq -r '[.result.bindings[].name]|sort|join(",")')
+          D=$(curl -fsS -H "$H" https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/vants/settings | jq -r '[.result.bindings[].name]|sort|join(",")')
           [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
           U=https://vants.cc
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
@@ -169,7 +176,14 @@ jobs:
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/insignias/socio.png); [ "$c" = 200 ] || { echo "/insignias/socio.png -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/perfil/cuentas); [ "$c" = 200 ] || { echo "/perfil/cuentas -> $c"; ok=0; }
           c=$(curl -s -A ci -o acc.json -w '%{http_code}' $U/api/account/perfil); [ "$c" = 401 ] && jq -e '.error == "sin_sesion"' acc.json >/dev/null || { echo "/api/account/perfil (sin sesión) -> $c"; ok=0; }
-          if [ $ok = 1 ]; then echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS + SEO/Kick verificados)"; exit 0; fi
+          if [ $ok = 1 ]; then
+            for W in vants-riot-verify vants-google-verify vants-sitemap vants-kick; do
+              echo "Eliminando Worker obsoleto $W"
+              curl -sS -X DELETE -H "$H" "https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/$W" || true
+            done
+            echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS + SEO/Kick verificados y Workers #5/#6/#7/#8 eliminados)"
+            exit 0
+          fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
           npx -y wrangler@4 rollback "$ANTERIOR" --message "auto-rollback web-deploy" -y
           exit 1
