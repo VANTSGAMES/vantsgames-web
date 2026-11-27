@@ -83,17 +83,11 @@ jobs:
             }
             (async () => {
               const vants = (await getWorkerSrc("vants")).split(/\r?\n/);
-              console.log("=== VANTS lines 1-140 (manejarRutasSeoYKick) ===");
-              for (let i = 0; i < Math.min(140, vants.length); i++) console.log(`${i + 1}: ${vants[i]}`);
+              console.log("=== VANTS lines 130-220 (manejarRutasSeoYKick end) ===");
+              for (let i = 129; i < Math.min(220, vants.length); i++) console.log(`${i + 1}: ${vants[i]}`);
 
               const fn = (await getWorkerSrc("vants-functions")).split(/\r?\n/);
-              console.log("=== VANTS-FUNCTIONS lines 55-95 (linker top) ===");
-              for (let i = 54; i < Math.min(95, fn.length); i++) console.log(`${i + 1}: ${fn[i]}`);
-              console.log("=== VANTS-FUNCTIONS lines 1775-2584 (stripe-checkout, stripe-webhook, router) ===");
-              for (let i = 1774; i < fn.length; i++) console.log(`${i + 1}: ${fn[i]}`);
-
-              const bus = (await getWorkerSrc("vants-bus")).split(/\r?\n/);
-              console.log("=== VANTS-BUS full source ===");
-              for (let i = 0; i < bus.length; i++) console.log(`${i + 1}: ${bus[i]}`);
+              console.log("=== VANTS-FUNCTIONS lines 230-560 (linker handler) ===");
+              for (let i = 229; i < Math.min(560, fn.length); i++) console.log(`${i + 1}: ${fn[i]}`);
             })();
           '
