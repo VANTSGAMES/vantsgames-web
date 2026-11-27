@@ -58,23 +58,60 @@ jobs:
           if [ -n "$AI_GATEWAY_URL" ]; then printf '%s' "$AI_GATEWAY_URL" | npx -y wrangler@4 secret put AI_GATEWAY_URL; fi
           if [ -n "$VANTS_BUS_SECRET" ]; then printf '%s' "$VANTS_BUS_SECRET" | npx -y wrangler@4 secret put VANTS_BUS_SECRET; fi
           if [ -n "$VANTS_INTERNAL_SECRET" ]; then printf '%s' "$VANTS_INTERNAL_SECRET" | npx -y wrangler@4 secret put VANTS_INTERNAL_SECRET; fi
-      - name: Sincronizar secretos compartidos en Cloudflare (idempotente, sin sobrescribir)
+      - name: Sincronizar secretos compartidos en GitHub y Cloudflare (idempotente, sin exponer valores)
+        env:
+          PAT1: ${{ secrets.VANTS_GH_PAT_SECRETS }}
+          PAT2: ${{ secrets.GHPAT_VANTS }}
+          GH_VANTS_BUS_SECRET: ${{ secrets.VANTS_BUS_SECRET }}
+          GH_VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
+          GH_AI_GATEWAY_URL: ${{ secrets.AI_GATEWAY_URL }}
         run: |
           node -e '
             const crypto = require("node:crypto");
+            const { spawnSync } = require("node:child_process");
             const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
             const tok = process.env.CLOUDFLARE_API_TOKEN;
             const api = `https://api.cloudflare.com/client/v4/accounts/${acct}/workers/scripts`;
             const hdr = { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" };
 
-            async function getSecretNames(script) {
+            function findWorkingPat() {
+              for (const p of [process.env.PAT1, process.env.PAT2]) {
+                if (!p) continue;
+                const r = spawnSync("gh", ["secret", "list", "--repo", "VANTSGAMES/vantsgames-web"], {
+                  env: { ...process.env, GH_TOKEN: p },
+                  encoding: "utf8",
+                });
+                if (r.status === 0) return p;
+              }
+              return null;
+            }
+
+            function ghListSecrets(pat, repo) {
+              const r = spawnSync("gh", ["secret", "list", "--repo", repo, "--json", "name"], {
+                env: { ...process.env, GH_TOKEN: pat },
+                encoding: "utf8",
+              });
+              if (r.status !== 0) throw new Error(`gh secret list ${repo}: ${r.stderr}`);
+              return new Set(JSON.parse(r.stdout || "[]").map((x) => x.name));
+            }
+
+            function ghSetSecret(pat, repo, name, value) {
+              const r = spawnSync("gh", ["secret", "set", name, "--repo", repo], {
+                input: value,
+                env: { ...process.env, GH_TOKEN: pat },
+                encoding: "utf8",
+              });
+              if (r.status !== 0) throw new Error(`gh secret set ${repo}/${name}: ${r.stderr}`);
+            }
+
+            async function cfGetSecretNames(script) {
               const r = await fetch(`${api}/${script}/settings`, { headers: hdr });
               const j = await r.json().catch(() => null);
               if (!r.ok || !j?.success) throw new Error(`settings ${script}: HTTP ${r.status}`);
               return new Set((j.result?.bindings || []).filter((b) => b.type === "secret_text").map((b) => b.name));
             }
 
-            async function putSecret(script, name, text) {
+            async function cfPutSecret(script, name, text) {
               const r = await fetch(`${api}/${script}/secrets`, {
                 method: "PUT",
                 headers: hdr,
@@ -85,25 +122,66 @@ jobs:
             }
 
             (async () => {
-              const pairs = [
-                { label: "VantsBus AI", a: ["vants-bus", "SECRET_VANTS_AI"], b: ["vants-integraciones", "VANTS_BUS_SECRET"] },
-                { label: "Puente interno AI", a: ["vants-integraciones", "VANTS_INTERNAL_SECRET"], b: ["vantsbot", "VANTS_INTERNAL_SECRET"] },
-              ];
-              for (const p of pairs) {
-                const [sa, sb] = await Promise.all([getSecretNames(p.a[0]), getSecretNames(p.b[0])]);
-                const hasA = sa.has(p.a[1]);
-                const hasB = sb.has(p.b[1]);
-                if (hasA && hasB) {
-                  console.log(`[ok] ${p.label}: ya configurado en ${p.a[0]} (${p.a[1]}) y ${p.b[0]} (${p.b[1]}).`);
-                } else {
-                  const val = crypto.randomBytes(32).toString("hex");
-                  await putSecret(p.a[0], p.a[1], val);
-                  await putSecret(p.b[0], p.b[1], val);
-                  console.log(`[sync] ${p.label}: sincronizado nuevo secreto compartido en ${p.a[0]} (${p.a[1]}) y ${p.b[0]} (${p.b[1]}) [previo: ${hasA}/${hasB}].`);
+              const pat = findWorkingPat();
+              const ghWeb = pat ? ghListSecrets(pat, "VANTSGAMES/vantsgames-web") : new Set();
+              const ghBot = pat ? ghListSecrets(pat, "VANTSGAMES/vantsbot-cf") : new Set();
+              const [cfBus, cfInt, cfBot] = await Promise.all([
+                cfGetSecretNames("vants-bus"),
+                cfGetSecretNames("vants-integraciones"),
+                cfGetSecretNames("vantsbot"),
+              ]);
+
+              // 1) Par VantsBus AI: VANTS_BUS_SECRET (web GH + vants-integraciones CF) <-> SECRET_VANTS_AI (vants-bus CF)
+              const existingBus = process.env.GH_VANTS_BUS_SECRET || "";
+              if (existingBus && cfBus.has("SECRET_VANTS_AI") && cfInt.has("VANTS_BUS_SECRET")) {
+                console.log("[ok] VantsBus AI: ya presente en GitHub (vantsgames-web) y Cloudflare (vants-bus + vants-integraciones).");
+              } else {
+                const val = existingBus || crypto.randomBytes(32).toString("hex");
+                if (pat && !existingBus) {
+                  ghSetSecret(pat, "VANTSGAMES/vantsgames-web", "VANTS_BUS_SECRET", val);
+                  ghSetSecret(pat, "VANTSGAMES/vantsgames-web", "SECRET_VANTS_AI", val);
                 }
+                await cfPutSecret("vants-bus", "SECRET_VANTS_AI", val);
+                await cfPutSecret("vants-integraciones", "VANTS_BUS_SECRET", val);
+                console.log(`[sync] VantsBus AI: sincronizado en GitHub (${Boolean(pat)}) y Cloudflare (vants-bus:SECRET_VANTS_AI + vants-integraciones:VANTS_BUS_SECRET).`);
               }
-              const sInt = await getSecretNames("vants-integraciones");
-              console.log(`[estado] vants-integraciones GEMINI_API_KEY presente: ${sInt.has("GEMINI_API_KEY")}`);
+
+              // 2) Par Puente Interno AI: VANTS_INTERNAL_SECRET (web GH + bot GH + vants-integraciones CF + vantsbot CF)
+              const existingInt = process.env.GH_VANTS_INTERNAL_SECRET || "";
+              if (existingInt && ghBot.has("VANTS_INTERNAL_SECRET") && cfInt.has("VANTS_INTERNAL_SECRET") && cfBot.has("VANTS_INTERNAL_SECRET")) {
+                console.log("[ok] Puente interno AI: ya presente en ambos repos GitHub y ambos Workers Cloudflare.");
+              } else {
+                const val = existingInt || crypto.randomBytes(32).toString("hex");
+                if (pat) {
+                  if (!existingInt) ghSetSecret(pat, "VANTSGAMES/vantsgames-web", "VANTS_INTERNAL_SECRET", val);
+                  if (!ghBot.has("VANTS_INTERNAL_SECRET") || !existingInt) ghSetSecret(pat, "VANTSGAMES/vantsbot-cf", "VANTS_INTERNAL_SECRET", val);
+                }
+                await cfPutSecret("vants-integraciones", "VANTS_INTERNAL_SECRET", val);
+                await cfPutSecret("vantsbot", "VANTS_INTERNAL_SECRET", val);
+                console.log(`[sync] Puente interno AI: sincronizado en GitHub (${Boolean(pat)}: vantsgames-web + vantsbot-cf) y Cloudflare (vants-integraciones + vantsbot).`);
+              }
+
+              // 3) Detectar si existe un Cloudflare AI Gateway en la cuenta para AI_GATEWAY_URL
+              const existingGw = process.env.GH_AI_GATEWAY_URL || "";
+              if (!existingGw && !cfInt.has("AI_GATEWAY_URL")) {
+                const gwRes = await fetch(`https://api.cloudflare.com/client/v4/accounts/${acct}/ai-gateway/gateways`, { headers: hdr }).catch(() => null);
+                const gwJson = gwRes ? await gwRes.json().catch(() => null) : null;
+                const gws = Array.isArray(gwJson?.result) ? gwJson.result : [];
+                if (gws.length > 0) {
+                  const gw = gws.find((g) => /vants/i.test(String(g.id || ""))) || gws[0];
+                  const gwUrl = `https://gateway.ai.cloudflare.com/v1/${acct}/${gw.id}/google-ai-studio/v1beta/models`;
+                  if (pat) ghSetSecret(pat, "VANTSGAMES/vantsgames-web", "AI_GATEWAY_URL", gwUrl);
+                  await cfPutSecret("vants-integraciones", "AI_GATEWAY_URL", gwUrl);
+                  console.log(`[sync] AI_GATEWAY_URL detectado y cargado para gateway "${gw.id}" en GitHub y Cloudflare.`);
+                } else {
+                  console.log(`[info] Sin AI Gateway configurado en Cloudflare (HTTP ${gwRes?.status ?? "err"}); usando Gemini directo.`);
+                }
+              } else {
+                console.log(`[ok] AI_GATEWAY_URL estado -> GitHub: ${Boolean(existingGw)}, Cloudflare: ${cfInt.has("AI_GATEWAY_URL")}.`);
+              }
+
+              console.log(`[estado] GEMINI_API_KEY -> Cloudflare(vants-integraciones): ${cfInt.has("GEMINI_API_KEY")}, GitHub(vantsgames-web): ${ghWeb.has("GEMINI_API_KEY")}`);
+              console.log(`[estado] VANTS_BOT_SECRET -> Cloudflare(vantsbot): ${cfBot.has("VANTS_BOT_SECRET")}, GitHub(vantsbot-cf): ${ghBot.has("VANTS_BOT_SECRET")}`);
             })().catch((e) => { console.error(String(e)); process.exit(1); });
           '
       - name: Salud
