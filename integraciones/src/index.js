@@ -697,17 +697,23 @@ export default {
       res = await rutas(req, env, url);
     } catch (e) {
       const msg = String((e && e.message) || e);
+      const paso = e && typeof e.paso === 'string' ? e.paso : undefined;
       const auth = /^(sin_sesion|jwt_)/.test(msg);
+      const isTimeout = e?.name === 'TimeoutError' || e?.name === 'AbortError' || /^(gemini_timeout|telemetria_timeout)/.test(msg) || /timeout|aborted/i.test(msg);
       if (!auth) {
-        console.error(JSON.stringify({ tipo: 'integ_error', ruta: url.pathname, error: msg }));
+        console.error(JSON.stringify({ tipo: 'integ_error', ruta: url.pathname, paso, error: msg }));
         const p = notificarPagerDuty(env, `[vants-integraciones] Error en ${url.pathname}: ${msg}`, 'vants-int-' + url.pathname, {
           ruta: url.pathname,
           metodo: req.method,
+          paso,
           error: msg,
         });
         if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(p);
       }
-      res = json({ ok: false, error: msg }, auth ? 401 : 502);
+      res = json(
+        { ok: false, error: msg, ...(paso ? { paso } : {}) },
+        auth ? 401 : isTimeout ? 504 : 502,
+      );
     }
     // Response.redirect() trae cabeceras inmutables: se copia antes de añadir CORS.
     res = new Response(res.body, res);

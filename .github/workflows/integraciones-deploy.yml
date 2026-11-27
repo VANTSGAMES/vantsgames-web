@@ -186,3 +186,62 @@ jobs:
           '
       - name: Salud
         run: curl -fsS -A "Mozilla/5.0 (compatible; VANTSHealthCheck/1.0; +https://vants.cc)" https://vants-integraciones.vants.workers.dev/salud
+      - name: Prueba de latencia AI (/ai/estado y /ai/scout/jugador)
+        env:
+          VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
+        run: |
+          if [ -z "$VANTS_INTERNAL_SECRET" ]; then
+            echo "[skip] VANTS_INTERNAL_SECRET no presente en GitHub Secrets"
+            exit 0
+          fi
+          node -e '
+            const sec = process.env.VANTS_INTERNAL_SECRET;
+            const ua = "Mozilla/5.0 (compatible; VANTSHealthCheck/1.0; +https://vants.cc)";
+            const base = "https://int.vants.cc";
+            const hdr = {
+              "User-Agent": ua,
+              "Content-Type": "application/json",
+              "X-Vants-Internal": sec,
+              "X-Vants-Staff": "1",
+            };
+            (async () => {
+              const t0 = Date.now();
+              const rEst = await fetch(`${base}/ai/estado`, { headers: hdr });
+              const dEst = await rEst.json().catch(() => null);
+              console.log("[latencia:/ai/estado]", JSON.stringify({
+                status: rEst.status,
+                elapsedMs: Date.now() - t0,
+                ok: dEst?.ok,
+                configurado: dEst?.configurado,
+                modelos: dEst?.modelos,
+                bus: dEst?.bus,
+              }));
+
+              // Buscar primer jugador público para probar /ai/scout/jugador real
+              const rJug = await fetch(`${base}/jugadores`, { headers: { "User-Agent": ua } });
+              const dJug = await rJug.json().catch(() => null);
+              const first = (dJug?.jugadores || [])[0];
+              if (!first) {
+                console.log("[latencia:/ai/scout/jugador] sin jugadores públicos en D1");
+                return;
+              }
+              const t1 = Date.now();
+              const rSc = await fetch(`${base}/ai/scout/jugador`, {
+                method: "POST",
+                headers: hdr,
+                body: JSON.stringify({ pid: first.pid, nick: first.nick }),
+              });
+              const dSc = await rSc.json().catch(() => null);
+              console.log("[latencia:/ai/scout/jugador]", JSON.stringify({
+                status: rSc.status,
+                elapsedMs: Date.now() - t1,
+                ok: dSc?.ok,
+                modelo: dSc?.modelo,
+                jugador: dSc?.jugador?.nick || first.nick,
+                score: dSc?.reporte?.performance_score,
+                tier: dSc?.reporte?.tier_sugerido,
+                error: dSc?.error,
+                paso: dSc?.paso,
+              }));
+            })().catch((e) => console.error("[latencia:error]", String(e)));
+          '

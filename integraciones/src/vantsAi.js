@@ -152,27 +152,65 @@ async function resolverActorAi(req, env, H) {
   return { sub, owner, origen: "web" };
 }
 
-async function callGemini(env, model, payload) {
+function esTimeoutError(err) {
+  const name = String(err?.name || "");
+  const msg = String(err?.message || err || "");
+  return (
+    name === "TimeoutError" ||
+    name === "AbortError" ||
+    /timeout|aborted/i.test(msg)
+  );
+}
+
+function errorConPaso(code, paso) {
+  const err = new Error(code);
+  err.paso = paso;
+  if (code.includes("timeout")) err.name = "TimeoutError";
+  return err;
+}
+
+async function callGemini(env, model, payload, timeoutMs = 45000) {
   const key = String(env.GEMINI_API_KEY || "").trim();
-  if (!key) throw new Error("gemini_no_configurado");
+  if (!key) throw errorConPaso("gemini_no_configurado", "gemini");
 
   // Con AI Gateway: https://gateway.ai.cloudflare.com/v1/{ACCOUNT_ID}/{GATEWAY}/google-ai-studio/v1beta/models
   const base = String(env.AI_GATEWAY_URL || DEFAULT_GEMINI_BASE).replace(/\/+$/, "");
-  const res = await fetch(`${base}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(25000),
-  });
+  const bodyStr = JSON.stringify(payload);
+  const promptChars = bodyStr.length;
+  const startedAt = Date.now();
+
+  let res;
+  try {
+    res = await fetch(`${base}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: bodyStr,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    const elapsedMs = Date.now() - startedAt;
+    const msg = String(err?.message || err).slice(0, 200);
+    console.error(JSON.stringify({ tipo: "vants_ai_gemini_error", model, elapsedMs, promptChars, error: msg }));
+    if (esTimeoutError(err)) {
+      throw errorConPaso(`gemini_timeout:${model}:${elapsedMs}ms`, "gemini");
+    }
+    throw errorConPaso(`gemini_fetch:${msg.slice(0, 120)}`, "gemini");
+  }
 
   if (!res.ok) {
+    const elapsedMs = Date.now() - startedAt;
     const errTxt = await res.text().catch(() => "");
-    throw new Error(`gemini_${res.status}:${errTxt.slice(0, 180)}`);
+    console.error(JSON.stringify({ tipo: "vants_ai_gemini_error", model, elapsedMs, promptChars, error: `HTTP ${res.status}: ${errTxt.slice(0, 180)}` }));
+    throw errorConPaso(`gemini_${res.status}:${errTxt.slice(0, 180)}`, "gemini");
   }
 
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("") || "";
-  if (!text) throw new Error("gemini_respuesta_vacia");
+  if (!text) {
+    const elapsedMs = Date.now() - startedAt;
+    console.error(JSON.stringify({ tipo: "vants_ai_gemini_error", model, elapsedMs, promptChars, error: "gemini_respuesta_vacia" }));
+    throw errorConPaso("gemini_respuesta_vacia", "gemini");
+  }
   return text;
 }
 
@@ -210,84 +248,146 @@ async function enrutarSolicitud(env, userRole, prompt) {
   return JSON.parse(raw);
 }
 
-// 2. Telemetría REAL (FACEIT + VALORANT + Fortnite + Matchmaking VANTS)
-async function recolectarTelemetriaReal(env, H, { sub, targetPid, targetQuery }) {
-  let ident = null;
+export function compactarTelemetriaJson(telemetria, maxChars = 6000) {
+  let json = JSON.stringify(telemetria);
+  if (json.length <= maxChars) return json;
 
-  if (targetPid) {
-    const ids = await identidades(env.DB);
-    ident = ids.porPid.get(String(targetPid));
-  } else if (targetQuery) {
-    const q = String(targetQuery).trim().toLowerCase();
-    const ids = await identidades(env.DB);
-    ident = ids.lista.find((i) => i.nick.toLowerCase() === q || i.alias.includes(q)) || null;
-  }
-
-  if (!ident && sub) {
-    ident = await identidadDe(env.DB, sub).catch(() => null);
-  }
-  if (!ident) return { encontrado: false };
-
-  const perfil = await perfilPublico(env, ident.pid).catch(() => null);
-  const faceitLink = ident.links.find((l) => l.platform === "faceit" && l.platform_user_id);
-  const subRiot = ident.subs.find((x) => x.startsWith("google-oauth2|")) || ident.subs[0];
-  const subPrincipal = ident.subs[0] || sub;
-
-  const [faceitDeep, valoRaw, mmRecientes] = await Promise.all([
-    faceitLink ? metricasFaceit(env, faceitLink.platform_user_id, H).catch(() => null) : null,
-    subRiot ? datosValorant(env, subRiot, false).catch(() => null) : null,
-    subPrincipal
-      ? env.DB.prepare(
-          "SELECT game, mode, region, score_a, score_b, rr_before, rr_after, played_at FROM mm_historial WHERE sub = ? ORDER BY played_at DESC LIMIT 8"
-        ).bind(subPrincipal).all().then((r) => r.results || []).catch(() => [])
-      : [],
-  ]);
-
-  const valoMetricas = metricasValorant(valoRaw);
-
-  return {
-    encontrado: true,
-    pid: ident.pid,
-    nick: ident.nick,
-    xp_vants: ident.xp,
-    sello: perfil?.sello || null,
-    insignias: perfil?.insignias || [],
-    equipos: perfil?.equipos || [],
-    logros_vants: perfil?.logros || null,
-    vants_ranked_mm: mmRecientes,
-    faceit_cs2: faceitDeep
+  const copia = {
+    ...telemetria,
+    insignias: Array.isArray(telemetria.insignias) ? telemetria.insignias.slice(0, 8) : [],
+    equipos: Array.isArray(telemetria.equipos) ? telemetria.equipos.slice(0, 4) : [],
+    vants_ranked_mm: Array.isArray(telemetria.vants_ranked_mm) ? telemetria.vants_ranked_mm.slice(0, 5) : [],
+    valorant: telemetria.valorant
       ? {
-          nick: faceitDeep.nick,
-          nivel: faceitDeep.nivel,
-          elo: faceitDeep.elo,
-          partidas: faceitDeep.valores.partidas,
-          winrate_pct: faceitDeep.valores.winrate,
-          kd: faceitDeep.valores.kd,
-          hs_pct: faceitDeep.valores.hs,
-          adr: faceitDeep.valores.adr,
-          mejor_racha: faceitDeep.valores.mejor_racha,
-          clutch_1v1: faceitDeep.valores.clutch_1v1,
-          entry_wins: faceitDeep.valores.entry,
-        }
-      : perfil?.faceit || null,
-    valorant: valoRaw?.ok
-      ? {
-          riot: valoRaw.riot,
-          region: valoRaw.region,
-          rango_actual: valoRaw.tier,
-          pico_historico: valoRaw.pico,
-          rr: valoRaw.rr,
-          elo: valoRaw.elo,
-          competitivas: valoRaw.competitivas,
-          victorias: valoRaw.victorias,
-          kd_reciente: valoMetricas?.kd ?? null,
-          hs_pct_reciente: valoMetricas?.hs ?? null,
-          max_acs: valoMetricas?.max_acs ?? null,
-          ultimas_5_partidas: (valoRaw.partidas || []).slice(0, 5),
+          ...telemetria.valorant,
+          ultimas_5_partidas: Array.isArray(telemetria.valorant.ultimas_5_partidas)
+            ? telemetria.valorant.ultimas_5_partidas.slice(0, 3)
+            : [],
         }
       : null,
-    fortnite: perfil?.fortnite || null,
   };
+  json = JSON.stringify(copia);
+  if (json.length <= maxChars) return json;
+
+  delete copia.fortnite;
+  delete copia.insignias;
+  if (copia.valorant) delete copia.valorant.ultimas_5_partidas;
+  copia.vants_ranked_mm = Array.isArray(copia.vants_ranked_mm) ? copia.vants_ranked_mm.slice(0, 3) : [];
+  json = JSON.stringify(copia);
+  return json.length <= maxChars ? json : json.slice(0, maxChars);
+}
+
+// 2. Telemetría REAL (FACEIT + VALORANT + Fortnite + Matchmaking VANTS)
+async function recolectarTelemetriaReal(env, H, { sub, targetPid, targetQuery }) {
+  try {
+    let ident = null;
+
+    if (targetPid) {
+      const ids = await identidades(env.DB);
+      ident = ids.porPid.get(String(targetPid));
+    } else if (targetQuery) {
+      const q = String(targetQuery).trim().toLowerCase();
+      const ids = await identidades(env.DB);
+      ident = ids.lista.find((i) => i.nick.toLowerCase() === q || i.alias.includes(q)) || null;
+    }
+
+    if (!ident && sub) {
+      ident = await identidadDe(env.DB, sub).catch(() => null);
+    }
+    if (!ident) return { encontrado: false };
+
+    const faceitLink = ident.links.find((l) => l.platform === "faceit" && l.platform_user_id);
+    const subRiot = ident.subs.find((x) => x.startsWith("google-oauth2|")) || ident.subs[0];
+    const subPrincipal = ident.subs[0] || sub;
+
+    const [perfil, faceitDeep, valoRaw, mmRecientes] = await Promise.all([
+      perfilPublico(env, ident.pid).catch(() => null),
+      faceitLink ? metricasFaceit(env, faceitLink.platform_user_id, H).catch(() => null) : null,
+      subRiot ? datosValorant(env, subRiot, false).catch(() => null) : null,
+      subPrincipal
+        ? env.DB.prepare(
+            "SELECT game, mode, region, score_a, score_b, rr_before, rr_after, played_at FROM mm_historial WHERE sub = ? ORDER BY played_at DESC LIMIT 8"
+          ).bind(subPrincipal).all().then((r) => r.results || []).catch(() => [])
+        : [],
+    ]);
+
+    const valoMetricas = metricasValorant(valoRaw);
+
+    const ultimas5Compactas = (valoRaw?.partidas || []).slice(0, 5).map((pm) => ({
+      mapa: pm.mapa ?? null,
+      agente: pm.agente ?? null,
+      kills: pm.kills ?? null,
+      deaths: pm.muertes ?? pm.deaths ?? null,
+      assists: pm.asistencias ?? pm.assists ?? null,
+      acs: pm.acs ?? null,
+      resultado: typeof pm.victoria === "boolean" ? (pm.victoria ? "W" : "L") : (pm.resultado ?? pm.marcador ?? null),
+    }));
+
+    const equiposCompactos = (perfil?.equipos || []).slice(0, 6).map((eq) => ({
+      nombre: eq.nombre,
+      tag: eq.tag || null,
+      juego: eq.juego || null,
+      rol: eq.rol || null,
+      oficial: Boolean(eq.oficial),
+    }));
+
+    const telemetria = {
+      encontrado: true,
+      pid: ident.pid,
+      nick: ident.nick,
+      xp_vants: ident.xp,
+      sello: perfil?.sello || null,
+      insignias: (perfil?.insignias || []).slice(0, 12),
+      equipos: equiposCompactos,
+      logros_vants: perfil?.logros || null,
+      vants_ranked_mm: mmRecientes,
+      faceit_cs2: faceitDeep
+        ? {
+            nick: faceitDeep.nick,
+            nivel: faceitDeep.nivel,
+            elo: faceitDeep.elo,
+            partidas: faceitDeep.valores.partidas,
+            winrate_pct: faceitDeep.valores.winrate,
+            kd: faceitDeep.valores.kd,
+            hs_pct: faceitDeep.valores.hs,
+            adr: faceitDeep.valores.adr,
+            mejor_racha: faceitDeep.valores.mejor_racha,
+            clutch_1v1: faceitDeep.valores.clutch_1v1,
+            entry_wins: faceitDeep.valores.entry,
+          }
+        : perfil?.faceit || null,
+      valorant: valoRaw?.ok
+        ? {
+            riot: valoRaw.riot,
+            region: valoRaw.region,
+            rango_actual: valoRaw.tier,
+            pico_historico: valoRaw.pico,
+            rr: valoRaw.rr,
+            elo: valoRaw.elo,
+            competitivas: valoRaw.competitivas,
+            victorias: valoRaw.victorias,
+            kd_reciente: valoMetricas?.kd ?? null,
+            hs_pct_reciente: valoMetricas?.hs ?? null,
+            max_acs: valoMetricas?.max_acs ?? null,
+            ultimas_5_partidas: ultimas5Compactas,
+          }
+        : null,
+      fortnite: perfil?.fortnite || null,
+    };
+
+    // Garantiza que el payload serializado no supere ~6,000 caracteres
+    const compactado = compactarTelemetriaJson(telemetria, 6000);
+    try {
+      return JSON.parse(compactado);
+    } catch {
+      return telemetria;
+    }
+  } catch (err) {
+    if (esTimeoutError(err)) {
+      throw errorConPaso("telemetria_timeout", "telemetria");
+    }
+    throw err;
+  }
 }
 
 // 3. Métricas reales de plataforma + cálculo determinista de ROI/EMV
@@ -440,7 +540,8 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
       return H.json({ ok: false, error: "jugador_no_encontrado" }, 404);
     }
 
-    const raw = await callGemini(env, EXPERT_MODEL(env), {
+    const telemetriaJson = compactarTelemetriaJson(telemetria, 6000);
+    const scoutPayload = {
       system_instruction: {
         parts: [{
           text:
@@ -449,8 +550,9 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
             "No inventes estadísticas faltantes. Devuelve un JSON estricto en español.",
         }],
       },
-      contents: [{ role: "user", parts: [{ text: `Evalúa a este jugador:\n${JSON.stringify(telemetria)}` }] }],
+      contents: [{ role: "user", parts: [{ text: `Evalúa a este jugador:\n${telemetriaJson}` }] }],
       generationConfig: {
+        maxOutputTokens: 1024,
         responseMimeType: "application/json",
         responseSchema: {
           type: "OBJECT",
@@ -466,7 +568,26 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
           required: ["performance_score", "tier_sugerido", "fortalezas", "areas_mejora", "recomendacion_fichaje"],
         },
       },
-    });
+    };
+
+    let modeloUsado = EXPERT_MODEL(env);
+    let raw;
+    try {
+      raw = await callGemini(env, modeloUsado, scoutPayload, 18000);
+    } catch (err) {
+      if (esTimeoutError(err) && ROUTER_MODEL(env) !== modeloUsado) {
+        console.warn(JSON.stringify({
+          tipo: "vants_ai_scout_fallback",
+          from: modeloUsado,
+          to: ROUTER_MODEL(env),
+          reason: String(err?.message || err).slice(0, 120),
+        }));
+        modeloUsado = ROUTER_MODEL(env);
+        raw = await callGemini(env, modeloUsado, scoutPayload, 25000);
+      } else {
+        throw err;
+      }
+    }
 
     await consumirCuotaAi(env.DB, cuota.fecha, sub);
     const reporte = JSON.parse(raw);
@@ -481,7 +602,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
       owner ? "owner" : "player",
       `Scouting rápido: ${telemetria.nick}`,
       JSON.stringify(reporte),
-      JSON.stringify({ pid: telemetria.pid, nick: telemetria.nick })
+      JSON.stringify({ pid: telemetria.pid, nick: telemetria.nick, modelo: modeloUsado })
     ).run();
 
     await publicarBusAi(env, "ai.report_ready", {
@@ -494,6 +615,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
     return H.json({
       ok: true,
       task_id: taskId,
+      modelo: modeloUsado,
       jugador: { pid: telemetria.pid, nick: telemetria.nick },
       telemetria,
       reporte,
@@ -541,7 +663,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
               "Si el jugador no tiene cuentas vinculadas, indícale cómo vincular FACEIT/Riot en vants.cc/perfil/cuentas.",
           }],
         },
-        contents: [{ role: "user", parts: [{ text: `${prompt}\n\nDatos reales de VANTS:\n${JSON.stringify(telemetria)}` }] }],
+        contents: [{ role: "user", parts: [{ text: `${prompt}\n\nDatos reales de VANTS:\n${compactarTelemetriaJson(telemetria, 6000)}` }] }],
       });
     } else if (decision.target_agent === "sponsorship") {
       const sponsorCtx = await recolectarContextoSponsor(env, contextData);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rutasVantsAi, preEvaluarAlianzaB2B } from "../integraciones/src/vantsAi.js";
+import { rutasVantsAi, preEvaluarAlianzaB2B, compactarTelemetriaJson } from "../integraciones/src/vantsAi.js";
 import { vantsAiApi, VantsAiError } from "../client/src/lib/vantsAiApi.ts";
 
 function createAiMockD1() {
@@ -365,4 +365,125 @@ test("vantsAiApi calls /api/ai/* with Bearer JWT and maps structured VantsAiErro
     globalThis.fetch = fetchOrig;
   }
 });
+
+test("compactarTelemetriaJson caps telemetry payload to <= 6000 chars", () => {
+  const huge = {
+    encontrado: true,
+    pid: "p1",
+    nick: "Feispla",
+    insignias: Array.from({ length: 100 }, (_, i) => `INSIGNIA_LARGA_${i}_${"X".repeat(30)}`),
+    equipos: Array.from({ length: 20 }, (_, i) => ({ nombre: `Team ${i}`, extra: "Y".repeat(200) })),
+    vants_ranked_mm: Array.from({ length: 20 }, (_, i) => ({ game: "cs2", idx: i, note: "Z".repeat(150) })),
+    valorant: {
+      riot: "Feis#000",
+      ultimas_5_partidas: Array.from({ length: 5 }, (_, i) => ({
+        mapa: "Ascent",
+        agente: "Jett",
+        kills: 20 + i,
+        deaths: 12,
+        assists: 4,
+        acs: 260,
+        resultado: "W",
+        extra: "W".repeat(400),
+      })),
+    },
+    fortnite: { raw: "F".repeat(3000) },
+  };
+  const compact = compactarTelemetriaJson(huge, 6000);
+  assert.ok(compact.length <= 6000, `Expected <= 6000 chars, got ${compact.length}`);
+});
+
+test("rutasVantsAi /ai/scout/jugador falls back to ROUTER_MODEL on EXPERT_MODEL timeout and sends maxOutputTokens 1024", async () => {
+  const db = createAiMockD1();
+  // Seed perfiles_publicos + players so identidades() finds player "Feispla"
+  const origPrepare = db.prepare.bind(db);
+  db.prepare = (sql: string) => {
+    const q = sql.replace(/\s+/g, " ").trim();
+    if (/FROM perfiles_publicos/i.test(q)) {
+      const s: any = {
+        bind: () => s,
+        all: async () => ({ results: [{ auth0_sub: "google-oauth2|owner-1", nickname: "Feispla", redes: null, banner: null, vitrina: null, updated_at: "2026-11-27" }] }),
+        first: async () => null,
+        run: async () => ({ success: true }),
+      };
+      return s;
+    }
+    return origPrepare(sql);
+  };
+
+  const fetchOrig = globalThis.fetch;
+  const geminiCalls: Array<{ url: string; maxOutputTokens?: number }> = [];
+  globalThis.fetch = (async (input: any, init?: RequestInit) => {
+    const url = String(input);
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    geminiCalls.push({ url, maxOutputTokens: body?.generationConfig?.maxOutputTokens });
+    if (url.includes("gemini-3.8-flash")) {
+      const err: any = new Error("The operation was aborted due to timeout");
+      err.name = "TimeoutError";
+      throw err;
+    }
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    performance_score: 84,
+                    tier_sugerido: "VANTS Pro",
+                    rol_ideal: "Entry",
+                    fortalezas: ["Consistencia"],
+                    areas_mejora: ["Utilidad"],
+                    plan_entrenamiento_7d: ["Día 1: Aim"],
+                    recomendacion_fichaje: "Listo para tryout",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as any;
+
+  try {
+    const env = {
+      DB: db,
+      GEMINI_API_KEY: "test-gemini-key",
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+    };
+    const H = {
+      json: jsonHelper,
+      usuarioClaims: async () => ({ sub: "google-oauth2|owner-1" }),
+      cacheado: async (_k: string, _ms: number, fn: any) => fn(),
+      fx: async () => null,
+    };
+    const req = new Request("https://int.vants.cc/ai/scout/jugador", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Discord-Id": "111222333",
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({ nick: "Feispla" }),
+    });
+    const res = await rutasVantsAi(req, env, new URL(req.url), "/ai/scout/jugador", "POST", H);
+    assert.equal(res!.status, 200);
+    const data = (await res!.json()) as any;
+    assert.equal(data.ok, true);
+    assert.equal(data.modelo, "gemini-3.5-flash-lite");
+    assert.equal(data.reporte.performance_score, 84);
+    assert.equal(geminiCalls.length, 2);
+    assert.match(geminiCalls[0].url, /gemini-3\.8-flash:generateContent/);
+    assert.match(geminiCalls[1].url, /gemini-3\.5-flash-lite:generateContent/);
+    assert.equal(geminiCalls[0].maxOutputTokens, 1024);
+    assert.equal(geminiCalls[1].maxOutputTokens, 1024);
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
 
