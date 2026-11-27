@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rutasVantsAi, preEvaluarAlianzaB2B } from "../integraciones/src/vantsAi.js";
+import { vantsAiApi, VantsAiError } from "../client/src/lib/vantsAiApi.ts";
 
 function createAiMockD1() {
   const tasks = new Map<string, any>();
@@ -277,3 +278,91 @@ test("rutasVantsAi /ai/dispatch creates pending_approval draft, publishes to Van
     globalThis.fetch = fetchOrig;
   }
 });
+
+test("vantsAiApi calls /api/ai/* with Bearer JWT and maps structured VantsAiError codes", async () => {
+  const fetchOrig = globalThis.fetch;
+  const seen: Array<{ url: string; method?: string; auth?: string; body?: string }> = [];
+
+  globalThis.fetch = (async (input: any, init?: RequestInit) => {
+    const url = String(input);
+    const headers = new Headers(init?.headers);
+    seen.push({
+      url,
+      method: init?.method,
+      auth: headers.get("Authorization") || undefined,
+      body: typeof init?.body === "string" ? init.body : undefined,
+    });
+
+    if (url === "/api/ai/estado") {
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          configurado: true,
+          modelos: { router: "gemini-3.5-flash-lite", expert: "gemini-3.8-flash" },
+          gateway: false,
+          bus: true,
+          owner: true,
+          origen: "web",
+          cuota: { fecha: "2026-11-27", plan: "socio", limite: 9999, usados: 1, restantes: 9998 },
+          agentes: ["scouting", "sponsorship", "community"],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url === "/api/ai/scout/jugador") {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "limite_diario_ai",
+          cuota: { fecha: "2026-11-27", plan: "free", limite: 3, usados: 3, restantes: 0 },
+        }),
+        { status: 429, headers: { "content-type": "application/json" } },
+      );
+    }
+
+    if (url === "/api/ai/tasks?scope=admin&status=pending_approval") {
+      return new Response(JSON.stringify({ ok: true, tasks: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    if (url === "/api/ai/tasks/abc-123/approve") {
+      return new Response(JSON.stringify({ ok: true, task_id: "abc-123", status: "approved" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ ok: false, error: "no_encontrado" }), { status: 404 });
+  }) as any;
+
+  try {
+    const st = await vantsAiApi.estado("jwt-token-123");
+    assert.equal(st.ok, true);
+    assert.equal(st.owner, true);
+    assert.equal(seen[0].url, "/api/ai/estado");
+    assert.equal(seen[0].auth, "Bearer jwt-token-123");
+
+    await assert.rejects(
+      () => vantsAiApi.scoutJugador("jwt-token-123", { pid: "pid1", nick: "Feis" }),
+      (err: unknown) => {
+        assert.ok(err instanceof VantsAiError);
+        assert.equal(err.code, "limite_diario_ai");
+        assert.equal(err.status, 429);
+        assert.equal(err.cuota?.restantes, 0);
+        return true;
+      },
+    );
+
+    const list = await vantsAiApi.listarTareas("jwt-token-123", { scope: "admin", status: "pending_approval" });
+    assert.deepEqual(list.tasks, []);
+
+    const rev = await vantsAiApi.revisarTarea("jwt-token-123", "abc-123", "approve");
+    assert.equal(rev.status, "approved");
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+

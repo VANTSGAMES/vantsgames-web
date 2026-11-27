@@ -185,6 +185,7 @@ function Rutas() {
           <Route path="/noticias/:slug"><Priv seccion="Esta noticia"><NoticiaDetalle /></Priv></Route>
           <Route path="/eventos"><Priv seccion="Los eventos"><EventosComunidad /></Priv></Route>
           <Route path="/publicar"><Priv seccion="Publicar en VANTS"><Publicar /></Priv></Route>
+          <Route path="/admin"><Priv seccion="El panel de administración"><Publicar /></Priv></Route>
           <Route path="/en-vivo"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
           <Route path="/directos"><Priv seccion="Los directos"><EnVivo /></Priv></Route>
           <Route path="/creadores"><Priv seccion="Los creadores"><Creadores /></Priv></Route>

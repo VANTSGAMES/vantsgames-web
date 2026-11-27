@@ -8,9 +8,10 @@ import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { opcionesJuegos } from "@/lib/juegos";
-import { api } from "@/lib/api";
+import { api, getAuthToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag, Initials } from "@/components/ui-vants";
+import { VantsAiConsole } from "@/components/ai/VantsAiConsole";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { NivelFaceit } from "./PerfilFaceit";
 import { fecha, hora, gameLabel } from "@/lib/format";
@@ -823,10 +824,18 @@ export function Publicar() {
         ) : (
           <div className="wrap grid gap-6">
             <div className="tabs" role="tablist">
-              {[["torneos", "Torneos"], ["inscripciones", "Inscripciones" + (r ? " (" + r.inscripciones.filter((i) => i.status === "pendiente").length + ")" : "")], ["anuncios", "Anuncios"], ["eventos", "Eventos"]].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-publicar-" + v}>{l}</button>)}
+              {[
+                ["torneos", "Torneos"],
+                ["inscripciones", "Inscripciones" + (r ? " (" + r.inscripciones.filter((i) => i.status === "pendiente").length + ")" : "")],
+                ["anuncios", "Anuncios"],
+                ["eventos", "Eventos"],
+                ["ai", "VANTS Core AI"],
+              ].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-publicar-" + v}>{l}</button>)}
             </div>
             {aviso}
-            {res.isLoading ? <Skel n={3} /> : res.error ? <ErrorBox error={res.error} what="el panel" /> : r && (
+            {tab === "ai" ? (
+              <VantsAiConsole getAccessToken={getAuthToken} />
+            ) : res.isLoading ? <Skel n={3} /> : res.error ? <ErrorBox error={res.error} what="el panel" /> : r && (
               <>
                 {tab === "torneos" && (
                   <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr] items-start">

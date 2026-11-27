@@ -16,11 +16,12 @@ import {
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api, esAppNativa, pub } from "@/lib/api";
+import { api, esAppNativa, getAuthToken, pub } from "@/lib/api";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PERFIL_LINKS } from "@/lib/nav";
 import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { VantsScoutCard } from "@/components/ai/VantsScoutCard";
 
 type Estado = "conectada" | "desconectada" | "pendiente" | "error";
 const PROVEEDORES = [
@@ -539,6 +540,9 @@ function Resumen() {
           </Link>
         </div>
       </section>
+
+      {/* VANTS Core AI · Scouting & Coaching sobre el perfil propio */}
+      <VantsScoutCard getAccessToken={getAuthToken} />
 
       {/* EXPERIENCIA GOOGLE PLAY JUEGOS + LANZADOR RÁPIDO DE TORNEO */}
       <TarjetaExperienciaPlayGames />

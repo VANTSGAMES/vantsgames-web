@@ -9,8 +9,9 @@ import { Link, useParams } from "wouter";
 import { PanelFortnite, type StatsFortnite } from "@/components/Fortnite";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
-import { api, pub } from "@/lib/api";
+import { api, getAuthToken, pub } from "@/lib/api";
 import { PageHead, Section, Empty, Skel, ErrorBox, GameTag, Initials } from "@/components/ui-vants";
+import { VantsScoutCard } from "@/components/ai/VantsScoutCard";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { NivelFaceit } from "./PerfilFaceit";
 import { TarjetaClip, type Clip } from "./MisClips";
@@ -278,6 +279,9 @@ export function PerfilPublicoPagina() {
           <div className="small muted">{p.logros.faceit} de FACEIT · {p.logros.valorant} de VALORANT</div>
         </div>
         {p.fortnite && <div className="md:col-span-3"><PanelFortnite c={{ vinculada: true, ...p.fortnite }} /></div>}
+      </div>
+      <div className="wrap pb-8">
+        <VantsScoutCard getAccessToken={getAuthToken} pid={p.pid} nick={p.nick} />
       </div>
       <Section title="Insignias" eyebrow={(p.insignias || []).length + " conseguidas"} more={{ to: "/insignias", label: "Catálogo" }}>
         <div className="panel panel-pad grid gap-4" data-testid="perfil-publico-insignias">
