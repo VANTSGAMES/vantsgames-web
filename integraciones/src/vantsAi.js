@@ -162,6 +162,12 @@ function esTimeoutError(err) {
   );
 }
 
+function esFallbackGeminiError(err) {
+  if (esTimeoutError(err)) return true;
+  const msg = String(err?.message || err || "");
+  return /^gemini_(503|429|500|504):/i.test(msg) || /UNAVAILABLE|high demand|overloaded/i.test(msg);
+}
+
 function errorConPaso(code, paso) {
   const err = new Error(code);
   err.paso = paso;
@@ -575,7 +581,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
     try {
       raw = await callGemini(env, modeloUsado, scoutPayload, 18000);
     } catch (err) {
-      if (esTimeoutError(err) && ROUTER_MODEL(env) !== modeloUsado) {
+      if (esFallbackGeminiError(err) && ROUTER_MODEL(env) !== modeloUsado) {
         console.warn(JSON.stringify({
           tipo: "vants_ai_scout_fallback",
           from: modeloUsado,
@@ -654,7 +660,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
       });
       metadata = { telemetria };
 
-      respuesta = await callGemini(env, EXPERT_MODEL(env), {
+      const scoutDispatchPayload = {
         system_instruction: {
           parts: [{
             text:
@@ -664,12 +670,21 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
           }],
         },
         contents: [{ role: "user", parts: [{ text: `${prompt}\n\nDatos reales de VANTS:\n${compactarTelemetriaJson(telemetria, 6000)}` }] }],
-      });
+      };
+      try {
+        respuesta = await callGemini(env, EXPERT_MODEL(env), scoutDispatchPayload, 18000);
+      } catch (err) {
+        if (esFallbackGeminiError(err) && ROUTER_MODEL(env) !== EXPERT_MODEL(env)) {
+          respuesta = await callGemini(env, ROUTER_MODEL(env), scoutDispatchPayload, 25000);
+        } else {
+          throw err;
+        }
+      }
     } else if (decision.target_agent === "sponsorship") {
       const sponsorCtx = await recolectarContextoSponsor(env, contextData);
       metadata = sponsorCtx;
 
-      respuesta = await callGemini(env, EXPERT_MODEL(env), {
+      const sponsorPayload = {
         system_instruction: {
           parts: [{
             text:
@@ -679,7 +694,16 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
           }],
         },
         contents: [{ role: "user", parts: [{ text: `${prompt}\n\nDatos reales y cálculo ROI:\n${JSON.stringify(sponsorCtx)}` }] }],
-      });
+      };
+      try {
+        respuesta = await callGemini(env, EXPERT_MODEL(env), sponsorPayload, 18000);
+      } catch (err) {
+        if (esFallbackGeminiError(err) && ROUTER_MODEL(env) !== EXPERT_MODEL(env)) {
+          respuesta = await callGemini(env, ROUTER_MODEL(env), sponsorPayload, 25000);
+        } else {
+          throw err;
+        }
+      }
       status = "pending_approval";
     } else {
       const comCtx = await recolectarContextoComunidad(env);
