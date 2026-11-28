@@ -196,11 +196,17 @@ async function infoDeSesion(token) {
     }
   }
 
-  // 5) CSP style-src para Google Identity Services (https://accounts.google.com/gsi/style)
+  // 5) CSP style-src para Google Identity Services y connect-src para WebSocket wss://vants.cc
   if (!c.includes("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;")) {
     c = c.replace(
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;",
+    );
+  }
+  if (!c.includes("connect-src 'self' https: wss://vants.cc;")) {
+    c = c.replace(
+      "connect-src 'self' https:;",
+      "connect-src 'self' https: wss://vants.cc;",
     );
   }
 
@@ -471,6 +477,77 @@ async function infoDeSesion(token) {
       c = c.replace("async function fetchWorker(", "/* VANTS_RIOT_COMPLIANCE_V1 */\nasync function fetchWorker(");
     } else {
       c = "/* VANTS_RIOT_COMPLIANCE_V1 */\n" + c;
+    }
+  }
+
+  // 14) Proxy WebSocket y estado para SalaTorneo en vivo (/api/torneos-live/sala/:id/ws y /estado)
+  //     hacia Service Binding `env.TORNEOS_REALTIME` (`vants-recursos`) con identidad y rol verificados.
+  if (!c.includes("/* VANTS_TORNEOS_LIVE_PROXY_V1 */")) {
+    const LIVE_PROXY = `    /* VANTS_TORNEOS_LIVE_PROXY_V1 */
+    const __salaMatch = __redir301.pathname.match(/^\\/api\\/torneos-live\\/sala\\/([a-z0-9_-]{1,64})\\/(ws|estado)$/i);
+    if (__salaMatch) {
+      if (!env || !env.TORNEOS_REALTIME) {
+        return new Response(JSON.stringify({ ok: false, error: "torneos_realtime_no_vinculado" }), {
+          status: 503,
+          headers: { "content-type": "application/json; charset=utf-8" }
+        });
+      }
+      const __tid = __salaMatch[1];
+      const __op = __salaMatch[2].toLowerCase();
+      const __salaUrl = new URL(request.url);
+      __salaUrl.pathname = "/sala/" + encodeURIComponent(__tid) + "/" + __op;
+
+      if (__op === "estado") {
+        return env.TORNEOS_REALTIME.fetch(new Request(__salaUrl.toString(), { method: "GET" }));
+      }
+
+      const __authHdr = (request.headers.get("authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+      const __tok = __authHdr || (__salaUrl.searchParams.get("token") || "").trim();
+      __salaUrl.searchParams.delete("token");
+
+      let __nick = "espectador-" + Math.floor(1000 + Math.random() * 9000);
+      let __role = "spectator";
+      if (__tok) {
+        try {
+          const __u = await infoDeSesion(__tok);
+          if (__u && __u.sub) {
+            __role = "player";
+            let __pNick = null;
+            let __pRole = null;
+            if (env.DB) {
+              const [__pp, __pl] = await Promise.all([
+                env.DB.prepare("SELECT nickname FROM perfiles_publicos WHERE auth0_sub = ? LIMIT 1").bind(__u.sub).first().catch(() => null),
+                env.DB.prepare("SELECT display_name, username, role FROM players WHERE auth0_sub = ? LIMIT 1").bind(__u.sub).first().catch(() => null)
+              ]);
+              __pNick = (__pp && __pp.nickname) || (__pl && (__pl.display_name || __pl.username)) || null;
+              __pRole = __pl && __pl.role ? String(__pl.role).toLowerCase() : null;
+            }
+            if (__pRole === "owner" || __pRole === "staff" || __pRole === "admin") __role = "staff";
+            __nick = String(__pNick || __u.nickname || __u.name || "jugador").replace(/[^\\p{L}\\p{N}_ .#-]/gu, "").trim().slice(0, 24) || "jugador";
+          }
+        } catch (eWs) {}
+      }
+
+      const __wsH = new Headers(request.headers);
+      __wsH.delete("x-vants-nick");
+      __wsH.delete("x-vants-role");
+      __wsH.delete("x-vants-torneo-id");
+      __wsH.delete("x-vants-proxy-secret");
+      __wsH.set("x-vants-nick", __nick);
+      __wsH.set("x-vants-role", __role);
+      __wsH.set("x-vants-torneo-id", __tid);
+      if (env.VANTS_INTERNAL_SECRET) __wsH.set("x-vants-proxy-secret", env.VANTS_INTERNAL_SECRET);
+      return env.TORNEOS_REALTIME.fetch(new Request(__salaUrl.toString(), { method: request.method, headers: __wsH }));
+    }`;
+    const ANCHOR_AI = `      return _vantsInt.fetch(new Request(__aiUrl.toString(), request));
+    }`;
+    const ANCHOR_FALLBACK2 = `    // 2. Activar Sitemap para Google y rutas de Kick`;
+    if (c.includes(ANCHOR_AI)) {
+      c = c.replace(ANCHOR_AI, ANCHOR_AI + "\n\n" + LIVE_PROXY);
+    } else if (c.includes(ANCHOR_FALLBACK2)) {
+      c = c.replace(ANCHOR_FALLBACK2, LIVE_PROXY + "\n\n" + ANCHOR_FALLBACK2);
+    } else {
+      throw new Error("vants: ancla para VANTS_TORNEOS_LIVE_PROXY_V1 no encontrada");
     }
   }
 

@@ -432,6 +432,7 @@ async function verifySesionJwt(request, env) {
   return null;
 }
 async function fetch(request, env, ctx) {
+    const csp = "connect-src 'self' https:;";
     // 2. Activar Sitemap para Google y rutas de Kick
     const rInicial = await manejarRutasSeoYKick(request, env);
     if (rInicial) return rInicial;
@@ -447,6 +448,9 @@ async function fetch(request, env, ctx) {
   assert.match(v1, /new Request\("https:\/\/vants\.cc\/auth\/me"/);
   assert.match(v1, /VANTS_UA_VERIFIER_V1/);
   assert.match(v1, /VANTS_AI_CORE_PROXY_V1/);
+  assert.match(v1, /VANTS_TORNEOS_LIVE_PROXY_V1/);
+  assert.match(v1, /x-vants-proxy-secret/);
+  assert.match(v1, /connect-src 'self' https: wss:\/\/vants\.cc;/);
   assert.equal(parchearVantsWorker(v1), v1);
 
   const sampleFn = `var jwksCache = null;

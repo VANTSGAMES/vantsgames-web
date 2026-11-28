@@ -20,6 +20,7 @@ import { useMembresia } from "@/lib/useMembresia";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { useQueryClient } from "@tanstack/react-query";
 import { LanzadorRapidoTorneo } from "@/components/DispositivosJuegos";
+import { SalaTorneoLive } from "@/components/torneos/SalaTorneoLive";
 
 const JUEGOS = filtrosJuegos();
 const POR_PAGINA = 12;
@@ -638,16 +639,39 @@ export function TorneoDetalle() {
       )}
       <div className="wrap mt-6">
         <div className="tabs" role="tablist">
-          {[["resumen", "Resumen"], ["bracket", "Bracket"], ["partidos", "Partidos"]].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-torneo-" + v}>{l}</button>)}
+          {[["resumen", "Resumen"], ["sala", "Sala en vivo"], ["bracket", "Bracket"], ["partidos", "Partidos"]].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-torneo-" + v}>{l}</button>)}
         </div>
       </div>
       {tab === "resumen" && (
         <div className="wrap py-8 grid gap-8 lg:grid-cols-[1.4fr_1fr]">
           <div className="grid gap-6 content-start">
+            <div
+              className="panel panel-pad flex flex-wrap items-center justify-between gap-3"
+              style={{ borderTop: "2px solid #ff0d2e", background: "#111113" }}
+            >
+              <div>
+                <div className="eyebrow mb-1" style={{ color: "#ff5468" }}>En directo · VANTS Realtime</div>
+                <div className="d-3">Sala en vivo del torneo</div>
+                <p className="small muted mt-1">Chat oficial, marcador en directo, Árbitro IA (<code>!arbitro</code>) y crónicas automáticas del Caster IA.</p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-rojo btn-sm"
+                onClick={() => setTab("sala")}
+                data-testid="cta-abrir-sala-live"
+              >
+                Entrar a la sala
+              </button>
+            </div>
             <div><h2 className="d-3 mb-2">Inscripción</h2><p className="muted small">Cuota: {t.fee ? dinero(t.fee, "EUR") : "Sin coste"}. Cierre: {t.starts_at ? fecha(t.starts_at, { day: "2-digit", month: "long" }) : "por anunciar"}.</p></div>
             <div><h2 className="d-3 mb-3">Equipos confirmados</h2><Participantes slug={t.slug} /></div>
           </div>
           <aside className="panel panel-pad chamfer content-start"><h2 className="d-3 mb-4">Inscribir equipo</h2><Inscripcion t={t} /></aside>
+        </div>
+      )}
+      {tab === "sala" && (
+        <div className="wrap py-8">
+          <SalaTorneoLive torneoId={t.slug} torneoNombre={t.nombre} />
         </div>
       )}
       {tab === "bracket" && <div className="wrap py-8"><Bracket torneo={t.slug} /></div>}

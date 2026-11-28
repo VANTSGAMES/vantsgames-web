@@ -82,9 +82,9 @@ jobs:
             if(!n) { console.error("worker.js no encontrado"); process.exit(1); }'
           node --input-type=module --check < src/worker.js
           grep -q "export" src/worker.js
-          CRONS=$(cat crons.json) WRANGLER_EXTRA='{"services":[{"binding":"VANTS_INT","service":"vants-integraciones"}]}' node ../script/ci/vants-config.mjs settings.json version.json ../dist-web > wrangler.json
+          CRONS=$(cat crons.json) WRANGLER_EXTRA='{"services":[{"binding":"VANTS_INT","service":"vants-integraciones"},{"binding":"TORNEOS_REALTIME","service":"vants-recursos"}]}' node ../script/ci/vants-config.mjs settings.json version.json ../dist-web > wrangler.json
           jq '{name, compatibility_date, vars: (.vars|keys), d1_databases, services, assets: (.assets|del(.directory)), triggers}' wrangler.json
-          jq -r '[.result.bindings[].name, "VANTS_INT"] | unique | sort | join(",")' settings.json > bindings-antes.txt
+          jq -r '[.result.bindings[].name, "VANTS_INT", "TORNEOS_REALTIME", "VANTS_INTERNAL_SECRET"] | unique | sort | join(",")' settings.json > bindings-antes.txt
           echo "bindings esperados: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
       - name: Parche CSP + VANTS Identity dual + cumplimiento Riot Games
@@ -95,6 +95,7 @@ jobs:
         # 4) Verificación dual en verifySesionJwt (/api/account/perfil, /api/account/progreso,
         #    clips destacados): sin ella, guardar el nick daba 401 sin_sesion.
         # 5) Cumplimiento Riot Games (App ID 907444): elimina rutas/cachés no oficiales de VALORANT y GPR.
+        # 6) Proxy /api/torneos-live/sala/:id/ws y /estado -> TORNEOS_REALTIME (vants-recursos).
         # Si la línea base cambia en el futuro, falla ruidosamente.
         working-directory: vants
         run: |
@@ -132,6 +133,7 @@ jobs:
           grep -c "VANTS_SEO_KICK_ABSORB_V1" src/worker.js
           grep -c "VANTS_AI_CORE_PROXY_V1" src/worker.js
           grep -c "VANTS_RIOT_COMPLIANCE_V1" src/worker.js
+          grep -c "VANTS_TORNEOS_LIVE_PROXY_V1" src/worker.js
           ! grep -qiE "api\.henrikdev|HENRIKDEV_API_KEY|valorantesports\.com|parseGprHtml|handleGpr|esportsCache|gprCache|valoCacheMod|/api/valorant/rango|/api/valorant/esports|/api/gpr" src/worker.js
 
       - name: Prueba en seco
@@ -146,7 +148,13 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
-        run: npx -y wrangler@4 deploy
+          VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
+        run: |
+          set -euo pipefail
+          npx -y wrangler@4 deploy
+          if [ -n "$VANTS_INTERNAL_SECRET" ]; then
+            printf '%s' "$VANTS_INTERNAL_SECRET" | npx -y wrangler@4 secret put VANTS_INTERNAL_SECRET
+          fi
 
       - name: Retirar rutas obsoletas de zona y verificar (con vuelta atrás si falla)
         working-directory: vants
@@ -169,6 +177,7 @@ jobs:
           U=https://vants.cc
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
           c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/tournaments); [ "$c" = 200 ] && jq -e '.ok == true' r.json >/dev/null || { echo "/api/tournaments -> $c"; ok=0; }
+          c=$(curl -s -A ci -o sala.json -w '%{http_code}' $U/api/torneos-live/sala/smoke/estado); [ "$c" = 200 ] && jq -e '.ok == true' sala.json >/dev/null || { echo "/api/torneos-live/sala/smoke/estado -> $c"; ok=0; }
           c=$(curl -s -A ci -o jwks.json -w '%{http_code}' $U/auth/.well-known/jwks.json); [ "$c" = 200 ] && jq -e '.keys[0].kid' jwks.json >/dev/null || { echo "/auth/.well-known/jwks.json -> $c"; ok=0; }
           c=$(curl -s -A ci -o oidc.json -w '%{http_code}' $U/.well-known/openid-configuration); [ "$c" = 200 ] && jq -e '.issuer' oidc.json >/dev/null || { echo "/.well-known/openid-configuration -> $c"; ok=0; }
           gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' $U/auth/google/start)
@@ -188,7 +197,7 @@ jobs:
               echo "Eliminando Worker obsoleto $W"
               curl -sS -X DELETE -H "$H" "https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/$W" || true
             done
-            echo "Producción OK (VANTS Identity + cumplimiento Riot Games App 907444 verificados)"
+            echo "Producción OK (Fase 4 Torneos Realtime + Árbitro/Caster IA + Riot compliance verificados)"
             exit 0
           fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"
