@@ -54,9 +54,23 @@ jobs:
               break
             fi
           done
-      - name: Inspección Riot/Valorant/GPR en vants y linker en vants-functions (solo lectura, sin secretos)
+      - name: Inspección Fase 4 · esquema D1 real + vants-recursos + rutas torneo en vants (solo lectura)
         run: |
           set -euo pipefail
+          D1="https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/d1/database/11e5d82c-307b-44ba-9682-501d8df593d3/query"
+          H="Authorization: Bearer $TOKEN"
+          echo "=== vants-recursos settings ==="
+          curl -sS -H "$H" "$CF/scripts/vants-recursos/settings" | jq '.result | {compatibility_date, compatibility_flags, bindings: [.bindings[] | {name, type, service, database_id, class_name, workflow_name, queue_name}]}'
+          echo "=== D1 PRAGMA schemas ==="
+          for T in pt_torneos tournament_teams tournament_matches eventos_faceit players perfiles_publicos; do
+            echo "--- TABLE: $T ---"
+            curl -sS -X POST -H "$H" -H "Content-Type: application/json" "$D1" \
+              -d "{\"sql\":\"PRAGMA table_info($T);\"}" | jq -c '.result[0].results // .errors'
+          done
+          echo "--- sqlite_master tournament/partidas tables ---"
+          curl -sS -X POST -H "$H" -H "Content-Type: application/json" "$D1" \
+            -d '{"sql":"SELECT name, sql FROM sqlite_master WHERE type='\''table'\'' AND (name LIKE '\''%torneo%'\'' OR name LIKE '\''%tournament%'\'' OR name LIKE '\''%match%'\'' OR name LIKE '\''%partid%'\'' OR name LIKE '\''%faceit%'\'');"}' | jq -r '.result[0].results[]? | "TABLE \(.name): \(.sql)"'
+          echo "=== vants worker tournament/session handlers ==="
           node -e '
             async function getWorkerSrc(name) {
               const r = await fetch(`${process.env.CF}/scripts/${name}/content/v2`, {
@@ -83,39 +97,15 @@ jobs:
               }
               return buf.toString("utf8");
             }
-            function printContext(label, lines, regex, before = 4, after = 20) {
-              console.log(`=== ${label} (total ${lines.length} lines) ===`);
-              const shown = new Set();
+            (async () => {
+              const lines = (await getWorkerSrc("vants")).split(/\r?\n/);
               for (let i = 0; i < lines.length; i++) {
-                if (regex.test(lines[i])) {
-                  const a = Math.max(0, i - before);
-                  const b = Math.min(lines.length - 1, i + after);
-                  for (let k = a; k <= b; k++) {
-                    if (!shown.has(k)) {
-                      shown.add(k);
-                      console.log(`${k + 1}: ${lines[k]}`);
-                    }
+                if (/\/api\/torneos\/bracket|\/api\/torneos\/gestionar|VANTS_AI_CORE_PROXY_V1|async function verifySesionJwt/.test(lines[i])) {
+                  console.log(`--- line ${i + 1} ---`);
+                  for (let k = Math.max(0, i - 2); k < Math.min(lines.length, i + 45); k++) {
+                    console.log(`${k + 1}: ${lines[k]}`);
                   }
-                  console.log("---");
                 }
               }
-            }
-            (async () => {
-              const vantsLines = (await getWorkerSrc("vants")).split(/\r?\n/);
-              printContext(
-                "VANTS worker Riot/GPR/Valorant/OPTIONS",
-                vantsLines,
-                /henrikdev|valorantesports|\/api\/valorant|\/api\/gpr|parseGprHtml|esportsCache|gprCache|valoCacheMod|OPTIONS/i,
-                3,
-                16
-              );
-              const fnLines = (await getWorkerSrc("vants-functions")).split(/\r?\n/);
-              printContext(
-                "VANTS-FUNCTIONS linker Riot/unlink",
-                fnLines,
-                /auth\.riotgames|riot|unlink|vants_links/i,
-                3,
-                14
-              );
             })();
           '
