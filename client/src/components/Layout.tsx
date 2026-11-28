@@ -99,6 +99,7 @@ function Dropdown({ label, base, links, path }: { label: string; base: string; l
         className={"nav-btn" + (activo ? " activo" : "")}
         aria-expanded={open}
         aria-haspopup="true"
+        aria-current={activo ? "true" : undefined}
         onClick={() => setOpen((o) => !o)}
         onMouseEnter={() => setOpen(true)}
         data-testid={"nav-" + base.slice(1)}
@@ -109,7 +110,13 @@ function Dropdown({ label, base, links, path }: { label: string; base: string; l
       {open && (
         <div className="nav-menu" role="menu">
           {visibles.map((l) => (
-            <Link key={l.to} href={l.to} role="menuitem" data-testid={"navlink-" + l.to.replace(/\//g, "-")}>
+            <Link
+              key={l.to}
+              href={l.to}
+              role="menuitem"
+              aria-current={path === l.to || (l.to !== "/" && path.startsWith(l.to + "/")) ? "page" : undefined}
+              data-testid={"navlink-" + l.to.replace(/\//g, "-")}
+            >
               {l.label}
               {l.hint && <small>{l.hint}</small>}
             </Link>
@@ -337,14 +344,14 @@ function BarraInferiorMovil({ path, onOpenLauncher }: { path: string; onOpenLaun
   return (
     <nav className="vants-bottom-nav xl:hidden" aria-label="Navegación rápida móvil y tablet" data-testid="bottom-nav-movil">
       <div className="vants-bottom-nav-grid">
-        <Link href="/" className={"vants-bnav-item" + (path === "/" ? " activo" : "")} data-testid="bnav-inicio">
+        <Link href="/" className={"vants-bnav-item" + (path === "/" ? " activo" : "")} aria-current={path === "/" ? "page" : undefined} data-testid="bnav-inicio">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M3 10.5L12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-10.5z" />
           </svg>
           <span>Inicio</span>
         </Link>
 
-        <Link href="/torneos" className={"vants-bnav-item" + (enTorneos ? " activo" : "")} data-testid="bnav-torneos">
+        <Link href="/torneos" className={"vants-bnav-item" + (enTorneos ? " activo" : "")} aria-current={enTorneos ? "page" : undefined} data-testid="bnav-torneos">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M6 9H4a2 2 0 0 1-2-2V5h4M18 9h2a2 2 0 0 0 2-2V5h-4M6 4h12v5a6 6 0 0 1-12 0V4zM12 15v5M8 20h8" />
           </svg>
@@ -361,14 +368,14 @@ function BarraInferiorMovil({ path, onOpenLauncher }: { path: string; onOpenLaun
           <span>Jugar</span>
         </button>
 
-        <Link href="/ranking" className={"vants-bnav-item" + (enRanking ? " activo" : "")} data-testid="bnav-ranking">
+        <Link href="/ranking" className={"vants-bnav-item" + (enRanking ? " activo" : "")} aria-current={enRanking ? "page" : undefined} data-testid="bnav-ranking">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <path d="M18 20V10M12 20V4M6 20v-6" strokeLinecap="round" />
           </svg>
           <span>Ranking</span>
         </Link>
 
-        <Link href={perfilHref} className={"vants-bnav-item" + (enPerfil ? " activo" : "")} data-testid="bnav-perfil">
+        <Link href={perfilHref} className={"vants-bnav-item" + (enPerfil ? " activo" : "")} aria-current={enPerfil ? "page" : undefined} data-testid="bnav-perfil">
           {status === "autenticado" && user?.picture ? (
             <img src={user.picture} alt="" width={21} height={21} className="w-5 h-5 rounded-full object-cover" referrerPolicy="no-referrer" />
           ) : (
@@ -420,9 +427,9 @@ export function Header({ onOpenSearch, onOpenLauncher }: { onOpenSearch: () => v
           <Wordmark />
         </div>
         <nav className="hidden xl:flex items-center ml-4" aria-label="Principal">
-          <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} data-testid="nav-inicio">Inicio</Link>
+          <Link href="/" className={"nav-btn" + (path === "/" ? " activo" : "")} aria-current={path === "/" ? "page" : undefined} data-testid="nav-inicio">Inicio</Link>
           {NAV.map((g) => <Dropdown key={g.base} {...g} path={path} />)}
-          <Link href="/empresas" className={"nav-btn" + (path === "/empresas" ? " activo" : "")} data-testid="nav-empresas">Empresas</Link>
+          <Link href="/empresas" className={"nav-btn" + (path === "/empresas" ? " activo" : "")} aria-current={path === "/empresas" ? "page" : undefined} data-testid="nav-empresas">Empresas</Link>
         </nav>
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <button

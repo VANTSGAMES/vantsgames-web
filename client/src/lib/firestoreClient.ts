@@ -14,7 +14,7 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../../../firebase-applet-config.json";
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, type UserInfo } from "firebase/auth";
 
 // Proyecto oficial VANTS: semiotic-ion-508913-r1 (projects/238603325169).
 const effectiveFirebaseConfig = {
@@ -80,7 +80,7 @@ export function handleFirestoreError(
       isAnonymous: firebaseAuth.currentUser?.isAnonymous,
       tenantId: firebaseAuth.currentUser?.tenantId,
       providerInfo:
-        firebaseAuth.currentUser?.providerData.map((provider) => ({
+        firebaseAuth.currentUser?.providerData.map((provider: UserInfo) => ({
           providerId: provider.providerId,
           displayName: provider.displayName,
           email: provider.email,

@@ -62,11 +62,11 @@ Plataforma competitiva oficial de **VANTS GAMES** en **[https://vants.cc](https:
 ## Desarrollo y pruebas locales
 
 ```bash
-npm ci
+npm ci                 # Requiere Node 22, como CI (mejor-sqlite3 no trae binario para versiones más nuevas)
 npm run dev          # Frontend + proxy local en http://localhost:5000
 npm run check        # Verificación TypeScript (tsc)
 node --check integraciones/src/index.js
-node --experimental-strip-types --test tests/*.test.ts
+npx tsx --test tests/*.test.ts   # Tests (varios importan sin extensión .ts y Node solo no los resuelve)
 ```
 
 ## Enlaces legales y soporte
