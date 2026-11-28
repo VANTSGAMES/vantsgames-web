@@ -4,6 +4,7 @@ import { webhookDiscord } from "./comms.js";
 import { membresiaDe } from "./extras.js";
 import { datosValorant, metricasFaceit, metricasValorant } from "./juegos.js";
 import { identidadDe, identidades, perfilPublico } from "./perfiles.js";
+import { enviarWebhookDisputas, rutasSentinelAc } from "./sentinelAc.js";
 
 const DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 const ROUTER_MODEL = (env) => String(env.GEMINI_ROUTER_MODEL || "gemini-3.5-flash-lite").trim();
@@ -519,6 +520,10 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
   await asegurarTablasAi(env.DB);
   const { sub, owner, origen } = await resolverActorAi(req, env, H);
 
+  if (p.startsWith("/ai/anticheat/")) {
+    return rutasSentinelAc(req, env, url, p, m, H, { sub, owner, origen });
+  }
+
   if (p === "/ai/estado" && m === "GET") {
     const cuota = await estadoCuotaAi(env, sub, owner);
     return H.json({
@@ -850,6 +855,7 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
             "Usa accion='responder' para dudas normales de formato, horarios, check-in o marcador. " +
             "Usa accion='advertir' ante insultos leves o spam. " +
             "Usa accion='escalar_staff' SOLO ante disputas graves (acusación de cheats, crash de servidor, error de resultado oficial, abandono). " +
+            "REGLA ESTRICTA DE INTEGRIDAD: Un porcentaje alto de headshot (HS%), K/D o ADR alto NUNCA son prueba suficiente para banear ni expulsar automáticamente a un jugador; el buen aim humano es 100% legal y solo puede derivar en revisión manual de demo/POV por parte del staff. " +
             "Nunca inventes premios ni reglas que no estén en el contexto.",
         }],
       },
@@ -874,6 +880,8 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
 
     const veredicto = JSON.parse(raw);
     const taskId = crypto.randomUUID();
+    const torneoSlug = String(b.torneo?.slug || b.torneo?.id || b.torneoId || "").trim();
+    const torneoNombre = String(b.torneo?.nombre || torneoSlug || "Torneo VANTS");
     await env.DB.prepare(
       `INSERT INTO integ_ai_tasks (id, auth0_sub, user_role, target_agent, priority, status, prompt, response, metadata_json)
        VALUES (?, ?, 'internal_torneo', 'arbitro', ?, 'completed', ?, ?, ?)`
@@ -881,15 +889,34 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
       taskId,
       sub,
       veredicto.accion === "escalar_staff" ? 5 : 2,
-      `[${b.torneo?.id || b.torneoId || "torneo"}] ${contexto.autor}: ${consulta}`,
+      `[${torneoSlug || "torneo"}] ${contexto.autor}: ${consulta}`,
       JSON.stringify(veredicto),
-      JSON.stringify({ torneo_id: b.torneo?.id || b.torneoId || null, accion: veredicto.accion }),
+      JSON.stringify({ torneo_id: torneoSlug || null, accion: veredicto.accion }),
     ).run().catch(() => null);
 
     if (veredicto.accion === "escalar_staff") {
+      const torneoUrl = torneoSlug && torneoSlug !== "torneo"
+        ? `https://vants.cc/torneos/${encodeURIComponent(torneoSlug)}`
+        : null;
+
+      await enviarWebhookDisputas(env, {
+        title: "🚨 Alerta de Cheater / Disputa · Árbitro IA",
+        color: 15158332,
+        ...(torneoUrl ? { url: torneoUrl } : {}),
+        fields: [
+          { name: "Torneo", value: torneoNombre.slice(0, 200), inline: true },
+          { name: "Jugador que reporta", value: contexto.autor, inline: true },
+          { name: "Mensaje en sala", value: consulta.slice(0, 1000), inline: false },
+          { name: "Análisis IA", value: String(veredicto.motivo_staff || veredicto.respuesta).slice(0, 1000), inline: false },
+          ...(torneoUrl ? [{ name: "Enlace al torneo", value: torneoUrl, inline: false }] : []),
+        ],
+        footer: { text: "VANTS Árbitro IA · Revisión humana requerida (HS%/K-D alto no genera auto-ban)" },
+        timestamp: new Date().toISOString(),
+      });
+
       await publicarBusAi(env, "tournament.dispute", {
-        torneo_id: b.torneo?.id || b.torneoId || "desconocido",
-        torneo_nombre: b.torneo?.nombre || "Torneo VANTS",
+        torneo_id: torneoSlug || "desconocido",
+        torneo_nombre: torneoNombre,
         autor: contexto.autor,
         consulta,
         motivo: veredicto.motivo_staff || veredicto.respuesta,

@@ -132,6 +132,14 @@ export default {
         await stub.silenciar(body.nick, Number(body.minutos || 10));
         return Response.json({ ok: true, accion: "silenciar", nick: body.nick });
       }
+      if (body.accion === "expulsar") {
+        const expulsados = await stub.expulsar({
+          nick: typeof body.nick === "string" ? body.nick : undefined,
+          userSub: typeof body.user_sub === "string" ? body.user_sub : undefined,
+          motivo: typeof body.motivo === "string" ? body.motivo : undefined,
+        });
+        return Response.json({ ok: true, accion: "expulsar", expulsados, torneoId });
+      }
       await stub.avisar(body);
       return Response.json({ ok: true, enviado: true, torneoId });
     }
@@ -150,13 +158,13 @@ export default {
       });
     }
 
-    // 6) Pasarela WebSocket a la sala (con verificación anti-spoofing de headers)
+    // 6) Pasarela WebSocket a la sala (anti-spoofing + bloqueo vants_bans + verificación ac_obligatorio)
     const salaWs = url.pathname.match(/^\/sala\/([^/]+)\/ws$/);
     if (salaWs) {
       const torneoId = decodeURIComponent(salaWs[1]);
       const stub = env.SALA_TORNEO.getByName(`torneo-${torneoId}`);
 
-      // Solo confiamos en x-vants-role si la llamada llega autenticada desde el proxy `vants`
+      // Solo confiamos en x-vants-role / x-vants-ac / x-vants-user-sub si llega autenticado desde `vants`
       const desdeProxyOficial = Boolean(
         env.VANTS_INTERNAL_SECRET && secretOk(request.headers.get("x-vants-proxy-secret"), env.VANTS_INTERNAL_SECRET),
       );
@@ -164,14 +172,93 @@ export default {
       const h = new Headers(request.headers);
       h.delete("x-vants-proxy-secret");
       h.set("x-vants-torneo-id", torneoId);
+      let role = "spectator";
+      let userSub = "";
+      let acEstado = "none";
+
       if (!desdeProxyOficial) {
         const nickQ = (url.searchParams.get("nick") || "").replace(/[^\p{L}\p{N}_ .-]/gu, "").trim().slice(0, 20);
         h.set("x-vants-nick", nickQ || `espectador-${Math.floor(1000 + Math.random() * 9000)}`);
         h.set("x-vants-role", "spectator");
+        h.set("x-vants-ac", "none");
+        h.delete("x-vants-user-sub");
       } else {
         if (!h.get("x-vants-nick")) h.set("x-vants-nick", "espectador");
         const r = h.get("x-vants-role");
-        if (r !== "staff" && r !== "player" && r !== "spectator") h.set("x-vants-role", "spectator");
+        role = r === "staff" || r === "player" ? r : "spectator";
+        h.set("x-vants-role", role);
+        userSub = (h.get("x-vants-user-sub") || "").trim();
+        const acH = (h.get("x-vants-ac") || "none").trim();
+        acEstado = acH === "vanguard" || acH === "faceit" || acH === "both" || acH === "pc" ? acH : "none";
+        h.set("x-vants-ac", acEstado);
+      }
+
+      // Puerta Anti-Cheat en D1: bloquea cuenta baneada o falta de anti-cheat en torneos ac_obligatorio = 1
+      if (env.DB) {
+        if (userSub) {
+          const ban = await env.DB.prepare(
+            "SELECT id, motivo FROM vants_bans WHERE activo = 1 AND user_sub = ? LIMIT 1",
+          )
+            .bind(userSub)
+            .first<{ id: string; motivo: string }>()
+            .catch(() => null);
+          if (ban) {
+            return Response.json(
+              { ok: false, error: "cuenta_bloqueada_anticheat", motivo: ban.motivo || "Cuenta bloqueada por VANTS Sentinel" },
+              { status: 403 },
+            );
+          }
+
+          // Refresca el badge AC real desde el heartbeat vigente en D1 (TTL 60s)
+          const hb = await env.DB.prepare(
+            "SELECT vanguard_on, faceit_ac_on FROM vants_ac_heartbeats WHERE user_sub = ? AND expires_at > ? LIMIT 1",
+          )
+            .bind(userSub, Date.now())
+            .first<{ vanguard_on: number; faceit_ac_on: number }>()
+            .catch(() => null);
+          if (hb) {
+            const vOn = Number(hb.vanguard_on) === 1;
+            const fOn = Number(hb.faceit_ac_on) === 1;
+            acEstado = vOn && fOn ? "both" : vOn ? "vanguard" : fOn ? "faceit" : "pc";
+            h.set("x-vants-ac", acEstado);
+          }
+        }
+
+        if (role !== "staff") {
+          const tRow = await env.DB.prepare(
+            "SELECT game_slug, ac_obligatorio FROM pt_torneos WHERE slug = ? OR id = ? LIMIT 1",
+          )
+            .bind(torneoId, torneoId)
+            .first<{ game_slug: string | null; ac_obligatorio: number | null }>()
+            .catch(() => null);
+          if (tRow && Number(tRow.ac_obligatorio) === 1) {
+            const g = String(tRow.game_slug || "").toLowerCase();
+            const requiere = g === "valorant" ? "vanguard" : g === "cs2" ? "faceit" : "any";
+            const cumple =
+              requiere === "vanguard"
+                ? acEstado === "vanguard" || acEstado === "both"
+                : requiere === "faceit"
+                  ? acEstado === "faceit" || acEstado === "both"
+                  : acEstado === "vanguard" || acEstado === "faceit" || acEstado === "both";
+            if (!cumple) {
+              return Response.json(
+                {
+                  ok: false,
+                  error: "anticheat_requerido",
+                  juego: g || null,
+                  requiere,
+                  mensaje:
+                    requiere === "vanguard"
+                      ? "Este torneo requiere VANTS PC activo con Riot Vanguard encendido."
+                      : requiere === "faceit"
+                        ? "Este torneo requiere VANTS PC activo con FACEIT Anti-Cheat encendido."
+                        : "Este torneo requiere VANTS PC activo con el anti-cheat oficial encendido.",
+                },
+                { status: 403 },
+              );
+            }
+          }
+        }
       }
 
       const fwd = new Request(request, { headers: h });

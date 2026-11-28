@@ -1,14 +1,18 @@
-// Durable Object "Sala de torneo" para VANTS GAMES (Fase 4).
+// Durable Object "Sala de torneo" para VANTS GAMES (Fase 4 + Módulos 1 y 3).
 //
-// - Presencia hibernable con tags [nick, role] (sobreviven a la hibernación).
-// - Control de roles verificado por el Worker proxy (nunca confiar en el cliente):
-//   solo `staff` o RPC del backend pueden modificar el marcador oficial.
-// - Rate-limit 1.5s por socket, silenciado temporal (`silenciar`) y filtro anti-links.
+// - Chat 100% efímero: CERO lecturas/escrituras de historial en storage (`chat_hist` eliminado);
+//   al quedar 0 sockets conectados (`webSocketClose`) se limpia la memoria temporal (0 KB persistidos).
+// - Presencia hibernable con tags [nick, role, ac, userSub] (sobreviven a la hibernación).
+// - Control de roles y estado Anti-Cheat (`Vanguard ON` / `FACEIT AC ON` / `Sin VANTS PC`)
+//   verificados por el Worker proxy (nunca confiar en el cliente).
+// - Solo `staff` o RPC del backend pueden modificar el marcador oficial.
+// - Rate-limit 1.5s por socket, silenciado temporal (`silenciar`), expulsión RPC (`expulsar`) y filtro anti-links.
 // - Comando `!arbitro <duda>` / `@arbitro <duda>` conectado por Service Binding
 //   a VANTS Core AI (`vants-integraciones` POST /ai/torneo/arbitro).
 import { DurableObject } from "cloudflare:workers";
 
 export type RolSala = "staff" | "player" | "spectator";
+export type EstadoAcSala = "vanguard" | "faceit" | "both" | "pc" | "none";
 
 export interface SalaEnv {
   SALA_TORNEO: DurableObjectNamespace<SalaTorneo>;
@@ -20,9 +24,10 @@ export interface SalaEnv {
 export interface ParticipanteSala {
   nick: string;
   role: RolSala;
+  ac: EstadoAcSala;
 }
 
-interface MensajeHistorial {
+interface MensajeEfimero {
   de: string;
   role?: RolSala;
   texto: string;
@@ -32,17 +37,28 @@ interface MensajeHistorial {
 const ULTIMO_MSG = new WeakMap<WebSocket, number>();
 const PALABRAS_BLOQUEADAS = /\b(discord\.gg\/|t\.me\/|bit\.ly\/)\S*/i;
 
+function normalizarAc(raw: string | null | undefined): EstadoAcSala {
+  if (raw === "vanguard" || raw === "faceit" || raw === "both" || raw === "pc") return raw;
+  return "none";
+}
+
 export class SalaTorneo extends DurableObject<SalaEnv> {
+  // Buffer estrictamente efímero en RAM (máx 4 líneas solo para contexto inmediato de !arbitro;
+  // nunca se persiste en storage y se vacía en cuanto sale el último participante).
+  private memoriaChat: MensajeEfimero[] = [];
+
   constructor(ctx: DurableObjectState, env: SalaEnv) {
     super(ctx, env);
   }
 
-  private metaDe(ws: WebSocket): ParticipanteSala {
+  private metaDe(ws: WebSocket): ParticipanteSala & { userSub: string } {
     const tags = this.ctx.getTags(ws);
     const nick = tags[0] || "espectador";
     const r = tags[1];
     const role: RolSala = r === "staff" || r === "player" ? r : "spectator";
-    return { nick, role };
+    const ac = normalizarAc(tags[2]);
+    const userSub = tags[3] || "";
+    return { nick, role, ac, userSub };
   }
 
   private async aviso(ev: Record<string, unknown>): Promise<void> {
@@ -57,13 +73,10 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
   }
 
   private presentes(): ParticipanteSala[] {
-    return this.ctx.getWebSockets().map((ws) => this.metaDe(ws));
-  }
-
-  private async guardarHistorial(de: string, role: RolSala, texto: string): Promise<void> {
-    const hist = (await this.ctx.storage.get<MensajeHistorial[]>("chat_hist")) || [];
-    hist.push({ de, role, texto: texto.slice(0, 200), ts: new Date().toISOString() });
-    await this.ctx.storage.put("chat_hist", hist.slice(-10));
+    return this.ctx.getWebSockets().map((ws) => {
+      const { nick, role, ac } = this.metaDe(ws);
+      return { nick, role, ac };
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -74,10 +87,16 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       return new Response("Sala llena", { status: 503 });
     }
 
-    // Identidad verificada inyectada por el Worker (nunca confiar en el cliente para role)
-    const nick = (request.headers.get("x-vants-nick") || "espectador").replace(/[^\p{L}\p{N}_ .#-]/gu, "").trim().slice(0, 24) || "espectador";
+    // Identidad, rol y badge AC verificados e inyectados por el Worker (nunca confiar en el cliente)
+    const nick =
+      (request.headers.get("x-vants-nick") || "espectador")
+        .replace(/[^\p{L}\p{N}_ .#-]/gu, "")
+        .trim()
+        .slice(0, 24) || "espectador";
     const roleHeader = request.headers.get("x-vants-role") || "spectator";
     const role: RolSala = roleHeader === "staff" || roleHeader === "player" ? roleHeader : "spectator";
+    const ac = normalizarAc(request.headers.get("x-vants-ac"));
+    const userSub = (request.headers.get("x-vants-user-sub") || "").trim().slice(0, 96);
     const torneoId = (request.headers.get("x-vants-torneo-id") || "").trim().slice(0, 80);
 
     if (torneoId) {
@@ -85,20 +104,18 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
     }
 
     const pair = new WebSocketPair();
-    this.ctx.acceptWebSocket(pair[1], [nick, role]);
+    const tags = userSub ? [nick, role, ac, userSub] : [nick, role, ac];
+    this.ctx.acceptWebSocket(pair[1], tags);
 
-    // Envía estado inicial solo al usuario que entra
-    const [marcador, hist] = await Promise.all([
-      this.ctx.storage.get<unknown>("marcador"),
-      this.ctx.storage.get<MensajeHistorial[]>("chat_hist"),
-    ]);
+    // Chat 100% efímero: init entrega solo marcador oficial, presentes actuales e historial vacío.
+    const marcador = await this.ctx.storage.get<Record<string, any>>("marcador");
     pair[1].send(
       JSON.stringify({
         tipo: "init",
-        yo: { nick, role },
+        yo: { nick, role, ac },
         torneoId: torneoId || (await this.ctx.storage.get<string>("torneo_id")) || null,
         marcador: marcador ?? null,
-        historial: hist ?? [],
+        historial: [],
         presentes: this.presentes(),
         ts: new Date().toISOString(),
       }),
@@ -118,7 +135,7 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       return;
     }
 
-    const { nick, role } = this.metaDe(ws);
+    const { nick, role, ac } = this.metaDe(ws);
 
     // Solo staff autenticado puede modificar marcador por WS (el resto solo vía RPC del backend)
     if (ev.tipo === "marcador") {
@@ -181,8 +198,10 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       return;
     }
 
-    await this.guardarHistorial(nick, role, texto);
-    await this.aviso({ tipo: "chat", de: nick, role, texto });
+    // Chat 100% efímero: jamás se escribe en storage (solo RAM temporal mientras la sala está activa).
+    this.memoriaChat.push({ de: nick, role, texto: texto.slice(0, 200), ts: new Date().toISOString() });
+    if (this.memoriaChat.length > 4) this.memoriaChat = this.memoriaChat.slice(-4);
+    await this.aviso({ tipo: "chat", de: nick, role, ac, texto });
 
     // Invocación al Árbitro IA: "!arbitro <duda>" o "@arbitro <duda>"
     const matchArbitro = texto.match(/^(?:!arbitro|@arbitro)\s+(.+)/i);
@@ -202,10 +221,9 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       return;
     }
 
-    const [torneoId, marcador, historial] = await Promise.all([
+    const [torneoId, marcador] = await Promise.all([
       this.ctx.storage.get<string>("torneo_id"),
-      this.ctx.storage.get<unknown>("marcador"),
-      this.ctx.storage.get<MensajeHistorial[]>("chat_hist"),
+      this.ctx.storage.get<Record<string, any>>("marcador"),
     ]);
 
     // Enriquecimiento con datos y reglamento real desde pt_torneos en D1 (best-effort)
@@ -220,6 +238,7 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       if (tRow) {
         torneoCtx = {
           id: tRow.slug || tRow.id || torneoId,
+          slug: tRow.slug || torneoId,
           nombre: tRow.nombre || torneoId,
           juego: tRow.game_slug || null,
           estado: tRow.estado || null,
@@ -244,7 +263,7 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
           marcador,
           autor,
           consulta,
-          historial,
+          historial: this.memoriaChat,
         }),
       }),
     ).catch(() => null);
@@ -276,6 +295,13 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     const { nick } = this.metaDe(ws);
+    const restantes = this.ctx.getWebSockets().filter((s) => s !== ws);
+    if (restantes.length === 0) {
+      // Sala vacía: borrar todo rastro temporal del chat (0 KB en memoria y en storage).
+      this.memoriaChat = [];
+      await this.ctx.storage.delete("chat_hist").catch(() => null);
+      return;
+    }
     await this.aviso({ tipo: "sistema", texto: `${nick} salió de la sala` });
     await this.aviso({ tipo: "presencia", datos: this.presentes() });
   }
@@ -305,5 +331,36 @@ export class SalaTorneo extends DurableObject<SalaEnv> {
       accion: "advertir",
       texto: `${limpio} fue silenciado por ${duracion} min por el staff.`,
     });
+  }
+
+  async expulsar(objetivo: { nick?: string; userSub?: string; motivo?: string }): Promise<number> {
+    const nickNorm = String(objetivo?.nick || "").trim().toLowerCase();
+    const subNorm = String(objetivo?.userSub || "").trim();
+    const motivo = String(objetivo?.motivo || "Expulsado por VANTS Sentinel Anti-Cheat").slice(0, 120);
+    let expulsados = 0;
+
+    for (const ws of this.ctx.getWebSockets()) {
+      const m = this.metaDe(ws);
+      const matchSub = Boolean(subNorm && m.userSub && m.userSub === subNorm);
+      const matchNick = Boolean(nickNorm && m.nick.toLowerCase() === nickNorm);
+      if (matchSub || matchNick) {
+        try {
+          ws.send(JSON.stringify({ tipo: "error", texto: motivo, ts: new Date().toISOString() }));
+          ws.close(1008, motivo.slice(0, 100));
+        } catch {
+          // noop
+        }
+        expulsados += 1;
+      }
+    }
+
+    if (expulsados > 0) {
+      await this.aviso({
+        tipo: "sistema",
+        texto: `🛡️ ${objetivo.nick || "Un jugador"} fue retirado de la sala por VANTS Sentinel.`,
+      });
+      await this.aviso({ tipo: "presencia", datos: this.presentes() });
+    }
+    return expulsados;
   }
 }

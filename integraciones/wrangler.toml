@@ -70,3 +70,8 @@ database_id = "481584c7-bc47-434b-aa73-3aa066b440f7"
 [[services]]
 binding = "VANTS_BUS_SERVICE"
 service = "vants-bus"
+
+# Service Binding hacia vants-recursos (torneos-realtime) para expulsión RPC desde Sentinel AI.
+[[services]]
+binding = "TORNEOS_REALTIME"
+service = "vants-recursos"

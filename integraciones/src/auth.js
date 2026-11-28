@@ -182,9 +182,23 @@ export async function asegurarAuth(db) {
       avatar_url TEXT,
       actualizado TEXT NOT NULL DEFAULT (datetime('now'))
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS integ_google_drive_tokens (
+      canonical_sub TEXT PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    )`),
   ]);
   tablasListas = true;
 }
+
+export const GOOGLE_UNIFIED_SCOPES = [
+  'openid',
+  'email',
+  'profile',
+  'https://www.googleapis.com/auth/drive.file',
+];
 
 export function resetAuthCachesForTests() {
   tablasListas = false;
@@ -863,7 +877,7 @@ export async function rutasAuth(req, env, url, p, m, H) {
     gUrl.searchParams.set('client_id', clientId);
     gUrl.searchParams.set('redirect_uri', redirectUri);
     gUrl.searchParams.set('response_type', 'code');
-    gUrl.searchParams.set('scope', 'openid email profile');
+    gUrl.searchParams.set('scope', GOOGLE_UNIFIED_SCOPES.join(' '));
     gUrl.searchParams.set('state', state);
     gUrl.searchParams.set('nonce', nonce);
     gUrl.searchParams.set('code_challenge', challenge);
@@ -877,6 +891,27 @@ export async function rutasAuth(req, env, url, p, m, H) {
         'set-cookie': formatCookie(COOKIE_OIDC, signedState, cookieOpts(env, OIDC_STATE_TTL_SEC)),
         'cache-control': 'no-store',
       },
+    });
+  }
+
+  if (p === '/auth/google/drive-token' && m === 'GET') {
+    const claims = await H.usuarioClaims(req, env);
+    await asegurarAuth(env.DB);
+    const row = await env.DB
+      .prepare('SELECT access_token, scope, expires_at FROM integ_google_drive_tokens WHERE canonical_sub = ? LIMIT 1')
+      .bind(claims.sub)
+      .first()
+      .catch(() => null);
+    if (!row || Number(row.expires_at) <= Date.now() + 15_000) {
+      return H.json({ ok: true, available: false, scopes: GOOGLE_UNIFIED_SCOPES });
+    }
+    return H.json({
+      ok: true,
+      available: true,
+      access_token: row.access_token,
+      scope: row.scope,
+      expires_at: Number(row.expires_at),
+      scopes: GOOGLE_UNIFIED_SCOPES,
     });
   }
 
@@ -940,6 +975,24 @@ export async function rutasAuth(req, env, url, p, m, H) {
       name: gUser.name,
       avatarUrl: gUser.picture,
     });
+
+    // Guarda el access_token efímero de Google (solo scope no sensible drive.file) para Workspace en 1 solo login
+    if (tokenJson.access_token) {
+      const expMs = Date.now() + Math.max(300, Number(tokenJson.expires_in) || 3500) * 1000;
+      const grantedScope = String(tokenJson.scope || GOOGLE_UNIFIED_SCOPES.join(' ')).slice(0, 300);
+      await env.DB.prepare(
+        `INSERT INTO integ_google_drive_tokens (canonical_sub, access_token, scope, expires_at, updated_at)
+         VALUES (?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+         ON CONFLICT(canonical_sub) DO UPDATE SET
+           access_token = excluded.access_token,
+           scope = excluded.scope,
+           expires_at = excluded.expires_at,
+           updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
+      )
+        .bind(canonicalSub, String(tokenJson.access_token), grantedScope, expMs)
+        .run()
+        .catch(() => null);
+    }
 
     const session = await crearSesion(env.DB, env, {
       canonicalSub,
@@ -1250,6 +1303,10 @@ export async function rutasAuth(req, env, url, p, m, H) {
     const cookies = parseCookies(req);
     const b = await req.json().catch(() => ({}));
     const rt = cookies[COOKIE_RT] || (b && typeof b.refresh_token === 'string' ? b.refresh_token.trim() : '');
+    const claimsOut = await H.usuarioClaims(req, env).catch(() => null);
+    if (claimsOut && claimsOut.sub) {
+      await env.DB.prepare('DELETE FROM integ_google_drive_tokens WHERE canonical_sub = ?').bind(claimsOut.sub).run().catch(() => null);
+    }
     await revocarSesion(env.DB, rt).catch(() => null);
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,

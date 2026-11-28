@@ -182,7 +182,14 @@ export async function rutasGooglePro(req, env, url, p, m, { json, usuarioClaims 
         fnOrigin: 'https://fn.vants.cc',
         siteUrl: String(env.SITE_URL || 'https://vants.cc'),
       },
+      scopes: ['openid', 'email', 'profile', 'https://www.googleapis.com/auth/drive.file'],
       workspaceServices: Array.from(VALID_SERVICES),
+      emailProvider: {
+        provider: 'resend',
+        configured: Boolean(env.RESEND_API_KEY),
+        torneosFrom: env.RESEND_FROM_TORNEOS || 'VANTS GAMES Torneos <torneos@vants.cc>',
+        contactoFrom: env.RESEND_FROM_CONTACTO || 'VANTS GAMES <contacto@vants.cc>',
+      },
     });
   }
 

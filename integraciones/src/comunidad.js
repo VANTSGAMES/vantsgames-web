@@ -1,6 +1,6 @@
 import { identidades } from './perfiles.js';
 import { membresiaDe } from './extras.js';
-import { asegurarEmail, guardarEmailSub, emailDe, enviarEmail, plantillaEmail } from './email.js';
+import { asegurarEmail, buildGoogleCalendarUrl, guardarEmailSub, emailDe, enviarEmail, plantillaEmail } from './email.js';
 // VANTS · Integraciones · comunidad
 // -----------------------------------------------------------------------------
 // Funciones de la web que faltaban, todas sobre D1 vants-db:
@@ -437,8 +437,16 @@ async function crearTorneoComunidad(env, req, sub, b, H) {
   const email = claims.email || await emailDe(db, sub);
   if (claims.email) await guardarEmailSub(db, sub, claims.email);
   if (email) {
+    const calUrl = buildGoogleCalendarUrl({
+      titulo: `Torneo VANTS · ${nombre}`,
+      detalles: `Organizador: ${nick} · Juego: ${juego} · Plazas: ${plazas} equipos.`,
+      ubicacion: String(env.SITE_URL || 'https://vants.cc').replace(/\/$/, '') + '/torneos/' + slug,
+      inicioIso: inicio,
+      duracionMin: 180,
+    });
     await enviarEmail(env, {
       to: email,
+      canal: 'torneos',
       asunto: 'Recibimos tu torneo: ' + nombre,
       html: plantillaEmail({
         base: env.SITE_URL,
@@ -448,7 +456,13 @@ async function crearTorneoComunidad(env, req, sub, b, H) {
           'Tu torneo de comunidad «' + nombre + '» quedó registrado. El equipo VANTS lo revisará y te avisaremos por correo y notificación cuando se publique en el circuito.',
         ],
         datos: [['Torneo', nombre], ['Juego', juego], ['Inicio', inicio], ['Plazas', String(plazas) + ' equipos'], ['Estado', 'Pendiente de revisión']],
+        pasos: [
+          'Agrega la fecha del torneo a tu Google Calendar para recordar la apertura de check-in.',
+          'Desde tu Centro Workspace puedes exportar los equipos inscritos a Google Sheets en 1 clic.',
+        ],
         cta: { texto: 'Ver torneos', url: '/torneos' },
+        calendarUrl: calUrl,
+        sheetsUrl: '/workspace',
       }),
     }).catch(() => null);
   }
@@ -483,8 +497,16 @@ async function emailInscripcion(env, req, sub, b, H) {
   await db.prepare('INSERT INTO integ_estado (clave, valor) VALUES (?, 1)').bind(clave).run().catch(() => null);
 
   const nick = await nickDe(db, sub);
+  const calUrl = buildGoogleCalendarUrl({
+    titulo: `Check-in Torneo VANTS · ${fila.torneo || torneo}`,
+    detalles: `Equipo ${fila.name || ''}${fila.tag ? ' [' + fila.tag + ']' : ''}. Abre VANTS PC 30 minutos antes para el check-in oficial.`,
+    ubicacion: String(env.SITE_URL || 'https://vants.cc').replace(/\/$/, '') + '/torneos/' + encodeURIComponent(torneo),
+    inicioIso: fila.starts_at || undefined,
+    duracionMin: 180,
+  });
   await enviarEmail(env, {
     to: claims.email,
+    canal: 'torneos',
     asunto: 'Inscripción recibida: ' + (fila.torneo || torneo),
     html: plantillaEmail({
       base: env.SITE_URL,
@@ -495,10 +517,15 @@ async function emailInscripcion(env, req, sub, b, H) {
         'El equipo VANTS revisará la solicitud y confirmará tu plaza. El estado aparece en tu perfil, en «Mis torneos».',
       ],
       datos: [['Torneo', fila.torneo || torneo], ['Equipo', (fila.name || '') + (fila.tag ? ' [' + fila.tag + ']' : '')], ['Inicio', fila.starts_at || '—'], ['Estado', 'Pendiente de confirmación']],
+      pasos: [
+        'Pulsa «Agregar a Google Calendar» para guardar el horario del check-in.',
+        'Si el torneo exige anti-cheat, inicia VANTS PC 30 minutos antes con Vanguard o FACEIT AC encendido.',
+      ],
       cta: { texto: 'Ver mis torneos', url: '/perfil/torneos' },
+      calendarUrl: calUrl,
     }),
   }).catch(() => null);
-  return { body: { ok: true }, status: 200 };
+  return { body: { ok: true, calendar_url: calUrl }, status: 200 };
 }
 
 async function owner(env, sub, p, m, req, H) {

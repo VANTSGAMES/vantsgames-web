@@ -30,6 +30,7 @@ import { rutasGooglePro } from './googlePro.js';
 import { rutasVidiqSeo } from './vidiqSeo.js';
 import { rutasSkilling } from './skilling.js';
 import { rutasVantsAi } from './vantsAi.js';
+import { rutasFormularios } from './formularios.js';
 
 const FACEIT = 'https://open.faceit.com/data/v4';
 const cache = new Map(); // caché en memoria del isolate
@@ -48,7 +49,7 @@ function cors(env, req) {
   const ok = !origin || isWebAllowed || isNativeApp;
   const headers = {
     'Access-Control-Allow-Origin': ok && origin ? origin : permitidos[0] || '*',
-    'Access-Control-Allow-Headers': 'authorization, content-type',
+    'Access-Control-Allow-Headers': 'authorization, content-type, x-vants-ac-signature',
     'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
@@ -571,7 +572,7 @@ async function rutas(req, env, url) {
   // Fase 5: Eventos y Showmatches con RSVP, lista de espera y check-in
   const rev = await rutasEventosRsvp(req, env, url, p, m, { json, usuarioClaims });
   if (rev) return rev;
-  for (const fn of [rutasComunidadLfg, rutasComunidadForo, rutasComunidadMisiones, rutasComunidadVotaciones, rutasGooglePro, rutasSkilling]) {
+  for (const fn of [rutasComunidadLfg, rutasComunidadForo, rutasComunidadMisiones, rutasComunidadVotaciones, rutasGooglePro, rutasFormularios, rutasSkilling]) {
     const r = await fn(req, env, url, p, m, { json, usuarioClaims });
     if (r) return r;
   }

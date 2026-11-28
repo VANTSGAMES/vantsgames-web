@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   construirEmparejamientos,
   secuenciaRondasPara,
@@ -185,4 +186,23 @@ test("aplicarWebhook match_status_updated mapea estados a CHECK válidos de tour
   const ptUpd = queries.find((q) => /^UPDATE pt_matches SET estado = \?/i.test(q.sql));
   assert.equal(tmUpd?.params[0], "en_curso");
   assert.equal(ptUpd?.params[0], "live");
+});
+
+test("Módulo 1 & 3: SalaTorneo tiene chat 100% efímero (0 KB storage), expulsa por RPC y conserva el botón !ARBITRO", () => {
+  const salaSrc = readFileSync("cloudflare/src/sala-torneo.ts", "utf8");
+  const liveUiSrc = readFileSync("client/src/components/torneos/SalaTorneoLive.tsx", "utf8");
+
+  // Chat 100% efímero: sin guardarHistorial ni lecturas/escrituras de chat_hist en storage
+  assert.equal(/guardarHistorial/.test(salaSrc), false);
+  assert.equal(/storage\.put\(\s*['"]chat_hist['"]/.test(salaSrc), false);
+  assert.equal(/storage\.get[^)]*['"]chat_hist['"]/.test(salaSrc), false);
+  assert.match(salaSrc, /historial:\s*\[\]/);
+  // Al cerrar el último socket limpia el buffer RAM y borra legacy chat_hist
+  assert.match(salaSrc, /restantes\.length === 0/);
+  assert.match(salaSrc, /this\.memoriaChat = \[\]/);
+  assert.match(salaSrc, /expulsar\(/);
+  // Conserva intacto el disparador !arbitro y el botón !arbitro en UI
+  assert.match(salaSrc, /!arbitro/);
+  assert.match(liveUiSrc, /data-testid="sala-live-btn-arbitro"/);
+  assert.match(liveUiSrc, /⚖️ !arbitro/);
 });

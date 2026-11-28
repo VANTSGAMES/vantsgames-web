@@ -11,7 +11,7 @@
  * formal. Correos oficiales: contacto@vants.cc (empresas/patrocinios/
  * legal) y hola@vants.cc.
  */
-import { enviarEmail, plantillaEmail, guardarEmailSub, emailDe } from './email.js';
+import { buildGoogleCalendarUrl, enviarEmail, plantillaEmail, guardarEmailSub, emailDe } from './email.js';
 import { invalidarIdentidades } from './perfiles.js';
 import { preEvaluarAlianzaB2B } from './vantsAi.js';
 
@@ -219,23 +219,35 @@ export async function rutasComms(req, env, url, p, m, H) {
         footer: { text: 'VANTS GAMES · alertas-b2b · requiere validación comercial' },
       }],
     });
+    const refAlianza = 'alianza-' + Date.now().toString(36);
+    const calAlianza = buildGoogleCalendarUrl({
+      titulo: `Seguimiento Alianza VANTS · ${empresa}`,
+      detalles: `Propuesta ${tipo} (${refAlianza}) — Contacto: ${contacto} (${email}).`,
+      ubicacion: 'https://vants.cc/empresas',
+      duracionMin: 45,
+    });
     // Correo formal interno al equipo comercial.
     await enviarEmail(env, {
       to: 'contacto@vants.cc',
+      canal: 'contacto',
+      replyTo: email,
       asunto: '[Alianza B2B] ' + empresa + ' · ' + tipo,
       html: plantillaEmail({
         base: env.SITE_URL,
         titulo: 'Nueva propuesta comercial',
         saludo: 'Equipo comercial,',
         parrafos: ['Se ha recibido una nueva solicitud de alianza a través del formulario «VANTS para Empresas». Los datos se adjuntan a continuación para su evaluación.'],
-        datos: [['Empresa / marca', empresa], ['Contacto', contacto], ['Correo', email], ['Web / redes', web || '—'], ['Tipo de interés', tipo], ['Mensaje', mensaje]],
+        datos: [['Referencia', refAlianza], ['Empresa / marca', empresa], ['Contacto', contacto], ['Correo', email], ['Web / redes', web || '—'], ['Tipo de interés', tipo], ['Mensaje', mensaje]],
         cta: { texto: 'Responder al contacto', url: 'mailto:' + encodeURIComponent(email) },
+        calendarUrl: calAlianza,
+        sheetsUrl: '/workspace',
         planes: false,
       }),
     }).catch(() => null);
     // Acuse formal al remitente.
     await enviarEmail(env, {
       to: email,
+      canal: 'contacto',
       asunto: 'Hemos recibido su propuesta — VANTS GAMES',
       html: plantillaEmail({
         base: env.SITE_URL,
@@ -245,15 +257,20 @@ export async function rutasComms(req, env, url, p, m, H) {
           'Agradecemos su propuesta. Nuestro equipo comercial la evaluará y se pondrá en contacto con usted por este medio en un plazo máximo de 5 días hábiles.',
           'Le recordamos que las alianzas comerciales requieren registro legal de la empresa o marca, portafolio relevante y la validación oficial del equipo VANTS GAMES.',
         ],
-        datos: [['Empresa / marca', empresa], ['Tipo de interés', tipo], ['Referencia', 'alianza-' + Date.now().toString(36)]],
+        datos: [['Empresa / marca', empresa], ['Tipo de interés', tipo], ['Referencia', refAlianza]],
+        pasos: [
+          'Nuestro equipo responderá desde contacto@vants.cc en un máximo de 5 días hábiles.',
+          'Si deseas agendar recordatorio de seguimiento, usa el botón «Agregar a Google Calendar».',
+        ],
         cta: { texto: 'Conocer las condiciones', url: '/terminos#empresas' },
+        calendarUrl: calAlianza,
         planes: false,
       }),
     }).catch(() => null);
     if (env.GEMINI_API_KEY) {
       await preEvaluarAlianzaB2B(env, { empresa, tipo, web, mensaje }).catch(() => null);
     }
-    return H.json({ ok: true });
+    return H.json({ ok: true, ref: refAlianza, calendar_url: calAlianza });
   }
 
   /* POST /int/soporte/ticket — tickets del equipo (auth + verificado). */
@@ -279,6 +296,7 @@ export async function rutasComms(req, env, url, p, m, H) {
     if (email) {
       await enviarEmail(env, {
         to: email,
+        canal: 'contacto',
         asunto: 'Ticket ' + ref + ' recibido — VANTS GAMES',
         html: plantillaEmail({
           base: env.SITE_URL,
@@ -286,6 +304,10 @@ export async function rutasComms(req, env, url, p, m, H) {
           saludo: 'Hola ' + nick + ',',
           parrafos: ['Hemos recibido tu solicitud de soporte. El equipo la revisará y te responderá por este correo y por las notificaciones de la plataforma.'],
           datos: [['Referencia', ref], ['Asunto', asunto]],
+          pasos: [
+            'Conserva la referencia ' + ref + ' para dar seguimiento.',
+            'Para disputas durante un torneo en vivo, escribe !arbitro directamente en la sala del torneo.',
+          ],
           planes: false,
         }),
       }).catch(() => null);

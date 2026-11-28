@@ -2,6 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { rutasVantsAi, preEvaluarAlianzaB2B, compactarTelemetriaJson } from "../integraciones/src/vantsAi.js";
 import { datosValorant, metricasValorant, purgarDatosRiot, rutasJuegos } from "../integraciones/src/juegos.js";
+import {
+  canonicalHeartbeatMessage,
+  hmacSha256Hex,
+  resetSentinelAcCacheForTests,
+} from "../integraciones/src/sentinelAc.js";
+import { rutasFormularios, resetFormulariosCacheForTests } from "../integraciones/src/formularios.js";
 import { vantsAiApi, VantsAiError } from "../client/src/lib/vantsAiApi.ts";
 
 function createAiMockD1() {
@@ -727,6 +733,558 @@ test("Fase 4: /ai/torneo/caster rechaza no-owner (403), genera crónica corta y 
     assert.equal(data.ok, true);
     assert.match(data.cronica, /VANTS Alpha/);
     assert.equal(db.tasks.get(data.task_id)?.target_agent, "caster");
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
+function createSentinelAndFormsMockD1() {
+  const bans: any[] = [];
+  const challenges = new Map<string, any>();
+  const heartbeats = new Map<string, any>();
+  const formularios: any[] = [];
+
+  const exec = (sql: string, params: any[]) => {
+    const q = sql.replace(/\s+/g, " ").trim();
+    if (/^CREATE (TABLE|INDEX)/i.test(q)) return { results: [] };
+    if (/^SELECT 1 FROM players WHERE auth0_sub/i.test(q) || /^SELECT role FROM players/i.test(q)) {
+      return { results: params[0] === "google-oauth2|owner-1" ? [{ role: "owner", 1: 1 }] : [] };
+    }
+    if (/^SELECT .* FROM vants_bans WHERE activo = 1/i.test(q)) {
+      const m = q.match(/AND \((.+)\) ORDER BY/i);
+      const cols = m ? [...m[1].matchAll(/(\w+) = \?/g)].map((x) => x[1]) : [];
+      const found = bans.find(
+        (b) => b.activo === 1 && cols.some((col, idx) => b[col] && b[col] === params[idx]),
+      );
+      return { results: found ? [found] : [] };
+    }
+    if (/^INSERT INTO vants_bans/i.test(q)) {
+      if (q.includes("'vants_pc_hard_evidence'")) {
+        const [id, user_sub, nick, hwid, motivo, evidencia_json] = params;
+        bans.push({ id, user_sub, nick, hwid, motivo, tipo: "vants_pc_hard_evidence", evidencia_json, activo: 1 });
+      } else {
+        const [id, user_sub, nick, steam_id, faceit_id, discord_id, hwid, motivo, tipo, evidencia_json] = params;
+        bans.push({ id, user_sub, nick, steam_id, faceit_id, discord_id, hwid, motivo, tipo, evidencia_json, activo: 1 });
+      }
+      return { results: [] };
+    }
+    if (/^INSERT INTO vants_ac_challenges/i.test(q)) {
+      const [nonce, user_sub, expires_at] = params;
+      challenges.set(nonce, { nonce, user_sub, expires_at, used_at: null });
+      return { results: [] };
+    }
+    if (/^DELETE FROM vants_ac_challenges/i.test(q)) return { results: [] };
+    if (/^SELECT .* FROM vants_ac_challenges WHERE nonce = \?/i.test(q)) {
+      const row = challenges.get(params[0]);
+      return { results: row ? [row] : [] };
+    }
+    if (/^UPDATE vants_ac_challenges SET used_at/i.test(q)) {
+      const row = challenges.get(params[0]);
+      if (row) row.used_at = new Date().toISOString();
+      return { results: [] };
+    }
+    if (/^INSERT INTO vants_ac_heartbeats/i.test(q)) {
+      const [user_sub, hwid, app_version, vanguard_on, faceit_ac_on, eac_on, battleye_on, updated_at, expires_at] = params;
+      heartbeats.set(user_sub, {
+        user_sub,
+        hwid,
+        app_version,
+        vanguard_on,
+        faceit_ac_on,
+        eac_on,
+        battleye_on,
+        updated_at,
+        expires_at,
+      });
+      return { results: [] };
+    }
+    if (/^SELECT .* FROM vants_ac_heartbeats WHERE user_sub = \?/i.test(q)) {
+      const row = heartbeats.get(params[0]);
+      return { results: row && Number(row.expires_at) > Number(params[1]) ? [row] : [] };
+    }
+    if (/^INSERT INTO vants_formularios_envios/i.test(q)) {
+      const [id, tipo, user_sub, nombre, email, juego, torneo_slug, organizacion, asunto, datos_json, calendar_url] = params;
+      formularios.push({
+        id,
+        tipo,
+        user_sub,
+        nombre,
+        email,
+        juego,
+        torneo_slug,
+        organizacion,
+        asunto,
+        datos_json,
+        estado: "recibido",
+        calendar_url,
+        creado_en: new Date().toISOString(),
+      });
+      return { results: [] };
+    }
+    if (/^SELECT .* FROM vants_formularios_envios/i.test(q)) {
+      if (q.includes("WHERE tipo = ?")) {
+        return { results: formularios.filter((f) => f.tipo === params[0]) };
+      }
+      if (q.includes("WHERE user_sub = ?")) {
+        return { results: formularios.filter((f) => f.user_sub === params[0] || f.email === String(params[1] || "").toLowerCase()) };
+      }
+      return { results: [...formularios] };
+    }
+    return { results: [] };
+  };
+
+  return {
+    bans,
+    challenges,
+    heartbeats,
+    formularios,
+    prepare(sql: string) {
+      let bound: any[] = [];
+      const stmt: any = {
+        bind(...p: any[]) {
+          bound = p;
+          return stmt;
+        },
+        async first() {
+          return exec(sql, bound).results[0] ?? null;
+        },
+        async all() {
+          return exec(sql, bound);
+        },
+        async run() {
+          exec(sql, bound);
+          return { success: true };
+        },
+      };
+      return stmt;
+    },
+    async batch(stmts: any[]) {
+      const out = [];
+      for (const s of stmts) out.push(await s.run());
+      return out;
+    },
+  };
+}
+
+test("Módulo 3 (OBLIGATORIO): VANTS Sentinel AI NUNCA bloquea por buen aim (hs_pct 90, kd 4.0) y envía amarillo solo en reporte sin prueba dura", async () => {
+  resetSentinelAcCacheForTests();
+  const db = createSentinelAndFormsMockD1();
+  const webhooks: any[] = [];
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string, init?: any) => {
+    if (String(url).startsWith("https://discord.com/api/webhooks/")) {
+      webhooks.push({ url, body: JSON.parse(String(init?.body || "{}")) });
+      return new Response(null, { status: 204 });
+    }
+    return new Response("{}", { status: 200 });
+  }) as any;
+
+  try {
+    const env = {
+      DB: db,
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+      VANTS_PC_AC_SECRET: "pc-ac-secret-32chars-xxxxxxxxxxxx",
+      DISCORD_WEBHOOK_DISPUTAS: "https://discord.com/api/webhooks/111111/fake-test-token",
+    };
+    const H = { json: jsonHelper, usuarioClaims: async () => ({ sub: "google-oauth2|owner-1" }) };
+
+    // 1) Jugador pro con hs_pct: 90, kd: 4.0, adr: 145 SIN evidencia dura -> bloqueado: false
+    const reqProAim = new Request("https://int.vants.cc/ai/anticheat/evaluar", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({
+        user_sub: "google-oauth2|aim-god-1",
+        nick: "S1mpleVE",
+        torneo_id: "copa-cs2",
+        hs_pct: 90,
+        kd: 4.0,
+        adr: 145,
+      }),
+    });
+    const resAim = await rutasVantsAi(reqProAim, env, new URL(reqProAim.url), "/ai/anticheat/evaluar", "POST", H);
+    assert.equal(resAim!.status, 200);
+    const bodyAim = (await resAim!.json()) as any;
+    assert.equal(bodyAim.bloqueado, false);
+    assert.equal(bodyAim.accion, "permitido");
+    assert.equal(db.bans.length, 0);
+    assert.equal(webhooks.length, 0);
+
+    // 2) Reporte en sala sin prueba dura (incluso con hs_pct: 90, kd: 4.0) -> revision_humana + embed AMARILLO (NO bloquea)
+    const reqReporte = new Request("https://int.vants.cc/ai/anticheat/evaluar", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({
+        user_sub: "google-oauth2|aim-god-1",
+        nick: "S1mpleVE",
+        torneo_id: "copa-cs2",
+        hs_pct: 90,
+        kd: 4.0,
+        reporte_en_sala: "Tiene 90% HS y 4.0 KD en el primer mapa",
+      }),
+    });
+    const resRep = await rutasVantsAi(reqReporte, env, new URL(reqReporte.url), "/ai/anticheat/evaluar", "POST", H);
+    assert.equal(resRep!.status, 200);
+    const bodyRep = (await resRep!.json()) as any;
+    assert.equal(bodyRep.bloqueado, false);
+    assert.equal(bodyRep.accion, "revision_humana");
+    assert.equal(db.bans.length, 0);
+    assert.equal(webhooks.length, 1);
+    assert.deepEqual(webhooks[0].body.allowed_mentions, { parse: [] });
+    assert.equal(webhooks[0].body.embeds[0].color, 16098851); // Amarillo informativo
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
+test("Módulo 3: VANTS Sentinel AI bloquea automáticamente con evidencia dura (evasión, FACEIT/Steam VAC, VANTS PC firmado) y expulsa por RPC", async () => {
+  resetSentinelAcCacheForTests();
+  const db = createSentinelAndFormsMockD1();
+  const webhooks: any[] = [];
+  const rpcCalls: any[] = [];
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string, init?: any) => {
+    const u = String(url);
+    if (u.startsWith("https://discord.com/api/webhooks/")) {
+      webhooks.push({ url: u, body: JSON.parse(String(init?.body || "{}")) });
+      return new Response(null, { status: 204 });
+    }
+    if (u.startsWith("https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/")) {
+      return new Response(
+        JSON.stringify({
+          players: [{ SteamId: "76561198000000001", VACBanned: true, NumberOfVACBans: 1, NumberOfGameBans: 0, DaysSinceLastBan: 5 }],
+        }),
+        { status: 200 },
+      );
+    }
+    return new Response("{}", { status: 200 });
+  }) as any;
+
+  try {
+    const env = {
+      DB: db,
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+      VANTS_PC_AC_SECRET: "pc-ac-secret-32chars-xxxxxxxxxxxx",
+      STEAM_API_KEY: "steam-test-key",
+      DISCORD_WEBHOOK_DISPUTAS: "https://discord.com/api/webhooks/111111/fake-test-token",
+      TORNEOS_REALTIME: {
+        async fetch(req: Request) {
+          rpcCalls.push({ url: req.url, body: await req.json() });
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        },
+      },
+    };
+    const H = { json: jsonHelper, usuarioClaims: async () => ({ sub: "google-oauth2|owner-1" }) };
+    const headers = {
+      "content-type": "application/json",
+      "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+      "X-Vants-Staff": "1",
+    };
+
+    // Caso B: Steam VAC Ban verificado
+    const reqVac = new Request("https://int.vants.cc/ai/anticheat/evaluar", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        user_sub: "google-oauth2|cheater-vac",
+        nick: "VacUser",
+        steam_id: "76561198000000001",
+        hwid: "HWID-VAC-001",
+        torneo_id: "copa-cs2",
+      }),
+    });
+    const rVac = await rutasVantsAi(reqVac, env, new URL(reqVac.url), "/ai/anticheat/evaluar", "POST", H);
+    const bVac = (await rVac!.json()) as any;
+    assert.equal(bVac.bloqueado, true);
+    assert.equal(bVac.tipo, "external_steam_ban");
+    assert.equal(bVac.expulsado_sala, true);
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(rpcCalls[0].body.accion, "expulsar");
+    assert.equal(webhooks[0].body.embeds[0].color, 15158332); // Rojo
+
+    // Caso A: Evasión de ban con otra cuenta usando el mismo HWID
+    const reqEvasion = new Request("https://int.vants.cc/ai/anticheat/evaluar", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        user_sub: "google-oauth2|smurf-evader",
+        nick: "SmurfNuevo",
+        hwid: "HWID-VAC-001",
+        torneo_id: "copa-cs2",
+      }),
+    });
+    const rEv = await rutasVantsAi(reqEvasion, env, new URL(reqEvasion.url), "/ai/anticheat/evaluar", "POST", H);
+    const bEv = (await rEv!.json()) as any;
+    assert.equal(bEv.bloqueado, true);
+    assert.equal(bEv.tipo, "ban_evasion");
+
+    // Caso C: Evidencia técnica dura firmada desde VANTS PC
+    const canonical = canonicalHeartbeatMessage({
+      nonce: "n-hard-1",
+      userSub: "google-oauth2|tamper-1",
+      ts: "1732750000000",
+      hwid: "HWID-TAMPER-9",
+      vanguardOn: false,
+      faceitAcOn: false,
+      hardFlags: ["memory_tamper"],
+    });
+    const signature = await hmacSha256Hex(env.VANTS_PC_AC_SECRET, canonical);
+    const reqPc = new Request("https://int.vants.cc/ai/anticheat/evaluar", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        user_sub: "google-oauth2|tamper-1",
+        nick: "TamperGuy",
+        hwid: "HWID-TAMPER-9",
+        torneo_id: "copa-valo",
+        vants_pc_evidence: {
+          nonce: "n-hard-1",
+          ts: "1732750000000",
+          flags: ["memory_tamper"],
+          signature,
+        },
+      }),
+    });
+    const rPc = await rutasVantsAi(reqPc, env, new URL(reqPc.url), "/ai/anticheat/evaluar", "POST", H);
+    const bPc = (await rPc!.json()) as any;
+    assert.equal(bPc.bloqueado, true);
+    assert.equal(bPc.tipo, "vants_pc_hard_evidence");
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
+test("Módulo 3: Puente VANTS PC challenge + heartbeat HMAC firmado (TTL 60s en KV + D1, anti-replay, firma inválida 401)", async () => {
+  resetSentinelAcCacheForTests();
+  const db = createSentinelAndFormsMockD1();
+  const kvStore = new Map<string, { val: string; ttl?: number }>();
+  const env = {
+    DB: db,
+    VANTS_PC_AC_SECRET: "pc-ac-secret-32chars-xxxxxxxxxxxx",
+    CLIPS_KV: {
+      async put(k: string, val: string, opts?: { expirationTtl?: number }) {
+        kvStore.set(k, { val, ttl: opts?.expirationTtl });
+      },
+      async get(k: string) {
+        return kvStore.get(k)?.val ?? null;
+      },
+    },
+  };
+  const H = {
+    json: jsonHelper,
+    usuarioClaims: async () => ({ sub: "google-oauth2|player-pc-1", email: "pc@vants.cc" }),
+  };
+
+  // 1) Obtener reto nonce
+  const rCh = await rutasVantsAi(
+    new Request("https://int.vants.cc/ai/anticheat/challenge"),
+    env,
+    new URL("https://int.vants.cc/ai/anticheat/challenge"),
+    "/ai/anticheat/challenge",
+    "GET",
+    H,
+  );
+  assert.equal(rCh!.status, 200);
+  const ch = (await rCh!.json()) as any;
+  assert.equal(ch.expires_in, 60);
+  assert.ok(ch.nonce.length >= 32);
+
+  // 2) Firma inválida -> 401
+  const ts = String(Date.now());
+  const rBad = await rutasVantsAi(
+    new Request("https://int.vants.cc/ai/anticheat/heartbeat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vants-ac-signature": "0000deadbeef" },
+      body: JSON.stringify({ nonce: ch.nonce, ts, hwid: "HWID-OK-1", vanguard_on: true, faceit_ac_on: false }),
+    }),
+    env,
+    new URL("https://int.vants.cc/ai/anticheat/heartbeat"),
+    "/ai/anticheat/heartbeat",
+    "POST",
+    H,
+  );
+  assert.equal(rBad!.status, 401);
+
+  // 3) Firma válida -> 200, TTL 60 en KV y badge Vanguard ON
+  const canonical = canonicalHeartbeatMessage({
+    nonce: ch.nonce,
+    userSub: "google-oauth2|player-pc-1",
+    ts,
+    hwid: "HWID-OK-1",
+    vanguardOn: true,
+    faceitAcOn: false,
+    hardFlags: [],
+  });
+  const sig = await hmacSha256Hex(env.VANTS_PC_AC_SECRET, canonical);
+  const rOk = await rutasVantsAi(
+    new Request("https://int.vants.cc/ai/anticheat/heartbeat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vants-ac-signature": sig },
+      body: JSON.stringify({ nonce: ch.nonce, ts, hwid: "HWID-OK-1", vanguard_on: true, faceit_ac_on: false }),
+    }),
+    env,
+    new URL("https://int.vants.cc/ai/anticheat/heartbeat"),
+    "/ai/anticheat/heartbeat",
+    "POST",
+    H,
+  );
+  assert.equal(rOk!.status, 200);
+  const bOk = (await rOk!.json()) as any;
+  assert.equal(bOk.ttl, 60);
+  assert.equal(bOk.ac.code, "vanguard");
+  assert.equal(bOk.ac.badge, "Vanguard ON");
+  assert.equal(kvStore.get("ac_status:google-oauth2|player-pc-1")?.ttl, 60);
+
+  // 4) Replay del mismo nonce -> 401
+  const rReplay = await rutasVantsAi(
+    new Request("https://int.vants.cc/ai/anticheat/heartbeat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vants-ac-signature": sig },
+      body: JSON.stringify({ nonce: ch.nonce, ts, hwid: "HWID-OK-1", vanguard_on: true, faceit_ac_on: false }),
+    }),
+    env,
+    new URL("https://int.vants.cc/ai/anticheat/heartbeat"),
+    "/ai/anticheat/heartbeat",
+    "POST",
+    H,
+  );
+  assert.equal(rReplay!.status, 401);
+});
+
+test("Módulo 2: /ai/torneo/arbitro envía embed rojo directo a DISCORD_WEBHOOK_DISPUTAS al escalar a staff", async () => {
+  const db = createAiMockD1();
+  const webhookPosts: any[] = [];
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string, init?: any) => {
+    const u = String(url);
+    if (u.startsWith("https://discord.com/api/webhooks/")) {
+      webhookPosts.push({ url: u, body: JSON.parse(String(init?.body || "{}")) });
+      return new Response(null, { status: 204 });
+    }
+    return new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    accion: "escalar_staff",
+                    respuesta: "Disputa escalada al staff para revisión de demo/POV.",
+                    motivo_staff: "Posible desconexión reiterada y disputa de ronda",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as any;
+
+  try {
+    const env = {
+      DB: db,
+      GEMINI_API_KEY: "test-gemini-key",
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+      DISCORD_WEBHOOK_DISPUTAS: "https://discord.com/api/webhooks/111111/fake-test-token",
+    };
+    const H = { json: jsonHelper, usuarioClaims: async () => ({ sub: "google-oauth2|owner-1" }) };
+    const req = new Request("https://int.vants.cc/ai/torneo/arbitro", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({
+        torneoId: "copa-valorant-ve",
+        torneo: { id: "copa-valorant-ve", nombre: "Copa VALORANT VE" },
+        autor: "CapitanB",
+        consulta: "El rival desconectó y pide reiniciar mapa",
+      }),
+    });
+    const res = await rutasVantsAi(req, env, new URL(req.url), "/ai/torneo/arbitro", "POST", H);
+    assert.equal(res!.status, 200);
+    assert.equal(webhookPosts.length, 1);
+    const payload = webhookPosts[0].body;
+    assert.deepEqual(payload.allowed_mentions, { parse: [] });
+    assert.equal(payload.embeds[0].color, 15158332);
+    assert.match(payload.embeds[0].title, /Alerta de Cheater \/ Disputa/);
+    assert.equal(payload.embeds[0].url, "https://vants.cc/torneos/copa-valorant-ve");
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
+test("Módulo 4: Formularios nativos persisten en D1, generan link Calendar sin OAuth y envían correo oficial desde @vants.cc", async () => {
+  resetFormulariosCacheForTests();
+  const db = createSentinelAndFormsMockD1();
+  const emailsSent: any[] = [];
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async (url: string, init?: any) => {
+    if (String(url) === "https://api.resend.com/emails") {
+      emailsSent.push(JSON.parse(String(init?.body || "{}")));
+      return new Response(JSON.stringify({ id: "re_mock_1" }), { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  }) as any;
+
+  try {
+    const env = {
+      DB: db,
+      RESEND_API_KEY: "re_test_key",
+      SITE_URL: "https://vants.cc",
+    };
+    const H = {
+      json: jsonHelper,
+      usuarioClaims: async () => ({ sub: "google-oauth2|owner-1", email: "cap@vants.cc", name: "Capitan" }),
+    };
+
+    const reqPost = new Request("https://int.vants.cc/formularios/enviar", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        tipo: "inscripcion_torneo",
+        nombre: "Carlos",
+        email: "carlos@equipo.gg",
+        organizacion: "VANTS Alpha",
+        tag: "VNTS",
+        juego: "valorant",
+        torneo_slug: "copa-valorant-ve",
+        fecha_inicio: "2026-12-01T21:00:00.000Z",
+      }),
+    });
+    const resPost = await rutasFormularios(reqPost, env, new URL(reqPost.url), "/formularios/enviar", "POST", H);
+    assert.equal(resPost!.status, 201);
+    const bodyPost = (await resPost!.json()) as any;
+    assert.equal(bodyPost.ok, true);
+    assert.equal(bodyPost.email_enviado, true);
+    assert.match(bodyPost.calendar_url, /^https:\/\/calendar\.google\.com\/calendar\/render\?action=TEMPLATE/);
+    assert.equal(db.formularios.length, 1);
+    assert.equal(emailsSent.length, 2); // confirmación al remitente + aviso a torneos@vants.cc
+    assert.match(emailsSent[0].from, /torneos@vants\.cc/);
+    assert.match(emailsSent[0].html, /Agregar a Google Calendar/);
+
+    // GET /formularios/envios devuelve los registros para exportar a Google Sheets
+    const reqGet = new Request("https://int.vants.cc/formularios/envios");
+    const resGet = await rutasFormularios(reqGet, env, new URL(reqGet.url), "/formularios/envios", "GET", H);
+    assert.equal(resGet!.status, 200);
+    const bodyGet = (await resGet!.json()) as any;
+    assert.equal(bodyGet.envios.length, 1);
+    assert.equal(bodyGet.envios[0].organizacion, "VANTS Alpha");
   } finally {
     globalThis.fetch = fetchOrig;
   }

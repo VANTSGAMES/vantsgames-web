@@ -180,9 +180,21 @@ test("OpenID Connect Discovery, root JWKS, userinfo, and Google OAuth 2.0 access
   assert.equal(uiBody.sub, "google-oauth2|1099");
   assert.equal(uiBody.email, "feiss@vants.cc");
 
-  // 3) verificarJwtDual validates Google OAuth 2.0 access tokens (ya29.*) via Google userinfo
+  // 3) verificarJwtDual validates Google OAuth 2.0 access tokens (ya29.*) via tokeninfo + Google userinfo
+  const seenUrls: string[] = [];
   const claims = await verificarJwtDual("ya29.a0AfH6SMBx_fake_google_workspace_token_12345", env, {
     fetchImpl: async (url: string) => {
+      seenUrls.push(url);
+      if (url.startsWith("https://oauth2.googleapis.com/tokeninfo?access_token=")) {
+        return new Response(
+          JSON.stringify({
+            aud: env.GOOGLE_OAUTH_CLIENT_ID,
+            azp: env.GOOGLE_OAUTH_CLIENT_ID,
+            scope: "openid email profile https://www.googleapis.com/auth/drive.file",
+          }),
+          { status: 200 },
+        );
+      }
       assert.equal(url, "https://www.googleapis.com/oauth2/v3/userinfo");
       return new Response(
         JSON.stringify({
@@ -195,6 +207,7 @@ test("OpenID Connect Discovery, root JWKS, userinfo, and Google OAuth 2.0 access
       );
     },
   });
+  assert.equal(seenUrls.length, 2);
   assert.equal(claims.provider, "google");
   assert.equal(claims.sub, "google-oauth2|103921098105477052247");
   assert.equal(claims.email, "geimerjhoan099@gmail.com");
@@ -320,4 +333,29 @@ async function main(request, env, ctx) {
   assert.equal(patched.includes("/* VANTS_WELL_KNOWN_OIDC_V1 */"), true);
   assert.equal(patched.includes("/.well-known/openid-configuration"), true);
   assert.equal(patched.includes("style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com;"), true);
+});
+
+test("GET /pro/config-status exposes only 4 non-sensitive Google scopes and Resend @vants.cc status", async () => {
+  const json = (b: any, s = 200) =>
+    new Response(JSON.stringify(b), { status: s, headers: { "content-type": "application/json" } });
+  const res = await rutasGooglePro(
+    new Request("https://int.vants.cc/pro/config-status"),
+    { RESEND_API_KEY: "re_test_key" },
+    new URL("https://int.vants.cc/pro/config-status"),
+    "/pro/config-status",
+    "GET",
+    { json },
+  );
+  assert.equal(res?.status, 200);
+  const body = (await res!.json()) as any;
+  assert.deepEqual(body.scopes, [
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/drive.file",
+  ]);
+  assert.equal(body.emailProvider.provider, "resend");
+  assert.equal(body.emailProvider.configured, true);
+  assert.match(body.emailProvider.torneosFrom, /torneos@vants\.cc/);
+  assert.match(body.emailProvider.contactoFrom, /contacto@vants\.cc/);
 });

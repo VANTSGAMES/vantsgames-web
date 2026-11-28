@@ -23,6 +23,10 @@ jobs:
           node --check src/perfiles.js
           node --check src/insignias.js
           node --check src/vantsAi.js
+          node --check src/sentinelAc.js
+          node --check src/formularios.js
+          node --check src/email.js
+          node --check src/auth.js
           node --check src/comms.js
       - name: Migraciones D1 (idempotentes)
         run: |
@@ -32,9 +36,13 @@ jobs:
               break
             }
           done
+          # Añadir ac_obligatorio a pt_torneos de forma idempotente si todavía no existe
+          if ! npx -y wrangler@4 d1 execute vants-db --remote --command "PRAGMA table_info(pt_torneos);" --json 2>/dev/null | grep -q '"ac_obligatorio"'; then
+            npx -y wrangler@4 d1 execute vants-db --remote --command "ALTER TABLE pt_torneos ADD COLUMN ac_obligatorio INTEGER NOT NULL DEFAULT 0;" --yes || true
+          fi
       - name: Deploy
         run: npx -y wrangler@4 deploy
-      - name: Secretos de Epic / Fortnite, Riot Games, VANTS Identity y VANTS Core AI
+      - name: Secretos de Epic / Fortnite, Riot Games, VANTS Identity, VANTS Core AI y Sentinel Anti-Cheat
         env:
           EPIC_CLIENT_SECRET: ${{ secrets.EPIC_CLIENT_SECRET }}
           FORTNITE_API_KEY: ${{ secrets.FORTNITE_API_KEY }}
@@ -49,6 +57,9 @@ jobs:
           AI_GATEWAY_URL: ${{ secrets.AI_GATEWAY_URL }}
           VANTS_BUS_SECRET: ${{ secrets.VANTS_BUS_SECRET }}
           VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
+          DISCORD_WEBHOOK_DISPUTAS: ${{ secrets.DISCORD_WEBHOOK_DISPUTAS }}
+          VANTS_PC_AC_SECRET: ${{ secrets.VANTS_PC_AC_SECRET }}
+          STEAM_API_KEY: ${{ secrets.STEAM_API_KEY }}
         run: |
           if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
           if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
@@ -63,6 +74,9 @@ jobs:
           if [ -n "$AI_GATEWAY_URL" ]; then printf '%s' "$AI_GATEWAY_URL" | npx -y wrangler@4 secret put AI_GATEWAY_URL; fi
           if [ -n "$VANTS_BUS_SECRET" ]; then printf '%s' "$VANTS_BUS_SECRET" | npx -y wrangler@4 secret put VANTS_BUS_SECRET; fi
           if [ -n "$VANTS_INTERNAL_SECRET" ]; then printf '%s' "$VANTS_INTERNAL_SECRET" | npx -y wrangler@4 secret put VANTS_INTERNAL_SECRET; fi
+          if [ -n "$DISCORD_WEBHOOK_DISPUTAS" ]; then printf '%s' "$DISCORD_WEBHOOK_DISPUTAS" | npx -y wrangler@4 secret put DISCORD_WEBHOOK_DISPUTAS; fi
+          if [ -n "$VANTS_PC_AC_SECRET" ]; then printf '%s' "$VANTS_PC_AC_SECRET" | npx -y wrangler@4 secret put VANTS_PC_AC_SECRET; fi
+          if [ -n "$STEAM_API_KEY" ]; then printf '%s' "$STEAM_API_KEY" | npx -y wrangler@4 secret put STEAM_API_KEY; fi
       - name: Sincronizar secretos compartidos en GitHub y Cloudflare (idempotente, sin exponer valores)
         env:
           PAT1: ${{ secrets.VANTS_GH_PAT_SECRETS }}
@@ -186,6 +200,9 @@ jobs:
               }
 
               console.log(`[estado] GEMINI_API_KEY -> Cloudflare(vants-integraciones): ${cfInt.has("GEMINI_API_KEY")}, GitHub(vantsgames-web): ${ghWeb.has("GEMINI_API_KEY")}`);
+              console.log(`[estado] DISCORD_WEBHOOK_DISPUTAS -> Cloudflare(vants-integraciones): ${cfInt.has("DISCORD_WEBHOOK_DISPUTAS")}, GitHub(vantsgames-web): ${ghWeb.has("DISCORD_WEBHOOK_DISPUTAS")}`);
+              console.log(`[estado] VANTS_PC_AC_SECRET -> Cloudflare(vants-integraciones): ${cfInt.has("VANTS_PC_AC_SECRET")}, GitHub(vantsgames-web): ${ghWeb.has("VANTS_PC_AC_SECRET")}`);
+              console.log(`[estado] RESEND_API_KEY -> Cloudflare(vants-integraciones): ${cfInt.has("RESEND_API_KEY")}, GitHub(vantsgames-web): ${ghWeb.has("RESEND_API_KEY")}`);
               console.log(`[estado] VANTS_BOT_SECRET -> Cloudflare(vantsbot): ${cfBot.has("VANTS_BOT_SECRET")}, GitHub(vantsbot-cf): ${ghBot.has("VANTS_BOT_SECRET")}`);
             })().catch((e) => { console.error(String(e)); process.exit(1); });
           '
