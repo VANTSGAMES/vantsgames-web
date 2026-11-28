@@ -26,13 +26,14 @@
       <p>Compartimos únicamente los datos estrictamente necesarios con proveedores tecnológicos que operan bajo medidas de seguridad y acuerdos de tratamiento:</p>
       <ul>
         <li><b>Cloudflare</b> — alojamiento, CDN, Workers, base de datos D1 y seguridad perimetral (cabeceras, límites de tasa y mitigación de ataques).</li>
-        <li><b>Google (OAuth 2.0 / Workspace)</b> — autenticación opcional con cuenta de Google e integraciones opcionales del Centro Workspace que el usuario autoriza expresamente.</li>
-        <li><b>Resend</b> — envío de correos transaccionales (códigos OTP de 6 dígitos para iniciar sesión y notificaciones del servicio).</li>
+        <li><b>Google (OAuth 2.0 / Workspace)</b> — inicio de sesión único y exportación voluntaria de archivos en Google Drive mediante permisos exclusivamente no sensibles (<code>openid</code>, <code>email</code>, <code>profile</code> y <code>https://www.googleapis.com/auth/drive.file</code>).</li>
+        <li><b>Resend</b> — envío de correos transaccionales oficiales desde <code>@vants.cc</code> (códigos OTP de 6 dígitos, confirmaciones de torneos y soporte).</li>
         <li><b>Stripe</b> — procesamiento seguro de pagos y suscripciones bajo el estándar PCI DSS.</li>
         <li><b>Discord</b> — comunidad oficial y avisos operativos internos de soporte y registros.</li>
         <li><b>Proveedores de juego vinculados voluntariamente</b> — FACEIT, Twitch, Steam, Riot Games (vía Riot Sign On y API oficial) y Epic Games (Fortnite), únicamente cuando el jugador vincula voluntariamente dichas integraciones.</li>
         <li><b>GitHub</b> — alojamiento del código fuente y despliegues automatizados.</li>
       </ul>
+      <p><b>Política de Datos de Usuario de los Servicios API de Google (Uso Limitado / Limited Use):</b> VANTS GAMES solicita únicamente permisos no sensibles de Google (<code>openid</code>, <code>email</code>, <code>profile</code> y <code>https://www.googleapis.com/auth/drive.file</code>), lo que limita cualquier acceso de Drive exclusivamente a archivos creados o seleccionados por el propio usuario dentro de VANTS (por ejemplo, exportar envíos de formularios a Google Sheets). VANTS GAMES nunca solicita acceso a tu bandeja de Gmail, a todo tu Google Drive ni a tu Google Calendar. El uso y la transferencia a cualquier otra aplicación de la información recibida de las APIs de Google por parte de VANTS GAMES cumplirá estrictamente con la <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, incluidos los requisitos de Uso Limitado (<em>Limited Use requirements</em>).</p>
       <p>Las vistas públicas de la plataforma (ranking, torneos, calendario, fichas públicas) nunca exponen tu dirección de correo electrónico ni tus tokens internos de sesión.</p>
     <h2><span class="num">06</span> COOKIES Y ALMACENAMIENTO LOCAL</h2>
       <p>Usamos una cookie técnica estrictamente necesaria (<code>HttpOnly</code>, cifrada y rotativa) para mantener tu sesión activa en VANTS Identity, además del almacenamiento local del navegador para preferencias de interfaz. Puedes cerrar sesión en cualquier momento desde el botón <b>Salir</b> o borrar las cookies y datos del sitio desde la configuración de tu navegador.</p>

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useLocation, useParams, useSearch } from "wouter";
 import { useApi } from "@/lib/useApi";
-import { api, assetUrl, type Paged, type Tournament, type Match } from "@/lib/api";
+import { api, assetUrl, esAppNativa, type Paged, type Tournament, type Match } from "@/lib/api";
 import { useAuth, AUTH_ENABLED } from "@/lib/auth";
 import { PageHead, Section, Empty, Skel, ErrorBox, AuthGate, GameTag } from "@/components/ui-vants";
 import { TournamentRow, MatchRow } from "@/components/domain";
@@ -18,9 +18,14 @@ import {
 import { classifyBracketStatus, filterBracketMatches, type BracketStatusFilter } from "@/lib/competitive";
 import { useMembresia } from "@/lib/useMembresia";
 import { useFeedback } from "@/components/FeedbackProvider";
-import { useQueryClient } from "@tanstack/react-query";
-import { LanzadorRapidoTorneo } from "@/components/DispositivosJuegos";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { buildGoogleCalendarLink } from "@/lib/googleWorkspace";
 import { SalaTorneoLive } from "@/components/torneos/SalaTorneoLive";
+
+const VANTS_PC_RELEASES = "https://github.com/VANTSGAMES/banter/releases/latest";
+const LanzadorRapidoTorneoLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.LanzadorRapidoTorneo })),
+);
 
 const JUEGOS = filtrosJuegos();
 const POR_PAGINA = 12;
@@ -204,7 +209,11 @@ export function TorneosLista({ competir = false }: { competir?: boolean }) {
           totalTodos={todosItems.length}
         />
 
-        {juego ? <LanzadorRapidoTorneo juegoSlug={juego} /> : null}
+        {juego && esAppNativa() ? (
+          <Suspense fallback={null}>
+            <LanzadorRapidoTorneoLazy juegoSlug={juego} />
+          </Suspense>
+        ) : null}
 
         <div className="panel" data-testid="panel-lista-torneos">
           {q.isLoading ? (
@@ -276,14 +285,23 @@ const BRACKET_STATUS_FILTERS: { v: BracketStatusFilter; l: string }[] = [
   { v: "pending", l: "Pendientes" },
 ];
 
-export function Bracket({ torneo }: { torneo: string }) {
-  const q = useApi<{ equipos: any[]; bracket: Llave[] }>("/api/torneos/bracket?torneo=" + encodeURIComponent(torneo));
+export function Bracket({
+  torneo,
+  preloaded,
+}: {
+  torneo: string;
+  preloaded?: { equipos: any[]; bracket: Llave[] } | null;
+}) {
+  const q = useApi<{ equipos: any[]; bracket: Llave[] }>("/api/torneos/bracket?torneo=" + encodeURIComponent(torneo), {
+    enabled: preloaded === undefined,
+  });
   const [teamQuery, setTeamQuery] = useState("");
   const [roundFilter, setRoundFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<BracketStatusFilter>("todos");
   const [compact, setCompact] = useState(false);
 
-  const allMatches = q.data?.bracket || [];
+  const bracketData = preloaded !== undefined ? preloaded : q.data;
+  const allMatches = bracketData?.bracket || [];
   const roundNames = useMemo(() => {
     const seen = new Set<string>();
     for (const l of allMatches) seen.add(String(l.ronda));
@@ -306,8 +324,8 @@ export function Bracket({ torneo }: { torneo: string }) {
     return Array.from(m.entries());
   }, [allMatches, roundFilter, statusFilter, teamQuery]);
 
-  if (q.isLoading) return <Skel h={80} n={2} />;
-  if (q.error && q.error.code !== "sin_datos") return <ErrorBox error={q.error} what="el bracket" onRetry={() => q.refetch()} />;
+  if (preloaded === undefined && q.isLoading) return <Skel h={80} n={2} />;
+  if (preloaded === undefined && q.error && q.error.code !== "sin_datos") return <ErrorBox error={q.error} what="el bracket" onRetry={() => q.refetch()} />;
   if (allMatches.length === 0)
     return <Empty code="bracket · sin sembrar" title="El bracket aún no se ha generado" text="Se genera en el servidor cuando cierran las inscripciones y se confirman los equipos." />;
 
@@ -476,6 +494,12 @@ function Inscripcion({ t }: { t: Tournament }) {
     );
   }
   if (st.k === "ok") {
+    const calendarHref = buildGoogleCalendarLink({
+      titulo: `Torneo VANTS: ${t.nombre}`,
+      detalles: `Equipo ${form.equipo}${form.tag ? ` [${form.tag}]` : ""} · Capitán: ${form.capitan} · Ficha oficial: https://vants.cc/torneos/${t.slug}`,
+      ubicacion: `https://vants.cc/torneos/${t.slug}`,
+      inicioIso: t.starts_at || undefined,
+    });
     return (
       <div className="grid gap-4" data-testid="inscripcion-ok">
         <div className="empty" style={{ borderColor: "rgba(61,220,132,.4)" }} role="status">
@@ -483,7 +507,15 @@ function Inscripcion({ t }: { t: Tournament }) {
           <span className="empty-code" style={{ color: "var(--ok)" }}>inscripción · pendiente</span>
           <p className="d-3">Solicitud registrada</p>
           <p className="small muted">La organización revisará la inscripción de <strong>{form.equipo}</strong>{form.tag ? <span className="num"> [{form.tag}]</span> : null} en <strong>{t.nombre}</strong>.</p>
-          <p className="small muted">Recibirás un correo de confirmación y el estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link>.</p>
+          <p className="small muted">Recibirás un correo de confirmación desde <strong>torneos@vants.cc</strong> y el estado aparecerá en <Link href="/perfil/torneos" className="link-arrow">Mis torneos</Link>.</p>
+          <div className="flex flex-wrap gap-2 mt-3 justify-center">
+            <a href={calendarHref} target="_blank" rel="noopener noreferrer" className="btn btn-sm" data-testid="btn-inscripcion-calendar">
+              📅 Agregar a Google Calendar
+            </a>
+            <a href={VANTS_PC_RELEASES} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-ghost">
+              Descargar VANTS PC ↗
+            </a>
+          </div>
         </div>
         {mem.sinPlan && <UpsellPlan motivo="inscripcion" />}
       </div>
@@ -502,7 +534,14 @@ function Inscripcion({ t }: { t: Tournament }) {
       // Correo de confirmación al capitán (lo omite el worker si no hay email o API key).
       api("/int/email/inscripcion", { method: "POST", auth: true, body: { torneo: t.slug } }).catch(() => null);
     } catch (err: any) {
-      const m: Record<string, string> = { equipo_ya_inscrito: "Ese equipo ya está inscrito en este torneo.", datos_invalidos: "Revisa los datos del equipo.", sin_sesion: "Tu sesión expiró.", "Origen no permitido": "Este dominio aún no está autorizado por la API para inscribir equipos." };
+      const m: Record<string, string> = {
+        equipo_ya_inscrito: "Ese equipo ya está inscrito en este torneo.",
+        datos_invalidos: "Revisa los datos del equipo.",
+        sin_sesion: "Tu sesión expiró.",
+        cuenta_bloqueada_anticheat: "Tu cuenta tiene un bloqueo activo de VANTS Sentinel Anti-Cheat y no puede inscribirse.",
+        anticheat_requerido: "Este torneo requiere VANTS PC activo con Anti-Cheat oficial.",
+        "Origen no permitido": "Este dominio aún no está autorizado por la API para inscribir equipos.",
+      };
       setSt({ k: "error", msg: m[err.code] || "No se pudo registrar la inscripción (" + err.code + ")." });
     }
   };
@@ -553,17 +592,26 @@ export function UpsellPlan({ motivo }: { motivo: "inscripcion" | "ranked" | "cli
 }
 
 function GuardarTorneoBtn({ t }: { t: Tournament }) {
+  const { status, login } = useAuth();
   const { toast } = useFeedback();
   const [saving, setSaving] = useState(false);
   const [savedId, setSavedId] = useState<number | null>(null);
 
+  const calendarHref = buildGoogleCalendarLink({
+    titulo: `Torneo VANTS: ${t.nombre}`,
+    detalles: `Torneo oficial en VANTS GAMES · https://vants.cc/torneos/${t.slug}`,
+    ubicacion: `https://vants.cc/torneos/${t.slug}`,
+    inicioIso: t.starts_at || undefined,
+  });
+
   const toggleBookmark = async () => {
+    if (status !== "autenticado") {
+      login({ returnTo: "/torneos/" + t.slug });
+      return;
+    }
     setSaving(true);
     try {
       const ws = await import("@/lib/googleWorkspace");
-      if (!ws.getCurrentWorkspaceUser()) {
-        await ws.signInWithGoogleBasic();
-      }
       if (savedId) {
         await ws.proApi(`/api/pro/bookmarks/${savedId}`, { method: "DELETE" });
         setSavedId(null);
@@ -594,6 +642,9 @@ function GuardarTorneoBtn({ t }: { t: Tournament }) {
       >
         {saving ? "Guardando…" : savedId ? "Guardado en Workspace" : "Guardar torneo"}
       </button>
+      <a href={calendarHref} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-ghost" data-testid="button-torneo-calendar">
+        📅 Agregar a Google Calendar
+      </a>
       <Link href="/workspace" className="btn btn-sm btn-ghost">
         Organizar en Workspace
       </Link>
@@ -601,26 +652,86 @@ function GuardarTorneoBtn({ t }: { t: Tournament }) {
   );
 }
 
+interface TorneoDetalleBundle {
+  torneo: Tournament;
+  bracketData: { equipos: any[]; bracket: Llave[] } | null;
+  partidos: Match[];
+}
+
 export function TorneoDetalle() {
   const { slug } = useParams<{ slug: string }>();
-  const q = useApi<{ data: Tournament }>("/api/tournaments/" + slug);
   const [tab, setTab] = useState("resumen");
+
+  // Carga en paralelo (Promise.all) de torneo, equipos/bracket y partidos sin bloquear por WebSocket.
+  const q = useQuery<TorneoDetalleBundle, any>({
+    queryKey: ["torneo-detalle-paralelo", slug],
+    enabled: Boolean(slug),
+    staleTime: 45_000,
+    queryFn: async () => {
+      const safeSlug = encodeURIComponent(slug || "");
+      const [torneoRes, bracketRes, liveRes, upcomingRes, finishedRes] = await Promise.all([
+        api<{ data: Tournament }>("/api/tournaments/" + safeSlug),
+        api<{ equipos: any[]; bracket: Llave[] }>("/api/torneos/bracket?torneo=" + safeSlug).catch(() => ({ equipos: [], bracket: [] })),
+        api<{ data: Paged<Match> }>("/api/matches?estado=live&porPagina=50").catch(() => null),
+        api<{ data: Paged<Match> }>("/api/matches?estado=upcoming&porPagina=50").catch(() => null),
+        api<{ data: Paged<Match> }>("/api/matches?estado=finished&porPagina=50").catch(() => null),
+      ]);
+      const partidos = [
+        ...(liveRes?.data?.items || []),
+        ...(upcomingRes?.data?.items || []),
+        ...(finishedRes?.data?.items || []),
+      ].filter((m) => m.tournament_slug === torneoRes.data.slug);
+      return {
+        torneo: torneoRes.data,
+        bracketData: bracketRes,
+        partidos,
+      };
+    },
+  });
+
   if (q.isLoading) return <div className="wrap py-16"><Skel n={4} /></div>;
-  if (q.error) return <div className="wrap py-16">{q.error.status === 404 ? <Empty code="404 · torneo" title="Este torneo no existe o fue retirado" action={<Link href="/torneos" className="link-arrow">Volver a torneos →</Link>} /> : <ErrorBox error={q.error} what="el torneo" onRetry={() => q.refetch()} />}</div>;
-  const t = q.data!.data;
+  if (q.error || !q.data) {
+    return (
+      <div className="wrap py-16">
+        {q.error?.status === 404 ? (
+          <Empty code="404 · torneo" title="Este torneo no existe o fue retirado" action={<Link href="/torneos" className="link-arrow">Volver a torneos →</Link>} />
+        ) : (
+          <ErrorBox error={q.error} what="el torneo" onRetry={() => q.refetch()} />
+        )}
+      </div>
+    );
+  }
+
+  const t = q.data.torneo;
   const premio = t.prize ? dinero(t.prize.value, t.prize.currency) : null;
+  const acObligatorio = Boolean(t.ac_obligatorio);
+  const juegoSlug = String(t.game?.slug || "").toLowerCase();
+  const acRequeridoLabel =
+    juegoSlug.includes("valorant")
+      ? "Riot Vanguard"
+      : juegoSlug.includes("cs") || juegoSlug.includes("counter")
+        ? "FACEIT AC"
+        : "Riot Vanguard / FACEIT AC";
+  const nativo = esAppNativa();
+
   return (
     <>
       <header className="border-b" style={{ borderColor: "var(--linea-suave)", background: "var(--grafito-1)" }}>
         <div className="wrap py-10 md:py-14 grid gap-8 md:grid-cols-[1fr_auto] items-end">
           <div>
             <Link href="/torneos" className="link-arrow mb-5">← Torneos</Link>
-            <div className="flex flex-wrap gap-1.5 mb-4"><GameTag g={t.game} />{t.major && <span className="tag tag-rojo">Major</span>}{t.region && <span className="tag">{t.region}</span>}{t.is_demo && <span className="tag tag-aviso">Demo</span>}</div>
+            <div className="flex flex-wrap gap-1.5 mb-4">
+              <GameTag g={t.game} />
+              {t.major && <span className="tag tag-rojo">Major</span>}
+              {acObligatorio && <span className="tag tag-rojo">🛡️ Anti-Cheat obligatorio</span>}
+              {t.region && <span className="tag">{t.region}</span>}
+              {t.is_demo && <span className="tag tag-aviso">Demo</span>}
+            </div>
             <h1 className="d-1">{t.nombre}</h1>
             {t.descripcion && <p className="lead mt-4">{t.descripcion}</p>}
             <GuardarTorneoBtn t={t} />
           </div>
-          {t.logo_url && <img src={assetUrl(t.logo_url)!} alt="" width={120} height={120} className="chamfer" />}
+          {t.logo_url && <img src={assetUrl(t.logo_url)!} alt="" width={120} height={120} loading="lazy" decoding="async" className="chamfer" />}
         </div>
         <div className="wrap grid grid-cols-2 md:grid-cols-5 gap-px pb-0" style={{ background: "var(--linea-suave)" }}>
           {[
@@ -632,11 +743,47 @@ export function TorneoDetalle() {
           ].map(([k, v]) => <div key={k} className="p-4" style={{ background: "var(--grafito-1)" }}><div className="eyebrow mb-1">{k}</div><div className="num">{v}</div></div>)}
         </div>
       </header>
-      {t.game?.slug && (
-        <div className="wrap mt-6">
-          <LanzadorRapidoTorneo juegoSlug={t.game.slug} nombreTorneo={t.nombre} />
+
+      {/* Banner Jugar desde VANTS PC (destacado para torneos con ac_obligatorio) */}
+      <div className="wrap mt-6">
+        <div
+          className="panel panel-pad chamfer flex flex-wrap items-center justify-between gap-4"
+          style={{
+            background: acObligatorio ? "rgba(255,13,46,0.08)" : "#111113",
+            borderColor: acObligatorio ? "rgba(255,13,46,0.45)" : "var(--linea-suave)",
+          }}
+          data-testid="torneo-vants-pc-banner"
+        >
+          <div className="grid gap-1" style={{ maxWidth: "60ch" }}>
+            <div className="eyebrow" style={{ color: acObligatorio ? "#ff5468" : "var(--gris-2)" }}>
+              {acObligatorio ? "🛡️ VANTS Sentinel · Anti-Cheat obligatorio" : "🖥️ App de escritorio · VANTS PC"}
+            </div>
+            <div className="d-3">Jugar desde VANTS PC</div>
+            <p className="small muted">
+              {acObligatorio
+                ? `Este torneo requiere VANTS PC abierto con ${acRequeridoLabel} activo. El latido firmado cada 30 s desbloquea tu acceso y muestra tu sello verificado en la sala.`
+                : `Inicia la sala desde VANTS PC para validar ${acRequeridoLabel} en tiempo real, recibir avisos en escritorio y grabar tus clips competitivos.`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <a href={`vants://torneo/${encodeURIComponent(t.slug)}`} className="btn btn-sm btn-rojo" data-testid="btn-jugar-vants-pc">
+              Abrir en VANTS PC
+            </a>
+            <a href={VANTS_PC_RELEASES} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-ghost" data-testid="btn-descargar-vants-pc">
+              Descargar VANTS PC ↗
+            </a>
+          </div>
+        </div>
+      </div>
+
+      {t.game?.slug && nativo && (
+        <div className="wrap mt-4">
+          <Suspense fallback={null}>
+            <LanzadorRapidoTorneoLazy juegoSlug={t.game.slug} nombreTorneo={t.nombre} />
+          </Suspense>
         </div>
       )}
+
       <div className="wrap mt-6">
         <div className="tabs" role="tablist">
           {[["resumen", "Resumen"], ["sala", "Sala en vivo"], ["bracket", "Bracket"], ["partidos", "Partidos"]].map(([v, l]) => <button key={v} role="tab" className="tab" aria-selected={tab === v} onClick={() => setTab(v)} data-testid={"tab-torneo-" + v}>{l}</button>)}
@@ -652,7 +799,7 @@ export function TorneoDetalle() {
               <div>
                 <div className="eyebrow mb-1" style={{ color: "#ff5468" }}>En directo · VANTS Realtime</div>
                 <div className="d-3">Sala en vivo del torneo</div>
-                <p className="small muted mt-1">Chat oficial, marcador en directo, Árbitro IA (<code>!arbitro</code>) y crónicas automáticas del Caster IA.</p>
+                <p className="small muted mt-1">Chat oficial efímero, marcador en directo, sellos Anti-Cheat, Árbitro IA (<code>!arbitro</code>) y crónicas automáticas del Caster IA.</p>
               </div>
               <button
                 type="button"
@@ -664,41 +811,52 @@ export function TorneoDetalle() {
               </button>
             </div>
             <div><h2 className="d-3 mb-2">Inscripción</h2><p className="muted small">Cuota: {t.fee ? dinero(t.fee, "EUR") : "Sin coste"}. Cierre: {t.starts_at ? fecha(t.starts_at, { day: "2-digit", month: "long" }) : "por anunciar"}.</p></div>
-            <div><h2 className="d-3 mb-3">Equipos confirmados</h2><Participantes slug={t.slug} /></div>
+            <div><h2 className="d-3 mb-3">Equipos confirmados</h2><Participantes slug={t.slug} equiposPreloaded={q.data.bracketData?.equipos} /></div>
           </div>
           <aside className="panel panel-pad chamfer content-start"><h2 className="d-3 mb-4">Inscribir equipo</h2><Inscripcion t={t} /></aside>
         </div>
       )}
       {tab === "sala" && (
         <div className="wrap py-8">
-          <SalaTorneoLive torneoId={t.slug} torneoNombre={t.nombre} />
+          <SalaTorneoLive
+            torneoId={t.slug}
+            torneoNombre={t.nombre}
+            acObligatorio={acObligatorio}
+            juegoSlug={t.game?.slug}
+          />
         </div>
       )}
-      {tab === "bracket" && <div className="wrap py-8"><Bracket torneo={t.slug} /></div>}
-      {tab === "partidos" && <TorneoPartidos slug={t.slug} juego={t.game?.slug} />}
+      {tab === "bracket" && <div className="wrap py-8"><Bracket torneo={t.slug} preloaded={q.data.bracketData} /></div>}
+      {tab === "partidos" && <TorneoPartidos slug={t.slug} juego={t.game?.slug} preloaded={q.data.partidos} />}
     </>
   );
 }
 
-function Participantes({ slug }: { slug: string }) {
-  const q = useApi<{ equipos: any[] }>("/api/torneos/bracket?torneo=" + encodeURIComponent(slug));
-  const eq = (q.data?.equipos || []).filter((e) => e.status !== "pendiente");
-  if (q.isLoading) return <Skel n={2} h={44} />;
+function Participantes({ slug, equiposPreloaded }: { slug: string; equiposPreloaded?: any[] }) {
+  const q = useApi<{ equipos: any[] }>("/api/torneos/bracket?torneo=" + encodeURIComponent(slug), {
+    enabled: equiposPreloaded === undefined,
+  });
+  const fuente = equiposPreloaded !== undefined ? equiposPreloaded : q.data?.equipos || [];
+  const eq = fuente.filter((e) => e.status !== "pendiente");
+  if (equiposPreloaded === undefined && q.isLoading) return <Skel n={2} h={44} />;
   if (eq.length === 0) return <Empty code="equipos · 0" title="Ningún equipo confirmado todavía" />;
   return <div className="grid-auto grid sm:grid-cols-2">{eq.map((e) => <div key={e.id} className="p-3 flex gap-2 items-center"><span className="tag">{e.tag}</span><span className="font-semibold truncate">{e.name}</span></div>)}</div>;
 }
 
-function TorneoPartidos({ slug, juego }: { slug: string; juego?: string }) {
+function TorneoPartidos({ slug, juego, preloaded }: { slug: string; juego?: string; preloaded?: Match[] }) {
   const fin = juego ? "&juego=" + juego : "";
+  const needsFetch = preloaded === undefined;
   // Tres llamadas explícitas: los hooks no pueden llamarse dentro de un callback.
-  const qLive = useApi<{ data: Paged<Match> }>(`/api/matches?estado=live&porPagina=50${fin}`);
-  const qUpcoming = useApi<{ data: Paged<Match> }>(`/api/matches?estado=upcoming&porPagina=50${fin}`);
-  const qFinished = useApi<{ data: Paged<Match> }>(`/api/matches?estado=finished&porPagina=50${fin}`);
+  const qLive = useApi<{ data: Paged<Match> }>(`/api/matches?estado=live&porPagina=50${fin}`, { enabled: needsFetch });
+  const qUpcoming = useApi<{ data: Paged<Match> }>(`/api/matches?estado=upcoming&porPagina=50${fin}`, { enabled: needsFetch });
+  const qFinished = useApi<{ data: Paged<Match> }>(`/api/matches?estado=finished&porPagina=50${fin}`, { enabled: needsFetch });
   const qs = [qLive, qUpcoming, qFinished];
-  const all = qs.flatMap((q) => q.data?.data.items || []).filter((m) => m.tournament_slug === slug);
+  const all = preloaded !== undefined
+    ? preloaded
+    : qs.flatMap((q) => q.data?.data.items || []).filter((m) => m.tournament_slug === slug);
   return (
     <div className="wrap py-8"><div className="panel">
-      {qs.some((q) => q.isLoading) ? <Skel /> : all.length === 0 ? <Empty code="partidos · 0" title="Sin partidos publicados para este torneo" /> : all.map((m, i) => <MatchRow key={i} m={m} />)}
+      {needsFetch && qs.some((q) => q.isLoading) ? <Skel /> : all.length === 0 ? <Empty code="partidos · 0" title="Sin partidos publicados para este torneo" /> : all.map((m, i) => <MatchRow key={i} m={m} />)}
     </div></div>
   );
 }

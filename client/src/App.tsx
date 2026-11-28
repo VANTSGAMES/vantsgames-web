@@ -79,6 +79,7 @@ const RankingVants = lazy(() => import("./pages/Vants").then((m) => ({ default: 
 const Publicar = lazy(() => import("./pages/Vants").then((m) => ({ default: m.Publicar })));
 const CrearTorneo = lazy(() => import("./pages/CrearTorneo"));
 const Workspace = lazy(() => import("./pages/Workspace"));
+const FormulariosPagina = lazy(() => import("./components/FormulariosNativos").then((m) => ({ default: m.FormulariosNativos })));
 const Arena3D = lazy(() => import("./pages/Arena3D"));
 const BuscadorEquipo = lazy(() => import("./pages/BuscadorEquipo"));
 const ForoComunidad = lazy(() => import("./pages/ForoComunidad"));
@@ -164,6 +165,7 @@ function Rutas() {
           <Route path="/crear-torneo"><Priv seccion="La creación de torneos"><CrearTorneo /></Priv></Route>
           <Route path="/torneos/:slug"><Priv seccion="Este torneo"><TorneoDetalle /></Priv></Route>
           <Route path="/workspace"><Priv seccion="El Centro Workspace"><Workspace /></Priv></Route>
+          <Route path="/formularios">{() => <div className="wrap py-10"><FormulariosPagina /></div>}</Route>
           <Route path="/arena-3d"><Priv seccion="La Arena 3D"><Arena3D /></Priv></Route>
           <Route path="/agenda"><Priv seccion="La agenda en vivo"><Agenda modo="agenda" /></Priv></Route>
           <Route path="/resultados"><Priv seccion="Los resultados"><Agenda modo="resultados" /></Priv></Route>

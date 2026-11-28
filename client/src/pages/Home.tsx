@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
 import { Insignia3D, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useApi } from "@/lib/useApi";
@@ -13,7 +13,61 @@ import { PLANES } from "@/lib/planes";
 import { useAuth } from "@/lib/auth";
 import { useRanking, useEventos, FilaEvento } from "./Vants";
 import { NivelFaceit } from "./PerfilFaceit";
-import { LanzadorRapidoTorneo } from "@/components/DispositivosJuegos";
+
+const VANTS_PC_RELEASES = "https://github.com/VANTSGAMES/banter/releases/latest";
+const LanzadorRapidoTorneoLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.LanzadorRapidoTorneo })),
+);
+
+function EcosistemaPlataformas() {
+  return (
+    <section
+      className="panel panel-pad chamfer grid gap-4"
+      style={{ background: "#111113", borderColor: "var(--linea-suave)" }}
+      data-testid="home-plataformas"
+    >
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="eyebrow mb-1" style={{ color: "var(--rojo)" }}>Ecosistema modular VANTS</div>
+          <h2 className="d-3">Cada plataforma en su lugar · cero peso innecesario</h2>
+        </div>
+        <Link href="/formularios" className="btn btn-sm btn-ghost">
+          Formularios oficiales →
+        </Link>
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="p-4 border grid gap-2 content-between" style={{ borderColor: "var(--linea-suave)", background: "#0a0a0b" }}>
+          <div className="grid gap-1">
+            <span className="tag w-fit">Web · vants.cc</span>
+            <strong className="text-white text-sm">Torneos, brackets y Workspace</strong>
+            <p className="text-xs muted">Explora el circuito, inscríbete, gestiona formularios y consulta salas en vivo al instante.</p>
+          </div>
+          <Link href="/torneos" className="link-arrow text-xs">Ver torneos →</Link>
+        </div>
+        <div className="p-4 border grid gap-2 content-between" style={{ borderColor: "rgba(255,13,46,0.35)", background: "#0a0a0b" }}>
+          <div className="grid gap-1">
+            <span className="tag tag-rojo w-fit">Escritorio · VANTS PC</span>
+            <strong className="text-white text-sm">Competir con Anti-Cheat verificado</strong>
+            <p className="text-xs muted">Conecta Riot Vanguard y FACEIT AC con latido firmado, salas oficiales y clips automáticos.</p>
+          </div>
+          <a href={VANTS_PC_RELEASES} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-rojo w-fit" data-testid="home-cta-vants-pc">
+            Descargar VANTS PC ↗
+          </a>
+        </div>
+        <div className="p-4 border grid gap-2 content-between" style={{ borderColor: "var(--linea-suave)", background: "#0a0a0b" }}>
+          <div className="grid gap-1">
+            <span className="tag w-fit">Android · VANTS Móvil</span>
+            <strong className="text-white text-sm">App dedicada con Play Juegos</strong>
+            <p className="text-xs muted">Lanzador directo de juegos móviles, detección de apps instaladas y notificaciones.</p>
+          </div>
+          <a href={APP_APK} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-ghost w-fit" data-testid="home-cta-vants-apk">
+            Descargar APK Android ↗
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 /* ---------- Bloque 1 · Hero: titular + CTAs de bienvenida ---------- */
 function Hero() {
@@ -358,10 +412,16 @@ export default function Home() {
 
   return (
     <>
-      {/* Bloque 1 · Hero + lanzador directo de juegos + guía de bienvenida */}
+      {/* Bloque 1 · Hero + separación de plataformas (web) / lanzador nativo (Android) + guía */}
       <Hero />
       <div className="wrap pt-8">
-        <LanzadorRapidoTorneo compacto />
+        {esAppNativa() ? (
+          <Suspense fallback={null}>
+            <LanzadorRapidoTorneoLazy compacto />
+          </Suspense>
+        ) : (
+          <EcosistemaPlataformas />
+        )}
       </div>
       <div className="wrap pt-10">
         <ComoFunciona />

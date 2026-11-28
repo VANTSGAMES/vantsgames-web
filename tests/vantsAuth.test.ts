@@ -680,3 +680,60 @@ async function unlinkHandler(pool, sub, plataforma) {
   assert.doesNotThrow(() => new Function(patched));
 });
 
+test("Módulo 3 & 4: parchearVantsWorker inyecta VANTS_SENTINEL_AC_GATE_V1 y /api/formularios/* y /auth/google/start pide solo 4 scopes no sensibles", async () => {
+  const sample = `var AUTH0_TENANT = "vants.eu.auth0.com";
+async function infoDeSesion(token) {
+  if (!token) return null;
+  try {
+    const ui = await fetch("https://" + AUTH0_TENANT + "/userinfo", {
+      headers: { [AUTH_HEADER]: "Bearer " + token }
+    });
+    if (!ui.ok) return null;
+    const info = await ui.json();
+    return info && info.sub ? info : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function verifySesionJwt(request, env) {
+  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;
+  return null;
+}
+async function main(request, env, ctx) {
+    // 2. Activar Sitemap para Google y rutas de Kick
+    const rInicial = await manejarRutasSeoYKick(request, env);
+    if (rInicial) return rInicial;
+      const __r301 = await fetchWorker(request, env, ctx);
+  return __r301;
+}`;
+  const patched = parchearVantsWorker(sample);
+  assert.match(patched, /VANTS_SENTINEL_AC_GATE_V1/);
+  assert.match(patched, /cuenta_bloqueada_anticheat/);
+  assert.match(patched, /anticheat_requerido/);
+  assert.match(patched, /\/api\/formularios\//);
+  assert.equal(parchearVantsWorker(patched), patched);
+  assert.doesNotThrow(() => new Function(patched));
+
+  // Verificar /auth/google/start redirige con los 4 scopes no sensibles exactos
+  const resStart = await rutasAuth(
+    new Request("https://vants.cc/auth/google/start?returnTo=/workspace"),
+    {
+      GOOGLE_OAUTH_CLIENT_ID: "238603325169-test.apps.googleusercontent.com",
+      GOOGLE_OAUTH_CLIENT_SECRET: "secret-test",
+      VANTS_AUTH_PRIVATE_JWK: JSON.stringify({ kty: "RSA", n: "test" }),
+      VANTS_AUTH_STATE_SECRET: "state-secret-32chars-xxxxxxxxxxxx",
+      SITE_URL: "https://vants.cc",
+    },
+    new URL("https://vants.cc/auth/google/start?returnTo=/workspace"),
+    "/auth/google/start",
+    "GET",
+    { json: (b: any, s = 200) => new Response(JSON.stringify(b), { status: s }) },
+  );
+  assert.equal(resStart?.status, 302);
+  const loc = new URL(resStart!.headers.get("location")!);
+  assert.equal(
+    loc.searchParams.get("scope"),
+    "openid email profile https://www.googleapis.com/auth/drive.file",
+  );
+});
+

@@ -134,6 +134,7 @@ jobs:
           grep -c "VANTS_AI_CORE_PROXY_V1" src/worker.js
           grep -c "VANTS_RIOT_COMPLIANCE_V1" src/worker.js
           grep -c "VANTS_TORNEOS_LIVE_PROXY_V1" src/worker.js
+          grep -c "VANTS_SENTINEL_AC_GATE_V1" src/worker.js
           ! grep -qiE "api\.henrikdev|HENRIKDEV_API_KEY|valorantesports\.com|parseGprHtml|handleGpr|esportsCache|gprCache|valoCacheMod|/api/valorant/rango|/api/valorant/esports|/api/gpr" src/worker.js
 
       - name: Prueba en seco

@@ -1,46 +1,43 @@
+// client/src/pages/Workspace.tsx
+// Centro Google Workspace VANTS GAMES (1 solo inicio de sesión, scopes 100% no sensibles:
+// openid, email, profile, https://www.googleapis.com/auth/drive.file).
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "wouter";
 import { PageHead, Empty, Skel } from "@/components/ui-vants";
-import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { FormulariosNativos } from "@/components/FormulariosNativos";
 import { useFeedback } from "@/components/FeedbackProvider";
-import { JUEGOS, etiquetaJuego, opcionesJuegos } from "@/lib/juegos";
+import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { opcionesJuegos } from "@/lib/juegos";
 import { validateTacticalNote } from "@/lib/urlFilters";
 import {
-  GOOGLE_CLOUD_PROJECT_ID,
-  GOOGLE_CLOUD_PROJECT_NUMBER,
-  WORKSPACE_TEN_SERVICES,
-  GoogleAuthClientError,
-  createCalendarScrimEvent,
-  createGoogleTask,
-  createMeetBriefingRoom,
-  createRegistrationForm,
-  createTeamSponsorDeck,
-  createTournamentRulebookDoc,
-  createTournamentStandingsSheet,
-  initWorkspaceAuth,
+  GOOGLE_UNIFIED_SCOPES,
+  WORKSPACE_SERVICES,
+  buildGoogleCalendarLink,
+  exportarAGoogleSheetsConDriveFile,
+  hydrateUnifiedGoogleDriveToken,
   listDriveFiles,
-  listGoogleChatSpaces,
-  listGoogleTasks,
-  listRecentGmailMessages,
-  listUpcomingCalendarEvents,
   openGooglePicker,
   proApi,
-  sendGmailAnnouncement,
-  sendGoogleChatMessage,
-  signInWithGoogleWorkspace,
-  signOutGoogleWorkspace,
-  toggleGoogleTask,
-  verifyGrantedWorkspaceServices,
-  type AuthErrorDetail,
-  type CalendarEventItem,
-  type ChatSpaceItem,
+  syncWorkspaceUserFromVants,
   type DriveFileItem,
-  type GmailMessageSummary,
-  type GoogleTaskItem,
-  type WorkspaceUser,
 } from "@/lib/googleWorkspace";
 
-type TabKey = "archivos" | "agenda" | "comunicaciones" | "notas";
+type TabKey = "envios" | "formularios" | "archivos" | "notas";
+
+interface EnvioFormulario {
+  id: string;
+  tipo: string;
+  nombre: string;
+  email: string;
+  juego: string | null;
+  torneo_slug: string | null;
+  organizacion: string | null;
+  asunto: string | null;
+  estado: string;
+  calendar_url: string | null;
+  creado_en: string;
+}
 
 interface TacticalNote {
   id: number;
@@ -71,1296 +68,576 @@ interface TournamentBookmark {
   createdAt: string;
 }
 
-const SERVICE_LABELS: Record<string, string> = {
-  drive: "Drive",
-  docs: "Docs",
-  sheets: "Sheets",
-  slides: "Slides",
-  forms: "Forms",
-  calendar: "Calendar",
-  meet: "Meet",
-  tasks: "Tasks",
-  gmail: "Gmail",
-  chat: "Chat",
-};
-
-const WORKSPACE_SERVICES = [
-  { name: "Google Drive & Picker", desc: "Adjunta y organiza reglamentos, brackets y demos de tu equipo." },
-  { name: "Docs, Sheets & Slides", desc: "Genera reglamentos, hojas de resultados y decks para sponsors." },
-  { name: "Calendar, Meet & Tasks", desc: "Programa scrims, abre salas de briefing y controla tu checklist." },
-  { name: "Gmail, Forms & Chat", desc: "Envía convocatorias, abre registros de equipos y coordina espacios." },
-];
-
 export default function Workspace() {
-  const { confirm, toast } = useFeedback();
-  const [user, setUser] = useState<WorkspaceUser | null>(null);
-  const [hasToken, setHasToken] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
-  const [signingIn, setSigningIn] = useState(false);
-  const [authError, setAuthError] = useState<AuthErrorDetail | null>(null);
-  const [tab, setTab] = useState<TabKey>("archivos");
+  const { status, user, loginWithGoogle } = useAuth();
+  const { toast } = useFeedback();
+  const [tab, setTab] = useState<TabKey>("envios");
   const [selectedGame, setSelectedGame] = useState("valorant");
+  const [driveReady, setDriveReady] = useState(false);
 
-  // Cloud SQL backed state
+  // Estado D1 (Workspace Pro + Formularios nativos)
+  const [envios, setEnvios] = useState<EnvioFormulario[]>([]);
+  const [esOwnerEnvios, setEsOwnerEnvios] = useState(false);
   const [notes, setNotes] = useState<TacticalNote[]>([]);
   const [links, setLinks] = useState<WorkspaceLink[]>([]);
   const [bookmarks, setBookmarks] = useState<TournamentBookmark[]>([]);
-  const [loadingPro, setLoadingPro] = useState(false);
-
-  // Google Workspace live state
   const [driveFiles, setDriveFiles] = useState<DriveFileItem[]>([]);
-  const [events, setEvents] = useState<CalendarEventItem[]>([]);
-  const [tasks, setTasks] = useState<GoogleTaskItem[]>([]);
-  const [emails, setEmails] = useState<GmailMessageSummary[]>([]);
-  const [chatSpaces, setChatSpaces] = useState<ChatSpaceItem[]>([]);
-  const [chatNotice, setChatNotice] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [grantedServices, setGrantedServices] = useState<Record<string, boolean>>({});
+  const [lastSheetUrl, setLastSheetUrl] = useState<string | null>(null);
 
-  // Forms state
-  const [templateTitle, setTemplateTitle] = useState("Torneo VANTS Apertura");
+  // Generador de evento rápido para Google Calendar (cero OAuth)
   const [scrimTitle, setScrimTitle] = useState("Scrim Oficial VANTS");
   const [scrimDate, setScrimDate] = useState(() => {
     const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
     d.setMinutes(0, 0, 0);
     return d.toISOString().slice(0, 16);
   });
-  const [taskTitle, setTaskTitle] = useState("");
-  const [mailTo, setMailTo] = useState("");
-  const [mailSubject, setMailSubject] = useState("Convocatoria torneo VANTS GAMES");
-  const [mailBody, setMailBody] = useState("Hola equipo, confirmamos horario y check-in 30 minutos antes del inicio.");
-  const [chatSpace, setChatSpace] = useState("");
-  const [chatText, setChatText] = useState("");
+
+  // Notas tácticas
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [noteCategory, setNoteCategory] = useState("estrategia");
 
-  const loadProData = useCallback(async () => {
-    setLoadingPro(true);
+  const cargarTodo = useCallback(async () => {
+    if (status !== "autenticado") return;
+    setLoading(true);
     try {
-      const [notesRes, linksRes, bookmarksRes] = await Promise.all([
-        proApi<{ notes: TacticalNote[] }>("/api/pro/notes"),
-        proApi<{ links: WorkspaceLink[] }>("/api/pro/workspace-links"),
-        proApi<{ bookmarks: TournamentBookmark[] }>("/api/pro/bookmarks"),
+      const [notesRes, linksRes, bookmarksRes, enviosRes, driveTok] = await Promise.all([
+        proApi<{ notes: TacticalNote[] }>("/api/pro/notes").catch(() => ({ notes: [] })),
+        proApi<{ links: WorkspaceLink[] }>("/api/pro/workspace-links").catch(() => ({ links: [] })),
+        proApi<{ bookmarks: TournamentBookmark[] }>("/api/pro/bookmarks").catch(() => ({ bookmarks: [] })),
+        api<{ ok: boolean; owner: boolean; envios: EnvioFormulario[] }>("/api/formularios/envios", { auth: true }).catch(() => ({ ok: false, owner: false, envios: [] })),
+        hydrateUnifiedGoogleDriveToken(),
       ]);
       setNotes(notesRes.notes || []);
       setLinks(linksRes.links || []);
       setBookmarks(bookmarksRes.bookmarks || []);
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo sincronizar tu espacio", description: err.message });
+      setEnvios(enviosRes.envios || []);
+      setEsOwnerEnvios(Boolean(enviosRes.owner));
+      setDriveReady(Boolean(driveTok));
     } finally {
-      setLoadingPro(false);
+      setLoading(false);
     }
-  }, [toast]);
-
-  const loadWorkspaceTab = useCallback(
-    async (activeTab: TabKey) => {
-      if (!hasToken) return;
-      setBusyAction("load-" + activeTab);
-      try {
-        if (activeTab === "archivos") {
-          const files = await listDriveFiles(10);
-          setDriveFiles(files);
-        } else if (activeTab === "agenda") {
-          const [ev, ts] = await Promise.all([
-            listUpcomingCalendarEvents(8),
-            listGoogleTasks(),
-          ]);
-          setEvents(ev);
-          setTasks(ts);
-        } else if (activeTab === "comunicaciones") {
-          const msgs = await listRecentGmailMessages(6);
-          setEmails(msgs);
-          try {
-            const spaces = await listGoogleChatSpaces();
-            setChatSpaces(spaces);
-            setChatNotice(null);
-            if (spaces.length > 0 && !chatSpace) setChatSpace(spaces[0].name);
-          } catch (chatErr: any) {
-            setChatSpaces([]);
-            if (chatErr.status === 404 || /not found/i.test(chatErr.message || "")) {
-              setChatNotice(
-                "Google Chat requiere una cuenta Business/Enterprise de Google Workspace y configurar la app de Chat en Google Cloud Console.",
-              );
-            } else {
-              setChatNotice(chatErr.message || "Google Chat no está disponible para esta cuenta.");
-            }
-          }
-        }
-      } catch (err: any) {
-        toast({ kind: "error", title: "Error al consultar Google Workspace", description: err.message });
-      } finally {
-        setBusyAction(null);
-      }
-    },
-    [hasToken, chatSpace, toast],
-  );
+  }, [status]);
 
   useEffect(() => {
-    const unsub = initWorkspaceAuth(
-      (u, tokenPresent) => {
-        setUser(u);
-        setHasToken(tokenPresent);
-        setAuthReady(true);
-      },
-      () => {
-        setUser(null);
-        setHasToken(false);
-        setAuthReady(true);
-      },
-    );
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      loadProData();
-    } else {
-      setNotes([]);
-      setLinks([]);
-      setBookmarks([]);
-    }
-  }, [user, loadProData]);
-
-  useEffect(() => {
-    if (user && hasToken) {
-      verifyGrantedWorkspaceServices().then(setGrantedServices);
-      if (tab !== "notas") {
-        loadWorkspaceTab(tab);
-      }
-    } else {
-      setGrantedServices({});
-    }
-  }, [user, hasToken, tab, loadWorkspaceTab]);
-
-  const handleSignIn = async () => {
-    setSigningIn(true);
-    setAuthError(null);
-    try {
-      const res = await signInWithGoogleWorkspace();
-      setUser(res.user);
-      setHasToken(true);
-      await proApi("/api/pro/me").catch(() => null);
-      toast({
-        kind: "ok",
-        title: "Google Workspace conectado",
-        description: `Sesión activa como ${res.user.email || res.user.displayName}.`,
+    if (status === "autenticado" && user?.sub) {
+      syncWorkspaceUserFromVants({
+        uid: user.sub,
+        email: user.email || "",
+        displayName: user.name || user.nickname || "Jugador VANTS",
+        photoURL: user.picture || null,
       });
-    } catch (err: any) {
-      if (err instanceof GoogleAuthClientError) {
-        setAuthError(err.detail);
-        toast({
-          kind: "error",
-          title: err.detail.title,
-          description: err.detail.description,
-        });
-      } else {
-        toast({
-          kind: "error",
-          title: "No se completó el acceso con Google",
-          description: err?.message || "Inténtalo de nuevo.",
-        });
-      }
-    } finally {
-      setSigningIn(false);
+      void cargarTodo();
+    } else if (status === "anonimo") {
+      syncWorkspaceUserFromVants(null);
     }
-  };
+  }, [status, user, cargarTodo]);
 
-  const handleSignOut = async () => {
-    const ok = await confirm({
-      title: "Cerrar sesión de Google Workspace",
-      description: "Se limpiará el acceso en memoria de Google Workspace en esta pestaña.",
-      confirmLabel: "Cerrar sesión",
-      danger: false,
-    });
-    if (!ok) return;
-    await signOutGoogleWorkspace();
-    setDriveFiles([]);
-    setEvents([]);
-    setTasks([]);
-    setEmails([]);
-    setChatSpaces([]);
-    toast({ kind: "info", title: "Sesión de Google cerrada" });
-  };
-
-  const persistWorkspaceLink = async (payload: {
-    service: string;
-    resourceId: string;
-    title: string;
-    url?: string;
-  }) => {
+  const exportarEnviosASheets = async () => {
+    setBusyAction("export-sheets");
     try {
-      const res = await proApi<{ link: WorkspaceLink }>("/api/pro/workspace-links", {
+      const filas = envios.length
+        ? envios.map((e) => [
+            e.id,
+            e.tipo,
+            e.nombre,
+            e.email,
+            e.organizacion || "",
+            e.juego || "",
+            e.torneo_slug || "",
+            e.asunto || "",
+            e.estado,
+            e.creado_en,
+          ])
+        : [["Ejemplo", "inscripcion_torneo", user?.name || "Capitán", user?.email || "", "Equipo VANTS", selectedGame, "copa-s4", "Inscripción", "recibido", new Date().toISOString()]];
+
+      const sheet = await exportarAGoogleSheetsConDriveFile({
+        titulo: `VANTS Formularios · ${new Date().toISOString().slice(0, 10)}`,
+        encabezados: ["Referencia", "Tipo", "Nombre", "Correo", "Equipo / Organización", "Juego", "Torneo", "Asunto", "Estado", "Fecha UTC"],
+        filas,
+      });
+
+      setDriveReady(true);
+      setLastSheetUrl(sheet.url);
+      await proApi("/api/pro/workspace-links", {
         method: "POST",
-        body: { ...payload, gameSlug: selectedGame },
-      });
-      setLinks((prev) => [res.link, ...prev]);
-    } catch {
-      // Silencioso: el archivo ya fue creado en Google Workspace.
+        body: {
+          service: "sheets",
+          resourceId: sheet.id,
+          title: sheet.title,
+          url: sheet.url,
+          gameSlug: selectedGame,
+        },
+      }).catch(() => null);
+      toast({ kind: "ok", title: "Exportado a Google Sheets", description: "Tu hoja quedó lista en Google Drive con drive.file." });
+      void cargarTodo();
+      window.open(sheet.url, "_blank", "noopener,noreferrer");
+    } catch (err: any) {
+      toast({ kind: "error", title: "No se pudo exportar a Google Sheets", description: err?.message });
+    } finally {
+      setBusyAction(null);
     }
   };
 
-  const handleOpenPicker = async () => {
+  const cargarArchivosDrive = async () => {
+    setBusyAction("drive-list");
+    try {
+      const files = await listDriveFiles(10);
+      setDriveFiles(files);
+      setDriveReady(true);
+    } catch (err: any) {
+      toast({ kind: "error", title: "Error al leer archivos de VANTS en Drive", description: err?.message });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const abrirPickerDrive = async () => {
     setBusyAction("picker");
     try {
       const picked = await openGooglePicker();
       if (!picked) return;
-      await persistWorkspaceLink({
-        service: "drive",
-        resourceId: picked.id,
-        title: picked.name,
-        url: picked.webViewLink,
-      });
-      toast({ kind: "ok", title: "Archivo vinculado desde Drive", description: picked.name });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo abrir Google Picker", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleCreateTemplate = async (kind: "docs" | "sheets" | "slides" | "forms") => {
-    const title = templateTitle.trim() || "Torneo VANTS GAMES";
-    const gameLabel = etiquetaJuego(selectedGame);
-    const meta = {
-      docs: { label: "Google Docs", action: "Crear reglamento en Google Docs" },
-      sheets: { label: "Google Sheets", action: "Crear hoja de tabla e inscritos en Google Sheets" },
-      slides: { label: "Google Slides", action: "Crear presentación de equipo/sponsor en Google Slides" },
-      forms: { label: "Google Forms", action: "Crear formulario de inscripción en Google Forms" },
-    }[kind];
-
-    const ok = await confirm({
-      title: meta.action,
-      description: `Se creará un archivo nuevo directamente en tu cuenta de ${meta.label} y quedará registrado en tus recursos de VANTS.`,
-      details: [`Título: ${title}`, `Juego: ${gameLabel}`],
-      confirmLabel: "Crear archivo",
-      danger: false,
-    });
-    if (!ok) return;
-
-    setBusyAction("create-" + kind);
-    try {
-      let created: { id: string; title: string; url: string };
-      if (kind === "docs") created = await createTournamentRulebookDoc(title, gameLabel);
-      else if (kind === "sheets") created = await createTournamentStandingsSheet(title, gameLabel);
-      else if (kind === "slides") created = await createTeamSponsorDeck(title);
-      else created = await createRegistrationForm(title, gameLabel);
-
-      await persistWorkspaceLink({
-        service: kind,
-        resourceId: created.id,
-        title: created.title,
-        url: created.url,
-      });
-      toast({
-        kind: "ok",
-        title: `${meta.label} creado`,
-        description: `${created.title} listo y guardado en tus recursos.`,
-      });
-      loadWorkspaceTab("archivos");
-    } catch (err: any) {
-      toast({ kind: "error", title: `Error al crear en ${meta.label}`, description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleCreateMeet = async () => {
-    const ok = await confirm({
-      title: "Crear sala de Google Meet",
-      description: "Se generará un espacio de videollamada en Google Meet para briefing de equipo o arbitraje.",
-      details: [`Juego asociado: ${etiquetaJuego(selectedGame)}`],
-      confirmLabel: "Crear sala Meet",
-      danger: false,
-    });
-    if (!ok) return;
-    setBusyAction("meet");
-    try {
-      const room = await createMeetBriefingRoom();
-      await persistWorkspaceLink({
-        service: "meet",
-        resourceId: room.id,
-        title: `Briefing ${etiquetaJuego(selectedGame)}${room.code ? ` (${room.code})` : ""}`,
-        url: room.url,
-      });
-      toast({ kind: "ok", title: "Sala de Google Meet lista", description: room.url });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo crear la sala Meet", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleScheduleScrim = async (e: FormEvent) => {
-    e.preventDefault();
-    const start = new Date(scrimDate);
-    if (Number.isNaN(start.getTime())) {
-      toast({ kind: "error", title: "Fecha inválida", description: "Elige una fecha y hora válidas." });
-      return;
-    }
-    const end = new Date(start.getTime() + 90 * 60 * 1000);
-    const summary = scrimTitle.trim() || "Scrim VANTS GAMES";
-
-    const ok = await confirm({
-      title: "Agendar evento en Google Calendar",
-      description: "Se creará un evento de 90 minutos en tu calendario principal de Google.",
-      details: [
-        `Evento: ${summary}`,
-        `Juego: ${etiquetaJuego(selectedGame)}`,
-        `Inicio: ${start.toLocaleString("es-VE")}`,
-      ],
-      confirmLabel: "Agendar evento",
-      danger: false,
-    });
-    if (!ok) return;
-
-    setBusyAction("calendar");
-    try {
-      const created = await createCalendarScrimEvent({
-        summary: `[VANTS · ${etiquetaJuego(selectedGame)}] ${summary}`,
-        description: `Organizado desde el Centro Workspace de VANTS GAMES.`,
-        startIso: start.toISOString(),
-        endIso: end.toISOString(),
-      });
-      await persistWorkspaceLink({
-        service: "calendar",
-        resourceId: created.id,
-        title: created.summary || summary,
-        url: created.htmlLink,
-      });
-      toast({ kind: "ok", title: "Scrim agendado en Calendar", description: created.summary || summary });
-      loadWorkspaceTab("agenda");
-    } catch (err: any) {
-      toast({ kind: "error", title: "Error al crear evento", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleCreateTask = async (e: FormEvent) => {
-    e.preventDefault();
-    const title = taskTitle.trim();
-    if (!title) return;
-    const ok = await confirm({
-      title: "Añadir tarea a Google Tasks",
-      description: "Se agregará esta tarea a tu lista principal de Google Tasks.",
-      details: [`Tarea: ${title}`],
-      confirmLabel: "Añadir tarea",
-      danger: false,
-    });
-    if (!ok) return;
-    setBusyAction("task-create");
-    try {
-      const created = await createGoogleTask(title, `VANTS GAMES · ${etiquetaJuego(selectedGame)}`);
-      setTasks((prev) => [created, ...prev]);
-      setTaskTitle("");
-      toast({ kind: "ok", title: "Tarea creada en Google Tasks" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo crear la tarea", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleToggleTask = async (task: GoogleTaskItem) => {
-    const nextAction = task.status === "completed" ? "reabrir" : "marcar como completada";
-    const ok = await confirm({
-      title: "Actualizar tarea en Google Tasks",
-      description: `¿Deseas ${nextAction} la tarea «${task.title}»?`,
-      confirmLabel: "Actualizar",
-      danger: false,
-    });
-    if (!ok) return;
-    setBusyAction("task-" + task.id);
-    try {
-      const updated = await toggleGoogleTask(task);
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-      toast({ kind: "ok", title: "Estado de tarea actualizado" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "Error al actualizar tarea", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleSendEmail = async (e: FormEvent) => {
-    e.preventDefault();
-    const to = mailTo.trim();
-    const subject = mailSubject.trim();
-    const body = mailBody.trim();
-    if (!to || !subject || !body) return;
-
-    const ok = await confirm({
-      title: "Enviar correo mediante Gmail",
-      description: "Se enviará un correo real desde tu cuenta de Gmail al destinatario indicado.",
-      details: [`Para: ${to}`, `Asunto: ${subject}`],
-      confirmLabel: "Enviar correo",
-      danger: true,
-    });
-    if (!ok) return;
-
-    setBusyAction("gmail-send");
-    try {
-      await sendGmailAnnouncement(to, subject, body);
-      toast({ kind: "ok", title: "Correo enviado", description: `Enviado a ${to}.` });
-      setMailTo("");
-      loadWorkspaceTab("comunicaciones");
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo enviar el correo", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleSendChat = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!chatSpace || !chatText.trim()) return;
-    const spaceObj = chatSpaces.find((s) => s.name === chatSpace);
-    const ok = await confirm({
-      title: "Publicar mensaje en Google Chat",
-      description: "Se enviará un mensaje real en tu nombre al espacio seleccionado.",
-      details: [`Espacio: ${spaceObj?.displayName || chatSpace}`, `Mensaje: ${chatText.trim()}`],
-      confirmLabel: "Publicar mensaje",
-      danger: true,
-    });
-    if (!ok) return;
-
-    setBusyAction("chat-send");
-    try {
-      await sendGoogleChatMessage(chatSpace, chatText.trim());
-      setChatText("");
-      toast({ kind: "ok", title: "Mensaje publicado en Google Chat" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo enviar a Google Chat", description: err.message });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
-  const handleCreateNote = async (e: FormEvent) => {
-    e.preventDefault();
-    const valid = validateTacticalNote({ title: noteTitle, content: noteContent, gameSlug: selectedGame });
-    if (!valid.ok) {
-      toast({ kind: "error", title: "Revisa la nota", description: valid.error });
-      return;
-    }
-    setBusyAction("note-create");
-    try {
-      const res = await proApi<{ note: TacticalNote }>("/api/pro/notes", {
+      await proApi("/api/pro/workspace-links", {
         method: "POST",
         body: {
-          title: valid.title,
-          content: valid.content,
-          gameSlug: valid.gameSlug || null,
-          category: noteCategory,
+          service: "drive",
+          resourceId: picked.id,
+          title: picked.name,
+          url: picked.webViewLink || `https://drive.google.com/file/d/${picked.id}/view`,
+          gameSlug: selectedGame,
         },
       });
-      setNotes((prev) => [res.note, ...prev]);
+      toast({ kind: "ok", title: "Archivo adjuntado a Workspace" });
+      void cargarTodo();
+    } catch (err: any) {
+      toast({ kind: "error", title: "No se pudo abrir Google Picker", description: err?.message });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const guardarNota = async (e: FormEvent) => {
+    e.preventDefault();
+    const check = validateTacticalNote({ title: noteTitle, content: noteContent, gameSlug: selectedGame });
+    if (!check.ok) {
+      toast({ kind: "error", title: "Nota incompleta", description: check.error });
+      return;
+    }
+    setBusyAction("save-note");
+    try {
+      await proApi("/api/pro/notes", {
+        method: "POST",
+        body: { title: noteTitle.trim(), content: noteContent.trim(), gameSlug: selectedGame, category: noteCategory },
+      });
       setNoteTitle("");
       setNoteContent("");
       toast({ kind: "ok", title: "Nota táctica guardada" });
+      void cargarTodo();
     } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo guardar la nota", description: err.message });
+      toast({ kind: "error", title: "Error al guardar nota", description: err?.message });
     } finally {
       setBusyAction(null);
     }
   };
 
-  const handleDeleteNote = async (note: TacticalNote) => {
-    const ok = await confirm({
-      title: "Eliminar nota táctica",
-      description: `Se eliminará permanentemente «${note.title}». Esta acción no se puede deshacer.`,
-      confirmLabel: "Eliminar nota",
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      await proApi(`/api/pro/notes/${note.id}`, { method: "DELETE" });
-      setNotes((prev) => prev.filter((n) => n.id !== note.id));
-      toast({ kind: "ok", title: "Nota eliminada" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo eliminar la nota", description: err.message });
-    }
+  const borrarNota = async (id: number) => {
+    await proApi(`/api/pro/notes/${id}`, { method: "DELETE" }).catch(() => null);
+    setNotes((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const handleDeleteLink = async (link: WorkspaceLink) => {
-    const ok = await confirm({
-      title: "Quitar recurso guardado",
-      description: `Se quitará «${link.title}» de tu lista en VANTS (el archivo original en Google permanece intacto).`,
-      confirmLabel: "Quitar de la lista",
-      danger: false,
-    });
-    if (!ok) return;
-    try {
-      await proApi(`/api/pro/workspace-links/${link.id}`, { method: "DELETE" });
-      setLinks((prev) => prev.filter((l) => l.id !== link.id));
-      toast({ kind: "ok", title: "Recurso quitado de tu lista" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo quitar el recurso", description: err.message });
-    }
+  const borrarLink = async (id: number) => {
+    await proApi(`/api/pro/workspace-links/${id}`, { method: "DELETE" }).catch(() => null);
+    setLinks((prev) => prev.filter((l) => l.id !== id));
   };
 
-  const handleDeleteBookmark = async (bookmark: TournamentBookmark) => {
-    const ok = await confirm({
-      title: "Quitar torneo guardado",
-      description: `Se quitará «${bookmark.tournamentName}» de tus torneos en seguimiento.`,
-      confirmLabel: "Quitar",
-      danger: false,
-    });
-    if (!ok) return;
-    try {
-      await proApi(`/api/pro/bookmarks/${bookmark.id}`, { method: "DELETE" });
-      setBookmarks((prev) => prev.filter((b) => b.id !== bookmark.id));
-      toast({ kind: "ok", title: "Torneo quitado de seguimiento" });
-    } catch (err: any) {
-      toast({ kind: "error", title: "No se pudo quitar el torneo", description: err.message });
-    }
+  const borrarBookmark = async (id: number) => {
+    await proApi(`/api/pro/bookmarks/${id}`, { method: "DELETE" }).catch(() => null);
+    setBookmarks((prev) => prev.filter((b) => b.id !== id));
   };
+
+  const scrimCalendarUrl = buildGoogleCalendarLink({
+    titulo: scrimTitle || "Scrim Oficial VANTS",
+    detalles: `Sesión competitiva organizada desde Centro Workspace VANTS (${selectedGame}).`,
+    ubicacion: "https://vants.cc/torneos",
+    inicioIso: scrimDate ? new Date(scrimDate).toISOString() : undefined,
+    duracionMin: 90,
+  });
 
   return (
     <>
       <PageHead
-        eyebrow="Operaciones Pro · Google Workspace"
-        title={
-          <>
-            Centro <span style={{ color: "var(--rojo)" }}>Workspace</span>
-          </>
-        }
-        lead="Gestiona torneos, scrims, convocatorias y playbooks de tu equipo directamente con Google Drive, Docs, Sheets, Slides, Calendar, Meet, Tasks, Gmail, Forms y Chat."
+        eyebrow="Centro Google Workspace · 1 solo inicio de sesión"
+        title={<>Organiza torneos y equipos sin <span style={{ color: "var(--rojo)" }}>fricción</span></>}
+        lead="Un solo inicio de sesión con Google (sin permisos sensibles ni pantalla de app no verificada): formularios nativos en D1, exportación en 1 clic a Google Sheets con drive.file, enlaces directos a Google Calendar y notas tácticas."
         actions={
-          user ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {!hasToken && (
-                <GoogleSignInButton
-                  onClick={handleSignIn}
-                  disabled={signingIn}
-                  label={signingIn ? "Conectando…" : "Reconectar Workspace"}
-                />
-              )}
-              <button type="button" className="btn btn-sm btn-ghost" onClick={handleSignOut}>
-                Cerrar sesión Google
-              </button>
-            </div>
-          ) : undefined
+          <button
+            type="button"
+            onClick={exportarEnviosASheets}
+            disabled={busyAction === "export-sheets"}
+            className="btn btn-rojo btn-sm"
+            data-testid="btn-export-google-sheets"
+          >
+            {busyAction === "export-sheets" ? "Exportando…" : "📊 Exportar a Google Sheets (1 clic)"}
+          </button>
         }
       />
 
-      <div className="wrap grid gap-8">
-        {!authReady ? (
-          <Skel n={3} h={72} />
-        ) : !user ? (
-          <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr] items-start">
-            <div className="panel panel-pad chamfer grid gap-5" style={{ boxShadow: "inset 0 2px 0 var(--rojo)" }}>
-              <div className="eyebrow">Acceso oficial con Google</div>
-              <h2 className="d-2">Conecta tu cuenta de Google Workspace</h2>
-              <p className="muted small" style={{ maxWidth: "56ch" }}>
-                Autoriza el acceso desde tu navegador para crear reglamentos, tablas de resultados, formularios de inscripción, eventos de scrims y salas de Meet sin salir de VANTS GAMES. Cada acción de escritura o envío pide tu confirmación explícita antes de ejecutarse.
-              </p>
-              <div className="pt-1">
-                <GoogleSignInButton
-                  onClick={handleSignIn}
-                  disabled={signingIn}
-                  label={signingIn ? "Abriendo Google…" : "Sign in with Google"}
-                />
-              </div>
-              {authError && (
-                <div
-                  role="alert"
-                  data-testid="workspace-auth-error"
-                  className="px-3.5 py-3 border text-xs leading-relaxed grid gap-1"
-                  style={{ borderColor: "rgba(255,13,46,0.45)", background: "rgba(255,13,46,0.1)", color: "#ffd2d8" }}
-                >
-                  <div className="font-semibold text-white">{authError.title}</div>
-                  <div>{authError.description}</div>
-                  {authError.actionHint && <div className="text-zinc-200">{authError.actionHint}</div>}
-                </div>
+      <div className="wrap grid gap-6 pb-14">
+        {/* Resumen de sesión única y permisos no sensibles */}
+        <div
+          className="panel panel-pad grid gap-3 sm:grid-cols-[1fr_auto] items-center"
+          style={{ background: "#111113", borderTop: "2px solid #ff0d2e" }}
+          data-testid="workspace-single-login-banner"
+        >
+          <div className="grid gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="tag" style={{ background: "rgba(65,217,141,0.14)", color: "#41d98d", borderColor: "rgba(65,217,141,0.4)" }}>
+                ✓ Sesión única activa
+              </span>
+              <span className="small font-semibold">{user?.name || user?.nickname || user?.email || "Jugador VANTS"}</span>
+              {driveReady && (
+                <span className="tag" style={{ background: "rgba(255,13,46,0.14)", color: "#ff6b7c" }}>
+                  drive.file listo
+                </span>
               )}
             </div>
-            <div className="grid gap-px" style={{ background: "var(--linea-suave)", border: "1px solid var(--linea-suave)" }}>
-              {WORKSPACE_SERVICES.map((s) => (
-                <div key={s.name} className="p-5" style={{ background: "var(--grafito-1)" }}>
-                  <div className="d-3">{s.name}</div>
-                  <p className="small muted mt-1">{s.desc}</p>
-                </div>
-              ))}
-            </div>
+            <p className="text-xs muted">
+              Permisos activos (100% no sensibles):{" "}
+              <code>{GOOGLE_UNIFIED_SCOPES.join(" · ")}</code>
+            </p>
           </div>
-        ) : (
-          <>
-            <div className="panel panel-pad flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                {user.photoURL ? (
-                  <img
-                    src={user.photoURL}
-                    alt=""
-                    width={44}
-                    height={44}
-                    className="chamfer object-cover shrink-0"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : null}
-                <div className="min-w-0">
-                  <div className="font-semibold truncate">{user.displayName || user.email}</div>
-                  <div className="small muted truncate">{user.email}</div>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="field">
-                  <label htmlFor="ws-game" className="sr-only">Juego activo</label>
-                  <select
-                    id="ws-game"
-                    className="input h-10 text-sm"
-                    value={selectedGame}
-                    onChange={(e) => setSelectedGame(e.target.value)}
-                    data-testid="workspace-game-select"
-                  >
-                    {opcionesJuegos().map((g) => (
-                      <option key={g.value} value={g.value}>
-                        {g.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <span className={"tag " + (hasToken ? "tag-ok" : "tag-aviso")}>
-                  {hasToken ? "Workspace autorizado" : "Sesión sin token activo"}
-                </span>
-              </div>
-            </div>
+          {!driveReady && (
+            <button
+              type="button"
+              onClick={() => loginWithGoogle("/workspace")}
+              className="btn btn-sm"
+              data-testid="btn-workspace-google-sync"
+            >
+              Sincronizar con Google
+            </button>
+          )}
+        </div>
 
-            {/* Estado de los 10 servicios de Google Workspace en el proyecto 238603325169 */}
-            <div className="panel panel-pad grid gap-3" data-testid="workspace-10-services-status">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="eyebrow">
-                  Ecosistema Google Workspace · Proyecto {GOOGLE_CLOUD_PROJECT_ID} ({GOOGLE_CLOUD_PROJECT_NUMBER})
-                </div>
-                <span className="small muted">
-                  {Object.values(grantedServices).filter(Boolean).length}/{WORKSPACE_TEN_SERVICES.length} servicios autorizados
-                </span>
+        {/* Tarjetas rápidas de herramientas sin permisos sensibles */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {WORKSPACE_SERVICES.map((svc) => (
+            <div key={svc.id} className="panel panel-pad grid gap-1.5" style={{ background: "#111113" }}>
+              <div className="eyebrow" style={{ color: "#ff5468" }}>{svc.name}</div>
+              <p className="small muted">{svc.description}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Pestañas de Workspace */}
+        <div className="tabs" role="tablist">
+          {[
+            ["envios", `Formularios enviados (${envios.length})`],
+            ["formularios", "Nuevo formulario nativo"],
+            ["archivos", `Drive, Calendar y Guardados (${links.length + bookmarks.length})`],
+            ["notas", `Notas tácticas (${notes.length})`],
+          ].map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              className="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k as TabKey)}
+              data-testid={`workspace-tab-${k}`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+
+        {tab === "envios" && (
+          <div className="panel panel-pad grid gap-4" style={{ background: "#111113" }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="d-3">Envíos registrados en D1 ({esOwnerEnvios ? "Vista organizador" : "Tus envíos"})</h2>
+                <p className="small muted">Exporta todos los registros a una hoja nativa de Google Sheets usando únicamente <code>drive.file</code>.</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                {WORKSPACE_TEN_SERVICES.map((srv) => {
-                  const ok = Boolean(grantedServices[srv.id]);
-                  return (
-                    <span
-                      key={srv.id}
-                      className={"tag " + (ok ? "tag-ok" : "")}
-                      data-testid={`ws-service-${srv.id}`}
-                    >
-                      {ok ? "● " : "○ "}
-                      {srv.name}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-
-            {!hasToken && (
-              <div className="panel panel-pad flex flex-wrap items-center justify-between gap-4" style={{ borderColor: "rgba(245,192,68,.4)" }}>
-                <p className="small muted">
-                  Por seguridad, el token de Google Workspace vive solo en memoria. Vuelve a confirmar con Google para operar Drive, Calendar, Gmail, Docs, Sheets, Slides, Forms, Tasks, Meet y Chat.
-                </p>
-                <GoogleSignInButton onClick={handleSignIn} disabled={signingIn} label="Autorizar Workspace" />
-              </div>
-            )}
-
-            <div className="tabs" role="tablist">
-              {(
-                [
-                  ["archivos", "Archivos y Plantillas"],
-                  ["agenda", "Agenda, Meet y Tasks"],
-                  ["comunicaciones", "Gmail y Chat"],
-                  ["notas", `Notas y Guardados (${notes.length + links.length + bookmarks.length})`],
-                ] as [TabKey, string][]
-              ).map(([k, label]) => (
+                {lastSheetUrl && (
+                  <a href={lastSheetUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm">
+                    Abrir último Sheet ↗
+                  </a>
+                )}
                 <button
-                  key={k}
                   type="button"
-                  role="tab"
-                  className="tab"
-                  aria-selected={tab === k}
-                  onClick={() => setTab(k)}
-                  data-testid={"ws-tab-" + k}
+                  onClick={exportarEnviosASheets}
+                  disabled={busyAction === "export-sheets"}
+                  className="btn btn-rojo btn-sm"
                 >
-                  {label}
+                  {busyAction === "export-sheets" ? "Creando Sheet…" : "📊 Exportar a Google Sheets"}
                 </button>
-              ))}
+              </div>
             </div>
 
-            {tab === "archivos" && (
-              <div className="grid gap-6 lg:grid-cols-[1.15fr_1fr] items-start">
-                <div className="panel panel-pad grid gap-5">
-                  <div>
-                    <div className="eyebrow mb-2">Plantillas competitivas</div>
-                    <h2 className="d-3">Crear documentos en Google Workspace</h2>
-                    <p className="small muted mt-1">
-                      Genera activos oficiales para {etiquetaJuego(selectedGame)} con estructura lista para torneos.
-                    </p>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="tpl-title">Nombre del torneo o campaña</label>
-                    <input
-                      id="tpl-title"
-                      className="input"
-                      value={templateTitle}
-                      onChange={(e) => setTemplateTitle(e.target.value)}
-                      maxLength={120}
-                      placeholder="Ej.: Copa VANTS VALORANT S1"
-                    />
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={!hasToken || !!busyAction}
-                      onClick={() => handleCreateTemplate("docs")}
-                      data-testid="ws-create-docs"
-                    >
-                      {busyAction === "create-docs" ? "Creando…" : "Reglamento (Docs)"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={!hasToken || !!busyAction}
-                      onClick={() => handleCreateTemplate("sheets")}
-                      data-testid="ws-create-sheets"
-                    >
-                      {busyAction === "create-sheets" ? "Creando…" : "Tabla e Inscritos (Sheets)"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={!hasToken || !!busyAction}
-                      onClick={() => handleCreateTemplate("slides")}
-                      data-testid="ws-create-slides"
-                    >
-                      {busyAction === "create-slides" ? "Creando…" : "Deck Sponsor (Slides)"}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={!hasToken || !!busyAction}
-                      onClick={() => handleCreateTemplate("forms")}
-                      data-testid="ws-create-forms"
-                    >
-                      {busyAction === "create-forms" ? "Creando…" : "Registro Equipos (Forms)"}
-                    </button>
-                  </div>
-                  <div className="pt-2 border-t flex flex-wrap items-center justify-between gap-3" style={{ borderColor: "var(--linea-suave)" }}>
-                    <span className="small muted">¿Ya tienes un archivo en Drive? Selecciónalo con Google Picker.</span>
-                    <button
-                      type="button"
-                      className="btn btn-rojo btn-sm"
-                      disabled={!hasToken || !!busyAction}
-                      onClick={handleOpenPicker}
-                      data-testid="ws-open-picker"
-                    >
-                      {busyAction === "picker" ? "Abriendo…" : "Elegir con Google Picker"}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <div className="p-4 border-b flex items-center justify-between gap-3" style={{ borderColor: "var(--linea-suave)" }}>
-                    <h2 className="d-3">Recientes en Google Drive</h2>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-ghost"
-                      disabled={!hasToken || busyAction === "load-archivos"}
-                      onClick={() => loadWorkspaceTab("archivos")}
-                    >
-                      Actualizar
-                    </button>
-                  </div>
-                  {busyAction === "load-archivos" ? (
-                    <Skel n={4} h={46} />
-                  ) : driveFiles.length === 0 ? (
-                    <div className="p-4">
-                      <Empty
-                        code="drive · 0"
-                        title="Sin archivos recientes"
-                        text={hasToken ? "Crea una plantilla o selecciona un archivo con Google Picker." : "Autoriza Workspace para consultar tus archivos de Drive."}
-                      />
-                    </div>
-                  ) : (
-                    <div>
-                      {driveFiles.map((f) => (
-                        <div key={f.id} className="row grid-cols-[1fr_auto] items-center">
-                          <div className="min-w-0">
-                            <div className="font-semibold truncate">{f.name}</div>
-                            <div className="text-xs muted num truncate">
-                              {f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString("es-VE") : "Google Drive"}
-                            </div>
-                          </div>
-                          {f.webViewLink && (
-                            <a
-                              href={f.webViewLink}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="link-arrow text-xs"
-                            >
-                              Abrir ↗
-                            </a>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {tab === "agenda" && (
-              <div className="grid gap-6 lg:grid-cols-2 items-start">
-                <div className="grid gap-6">
-                  <form onSubmit={handleScheduleScrim} className="panel panel-pad grid gap-4">
-                    <div className="flex items-center justify-between gap-3 flex-wrap">
-                      <div>
-                        <div className="eyebrow mb-1">Google Calendar + Meet</div>
-                        <h2 className="d-3">Programar scrim o partido</h2>
+            {loading ? (
+              <Skel n={3} />
+            ) : envios.length === 0 ? (
+              <Empty
+                code="formularios · 0"
+                title="Aún no hay envíos registrados"
+                text="Completa un formulario nativo (inscripción, Workspace/Empresas o soporte) para verlo aquí y exportarlo a Google Sheets."
+                action={
+                  <button type="button" className="btn btn-rojo btn-sm" onClick={() => setTab("formularios")}>
+                    Abrir formularios nativos
+                  </button>
+                }
+              />
+            ) : (
+              <div className="grid gap-2">
+                {envios.map((ev) => (
+                  <div
+                    key={ev.id}
+                    className="p-3.5 flex flex-wrap items-center justify-between gap-3"
+                    style={{ background: "#0a0a0b", border: "1px solid #26262c" }}
+                  >
+                    <div className="grid gap-0.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="tag tag-rojo">{ev.tipo.replace(/_/g, " ")}</span>
+                        <strong className="text-sm">{ev.organizacion || ev.nombre}</strong>
+                        <span className="text-xs muted num">{ev.id}</span>
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        disabled={!hasToken || !!busyAction}
-                        onClick={handleCreateMeet}
-                        data-testid="ws-create-meet"
-                      >
-                        {busyAction === "meet" ? "Creando…" : "+ Sala Meet instantánea"}
-                      </button>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="scrim-title">Título del encuentro</label>
-                      <input
-                        id="scrim-title"
-                        className="input"
-                        required
-                        value={scrimTitle}
-                        onChange={(e) => setScrimTitle(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="scrim-date">Fecha y hora</label>
-                      <input
-                        id="scrim-date"
-                        type="datetime-local"
-                        className="input"
-                        required
-                        value={scrimDate}
-                        onChange={(e) => setScrimDate(e.target.value)}
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="btn btn-rojo w-fit"
-                      disabled={!hasToken || !!busyAction}
-                      data-testid="ws-schedule-scrim"
-                    >
-                      {busyAction === "calendar" ? "Agendando…" : "Agendar en Calendar"}
-                    </button>
-                  </form>
-
-                  <div className="panel">
-                    <div className="p-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-                      <h3 className="d-3">Próximos eventos</h3>
-                    </div>
-                    {events.length === 0 ? (
-                      <div className="p-4">
-                        <Empty code="calendar · 0" title="Sin eventos próximos" text="Agenda un scrim o recarga tu calendario." />
+                      <div className="text-xs muted">
+                        {ev.nombre} · {ev.email}
+                        {ev.torneo_slug ? ` · Torneo: ${ev.torneo_slug}` : ""}
+                        {ev.asunto ? ` · ${ev.asunto}` : ""}
                       </div>
-                    ) : (
-                      events.map((ev) => (
-                        <div key={ev.id} className="row grid-cols-[1fr_auto] items-center">
-                          <div className="min-w-0">
-                            <div className="font-semibold truncate">{ev.summary || "Sin título"}</div>
-                            <div className="text-xs muted num">
-                              {ev.start?.dateTime
-                                ? new Date(ev.start.dateTime).toLocaleString("es-VE")
-                                : ev.start?.date || "—"}
-                            </div>
-                          </div>
-                          {ev.htmlLink && (
-                            <a href={ev.htmlLink} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">
-                              Ver ↗
-                            </a>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="panel panel-pad grid gap-4">
-                  <div>
-                    <div className="eyebrow mb-1">Google Tasks</div>
-                    <h2 className="d-3">Checklist de torneo</h2>
-                  </div>
-                  <form onSubmit={handleCreateTask} className="flex gap-2">
-                    <input
-                      className="input grow"
-                      value={taskTitle}
-                      onChange={(e) => setTaskTitle(e.target.value)}
-                      placeholder="Ej.: Confirmar map pool y árbitros"
-                      disabled={!hasToken}
-                    />
-                    <button
-                      type="submit"
-                      className="btn btn-rojo btn-sm shrink-0"
-                      disabled={!hasToken || !taskTitle.trim() || !!busyAction}
-                    >
-                      Añadir
-                    </button>
-                  </form>
-                  {tasks.length === 0 ? (
-                    <Empty code="tasks · 0" title="Sin tareas pendientes" text="Añade los pasos clave antes del check-in." />
-                  ) : (
-                    <div className="grid divide-y" style={{ borderColor: "var(--linea-suave)" }}>
-                      {tasks.map((t) => (
-                        <div key={t.id} className="py-2.5 flex items-center justify-between gap-3">
-                          <span
-                            className="small"
-                            style={{
-                              textDecoration: t.status === "completed" ? "line-through" : undefined,
-                              color: t.status === "completed" ? "var(--gris-3)" : "var(--blanco)",
-                            }}
-                          >
-                            {t.title}
-                          </span>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost shrink-0"
-                            disabled={busyAction === "task-" + t.id}
-                            onClick={() => handleToggleTask(t)}
-                          >
-                            {t.status === "completed" ? "Reabrir" : "Completar"}
-                          </button>
-                        </div>
-                      ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {tab === "comunicaciones" && (
-              <div className="grid gap-6 lg:grid-cols-2 items-start">
-                <div className="grid gap-6">
-                  <form onSubmit={handleSendEmail} className="panel panel-pad grid gap-4">
-                    <div>
-                      <div className="eyebrow mb-1">Gmail</div>
-                      <h2 className="d-3">Enviar convocatoria por correo</h2>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="mail-to">Destinatario</label>
-                      <input
-                        id="mail-to"
-                        type="email"
-                        className="input"
-                        required
-                        value={mailTo}
-                        onChange={(e) => setMailTo(e.target.value)}
-                        placeholder="capitan@equipo.gg"
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="mail-sub">Asunto</label>
-                      <input
-                        id="mail-sub"
-                        className="input"
-                        required
-                        value={mailSubject}
-                        onChange={(e) => setMailSubject(e.target.value)}
-                      />
-                    </div>
-                    <div className="field">
-                      <label htmlFor="mail-body">Mensaje</label>
-                      <textarea
-                        id="mail-body"
-                        className="input"
-                        required
-                        value={mailBody}
-                        onChange={(e) => setMailBody(e.target.value)}
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="btn btn-rojo w-fit"
-                      disabled={!hasToken || !!busyAction}
-                      data-testid="ws-send-gmail"
-                    >
-                      {busyAction === "gmail-send" ? "Enviando…" : "Enviar con Gmail"}
-                    </button>
-                  </form>
-
-                  <div className="panel">
-                    <div className="p-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-                      <h3 className="d-3">Bandeja reciente</h3>
-                    </div>
-                    {emails.length === 0 ? (
-                      <div className="p-4">
-                        <Empty code="gmail · 0" title="Sin mensajes recientes" />
-                      </div>
-                    ) : (
-                      emails.map((m) => (
-                        <div key={m.id} className="row grid-cols-1 gap-1">
-                          <div className="font-semibold small truncate">{m.subject}</div>
-                          <div className="text-xs muted truncate">{m.from}</div>
-                          <p className="text-xs muted line-clamp-2">{m.snippet}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="panel panel-pad grid gap-4">
-                  <div>
-                    <div className="eyebrow mb-1">Google Chat</div>
-                    <h2 className="d-3">Avisos en espacios de equipo</h2>
-                  </div>
-                  {chatNotice ? (
-                    <div className="empty">
-                      <span className="empty-code">google chat · requisito workspace</span>
-                      <p className="small muted">{chatNotice}</p>
+                    {ev.calendar_url && (
                       <a
-                        href={`https://console.cloud.google.com/apis/api/chat.googleapis.com/hangouts-chat?project=${GOOGLE_CLOUD_PROJECT_ID}`}
+                        href={ev.calendar_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="link-arrow"
+                        className="btn btn-sm btn-ghost"
                       >
-                        Configurar Google Chat en Cloud Console ↗
+                        📅 Google Calendar
                       </a>
-                    </div>
-                  ) : (
-                    <form onSubmit={handleSendChat} className="grid gap-4">
-                      <div className="field">
-                        <label htmlFor="chat-space">Espacio</label>
-                        <select
-                          id="chat-space"
-                          className="input"
-                          value={chatSpace}
-                          onChange={(e) => setChatSpace(e.target.value)}
-                        >
-                          {chatSpaces.length === 0 && <option value="">Sin espacios disponibles</option>}
-                          {chatSpaces.map((s) => (
-                            <option key={s.name} value={s.name}>
-                              {s.displayName || s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="chat-msg">Mensaje para el espacio</label>
-                        <textarea
-                          id="chat-msg"
-                          className="input"
-                          value={chatText}
-                          onChange={(e) => setChatText(e.target.value)}
-                          placeholder="Check-in abierto para cuartos de final."
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="btn btn-rojo w-fit"
-                        disabled={!hasToken || !chatSpace || !chatText.trim() || !!busyAction}
-                      >
-                        Publicar en Chat
-                      </button>
-                    </form>
-                  )}
-                </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
+          </div>
+        )}
 
-            {tab === "notas" && (
-              <div className="grid gap-6 lg:grid-cols-[1fr_1.15fr] items-start">
-                <form onSubmit={handleCreateNote} className="panel panel-pad grid gap-4" data-testid="form-nota-tactica">
-                  <div>
-                    <div className="eyebrow mb-1">Playbook personal</div>
-                    <h2 className="d-3">Nueva nota táctica</h2>
-                    <p className="text-xs muted mt-1">
-                      Guarda composiciones, calls de mapa y notas de scouting sincronizadas con tu cuenta (alternativa directa a Google Keep, que solo habilita API para dominios Enterprise).
-                    </p>
+        {tab === "formularios" && (
+          <FormulariosNativos onEnviado={() => void cargarTodo()} />
+        )}
+
+        {tab === "archivos" && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Google Calendar directo sin OAuth */}
+            <div className="panel panel-pad grid gap-4 content-start" style={{ background: "#111113" }}>
+              <div>
+                <div className="eyebrow mb-1" style={{ color: "#ff5468" }}>Google Calendar · Cero permisos OAuth</div>
+                <h2 className="d-3">Agendar scrim o torneo en 1 clic</h2>
+              </div>
+              <div className="grid gap-3">
+                <div className="field">
+                  <label htmlFor="ws-scrim-t">Título del evento</label>
+                  <input
+                    id="ws-scrim-t"
+                    className="input"
+                    value={scrimTitle}
+                    onChange={(e) => setScrimTitle(e.target.value)}
+                    placeholder="Ej.: Scrim Bo3 VALORANT vs Caracas Five"
+                  />
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="field">
+                    <label htmlFor="ws-scrim-g">Juego</label>
+                    <select id="ws-scrim-g" className="input" value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)}>
+                      {opcionesJuegos().map((j) => (
+                        <option key={j.value} value={j.value}>{j.label}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="field">
-                    <label htmlFor="note-title">Título</label>
+                    <label htmlFor="ws-scrim-d">Fecha y hora</label>
                     <input
-                      id="note-title"
+                      id="ws-scrim-d"
+                      type="datetime-local"
                       className="input"
-                      required
-                      maxLength={140}
-                      value={noteTitle}
-                      onChange={(e) => setNoteTitle(e.target.value)}
-                      placeholder="Ej.: Defensa Ascent B + rotaciones"
+                      value={scrimDate}
+                      onChange={(e) => setScrimDate(e.target.value)}
                     />
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    <div className="field">
-                      <label htmlFor="note-cat">Categoría</label>
-                      <select
-                        id="note-cat"
-                        className="input"
-                        value={noteCategory}
-                        onChange={(e) => setNoteCategory(e.target.value)}
-                      >
-                        <option value="estrategia">Estrategia</option>
-                        <option value="scouting">Scouting rival</option>
-                        <option value="reglas">Reglas / Check-in</option>
-                        <option value="roster">Roster</option>
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label htmlFor="note-game">Juego</label>
-                      <select
-                        id="note-game"
-                        className="input"
-                        value={selectedGame}
-                        onChange={(e) => setSelectedGame(e.target.value)}
-                      >
-                        {JUEGOS.map((j) => (
-                          <option key={j.slug} value={j.slug}>
-                            {j.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="note-content">Contenido</label>
-                    <textarea
-                      id="note-content"
-                      className="input"
-                      required
-                      maxLength={4000}
-                      value={noteContent}
-                      onChange={(e) => setNoteContent(e.target.value)}
-                      placeholder="Detalla ejecuciones, bans de mapas o notas de la serie…"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="btn btn-rojo w-fit"
-                    disabled={busyAction === "note-create"}
-                    data-testid="ws-save-note"
-                  >
-                    {busyAction === "note-create" ? "Guardando…" : "Guardar nota"}
-                  </button>
-                </form>
-
-                <div className="grid gap-6">
-                  <div className="panel">
-                    <div className="p-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-                      <h3 className="d-3">Notas tácticas ({notes.length})</h3>
-                    </div>
-                    {loadingPro ? (
-                      <Skel n={2} h={64} />
-                    ) : notes.length === 0 ? (
-                      <div className="p-4">
-                        <Empty code="notas · 0" title="Aún no tienes notas tácticas" text="Crea tu primera nota de scouting o estrategia para tu equipo." />
-                      </div>
-                    ) : (
-                      notes.map((n) => (
-                        <div key={n.id} className="row grid-cols-[1fr_auto] items-start">
-                          <div className="min-w-0 grid gap-1">
-                            <div className="flex flex-wrap gap-1.5 items-center">
-                              <span className="font-semibold">{n.title}</span>
-                              {n.gameSlug && <span className="tag">{etiquetaJuego(n.gameSlug)}</span>}
-                              <span className="tag">{n.category}</span>
-                            </div>
-                            <p className="small muted whitespace-pre-wrap break-words">{n.content}</p>
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-ghost"
-                            onClick={() => handleDeleteNote(n)}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="panel">
-                    <div className="p-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-                      <h3 className="d-3">Recursos de Google Workspace ({links.length})</h3>
-                    </div>
-                    {links.length === 0 ? (
-                      <div className="p-4">
-                        <Empty
-                          code="recursos · 0"
-                          title="Sin recursos vinculados todavía"
-                          text="Los documentos, hojas, presentaciones, formularios, eventos y salas Meet que crees aparecerán aquí."
-                        />
-                      </div>
-                    ) : (
-                      links.map((l) => (
-                        <div key={l.id} className="row grid-cols-[1fr_auto] items-center">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="tag tag-rojo">{SERVICE_LABELS[l.service] || l.service}</span>
-                              {l.gameSlug && <span className="tag">{etiquetaJuego(l.gameSlug)}</span>}
-                              <span className="font-semibold truncate">{l.title}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {l.url && (
-                              <a href={l.url} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">
-                                Abrir ↗
-                              </a>
-                            )}
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-ghost"
-                              onClick={() => handleDeleteLink(l)}
-                            >
-                              Quitar
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                  <div className="panel">
-                    <div className="p-4 border-b" style={{ borderColor: "var(--linea-suave)" }}>
-                      <h3 className="d-3">Torneos guardados ({bookmarks.length})</h3>
-                    </div>
-                    {bookmarks.length === 0 ? (
-                      <div className="p-4">
-                        <Empty
-                          code="guardados · 0"
-                          title="Sin torneos en seguimiento"
-                          text="Usa «Guardar torneo» en la ficha de cualquier torneo para tenerlo a mano aquí."
-                          action={<Link href="/torneos" className="link-arrow">Explorar torneos →</Link>}
-                        />
-                      </div>
-                    ) : (
-                      bookmarks.map((b) => (
-                        <div key={b.id} className="row grid-cols-[1fr_auto] items-center">
-                          <div className="min-w-0 flex flex-wrap items-center gap-2">
-                            {b.gameSlug && <span className="tag">{etiquetaJuego(b.gameSlug)}</span>}
-                            <Link href={"/torneos/" + b.tournamentSlug} className="font-semibold truncate hover:text-[var(--rojo)]">
-                              {b.tournamentName}
-                            </Link>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Link href={"/torneos/" + b.tournamentSlug} className="link-arrow text-xs">
-                              Ver →
-                            </Link>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-ghost"
-                              onClick={() => handleDeleteBookmark(b)}
-                            >
-                              Quitar
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
                   </div>
                 </div>
+                <a
+                  href={scrimCalendarUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-rojo btn-sm justify-center"
+                  data-testid="btn-workspace-calendar-template"
+                >
+                  📅 Agregar a Google Calendar ↗
+                </a>
               </div>
-            )}
-          </>
+
+              <div className="border-t pt-4 grid gap-2.5" style={{ borderColor: "#24242b" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="d-3">Archivos Drive (drive.file)</h3>
+                  <div className="flex gap-2">
+                    <button type="button" className="btn btn-sm" onClick={abrirPickerDrive} disabled={busyAction === "picker"}>
+                      Adjuntar archivo
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={cargarArchivosDrive} disabled={busyAction === "drive-list"}>
+                      Listar creados
+                    </button>
+                  </div>
+                </div>
+                {driveFiles.length > 0 && (
+                  <div className="grid gap-1.5">
+                    {driveFiles.map((f) => (
+                      <a
+                        key={f.id}
+                        href={f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2.5 flex items-center justify-between gap-2 text-xs hover:bg-[#1a1a20]"
+                        style={{ background: "#0a0a0b", border: "1px solid #24242b" }}
+                      >
+                        <span className="truncate font-medium">{f.name}</span>
+                        <span className="muted shrink-0">Abrir ↗</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recursos guardados y torneos guardados */}
+            <div className="panel panel-pad grid gap-4 content-start" style={{ background: "#111113" }}>
+              <div>
+                <h2 className="d-3">Hojas y archivos vinculados ({links.length})</h2>
+                <p className="small muted">Archivos exportados desde VANTS o adjuntados mediante Google Picker.</p>
+              </div>
+              {links.length === 0 ? (
+                <p className="small muted">Todavía no has exportado hojas ni adjuntado archivos.</p>
+              ) : (
+                <div className="grid gap-2">
+                  {links.map((l) => (
+                    <div
+                      key={l.id}
+                      className="p-3 flex items-center justify-between gap-2"
+                      style={{ background: "#0a0a0b", border: "1px solid #24242b" }}
+                    >
+                      <div className="min-w-0">
+                        <span className="tag mr-2">{l.service}</span>
+                        {l.url ? (
+                          <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold hover:underline">
+                            {l.title} ↗
+                          </a>
+                        ) : (
+                          <span className="text-sm font-semibold">{l.title}</span>
+                        )}
+                      </div>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => borrarLink(l.id)}>
+                        Quitar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="border-t pt-4 grid gap-2" style={{ borderColor: "#24242b" }}>
+                <h3 className="d-3">Torneos guardados ({bookmarks.length})</h3>
+                {bookmarks.length === 0 ? (
+                  <p className="small muted">Guarda torneos desde <Link href="/torneos" className="underline">Torneos</Link> para seguirlos aquí.</p>
+                ) : (
+                  bookmarks.map((b) => (
+                    <div
+                      key={b.id}
+                      className="p-2.5 flex items-center justify-between gap-2"
+                      style={{ background: "#0a0a0b", border: "1px solid #24242b" }}
+                    >
+                      <Link href={`/torneos/${b.tournamentSlug}`} className="text-sm font-semibold hover:underline truncate">
+                        {b.tournamentName}
+                      </Link>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => borrarBookmark(b.id)}>
+                        Quitar
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "notas" && (
+          <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
+            <form onSubmit={guardarNota} className="panel panel-pad grid gap-3 content-start" style={{ background: "#111113" }}>
+              <h2 className="d-3">Nueva nota táctica</h2>
+              <div className="field">
+                <label htmlFor="ws-n-t">Título *</label>
+                <input
+                  id="ws-n-t"
+                  className="input"
+                  value={noteTitle}
+                  onChange={(e) => setNoteTitle(e.target.value)}
+                  placeholder="Ej.: Default Ascent sitio A · Ejecución ronda eco"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="field">
+                  <label htmlFor="ws-n-g">Juego</label>
+                  <select id="ws-n-g" className="input" value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)}>
+                    {opcionesJuegos().map((j) => <option key={j.value} value={j.value}>{j.label}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label htmlFor="ws-n-c">Categoría</label>
+                  <select id="ws-n-c" className="input" value={noteCategory} onChange={(e) => setNoteCategory(e.target.value)}>
+                    <option value="estrategia">Estrategia</option>
+                    <option value="scouting">Scouting</option>
+                    <option value="calendario">Calendario</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label htmlFor="ws-n-b">Detalle *</label>
+                <textarea
+                  id="ws-n-b"
+                  rows={4}
+                  className="input"
+                  value={noteContent}
+                  onChange={(e) => setNoteContent(e.target.value)}
+                  placeholder="Ej.: Humo Heaven + flash árbol, trade inmediato de entry."
+                  required
+                />
+              </div>
+              <button type="submit" disabled={busyAction === "save-note"} className="btn btn-rojo btn-sm">
+                {busyAction === "save-note" ? "Guardando…" : "Guardar nota"}
+              </button>
+            </form>
+
+            <div className="panel panel-pad grid gap-3 content-start" style={{ background: "#111113" }}>
+              <h2 className="d-3">Mis notas ({notes.length})</h2>
+              {notes.length === 0 ? (
+                <p className="small muted">Todavía no tienes notas tácticas guardadas.</p>
+              ) : (
+                notes.map((n) => (
+                  <div key={n.id} className="p-3.5 grid gap-1.5" style={{ background: "#0a0a0b", border: "1px solid #24242b" }}>
+                    <div className="flex items-center justify-between gap-2">
+                      <strong className="text-sm">{n.title}</strong>
+                      <button type="button" className="btn btn-sm btn-ghost" onClick={() => borrarNota(n.id)}>
+                        Borrar
+                      </button>
+                    </div>
+                    <p className="text-xs muted whitespace-pre-wrap">{n.content}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         )}
       </div>
     </>

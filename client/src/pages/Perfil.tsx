@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { lazy, Suspense, useEffect, useState, type FormEvent } from "react";
 import { PanelFaceit, EstadisticasFaceit, CanalesForm } from "./PerfilFaceit";
 import { MisEquiposPanel, MisInscripciones, imagenEquipo, mensajeError } from "./Vants";
 import { MiBiblioteca } from "./MisClips";
@@ -7,12 +7,7 @@ import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalo
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
 import { ResumenLogros, PanelValorantPerfil } from "./Juegos";
-import {
-  IconoPlayGames,
-  LanzadorRapidoTorneo,
-  PanelJuegosDispositivo,
-  TarjetaExperienciaPlayGames,
-} from "@/components/DispositivosJuegos";
+import { APP_APK } from "@/components/SeccionEmpresas";
 import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
@@ -22,6 +17,48 @@ import { PERFIL_LINKS } from "@/lib/nav";
 import { PageHead, Empty, AuthGate, Initials } from "@/components/ui-vants";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { VantsScoutCard } from "@/components/ai/VantsScoutCard";
+
+const VANTS_PC_RELEASES = "https://github.com/VANTSGAMES/banter/releases/latest";
+
+const IconoPlayGamesLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.IconoPlayGames })),
+);
+const LanzadorRapidoTorneoLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.LanzadorRapidoTorneo })),
+);
+const PanelJuegosDispositivoLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.PanelJuegosDispositivo })),
+);
+const TarjetaExperienciaPlayGamesLazy = lazy(() =>
+  import("@/components/DispositivosJuegos").then((m) => ({ default: m.TarjetaExperienciaPlayGames })),
+);
+
+function TarjetaAppsVantsLigera() {
+  return (
+    <section
+      className="panel panel-pad chamfer flex flex-wrap items-center justify-between gap-4"
+      style={{ background: "#111113", borderColor: "var(--linea-suave)" }}
+      data-testid="perfil-apps-ligera"
+    >
+      <div className="grid gap-1" style={{ maxWidth: "56ch" }}>
+        <span className="eyebrow">Apps dedicadas · VANTS PC y Móvil</span>
+        <h3 className="d-3">Compite con Anti-Cheat en PC o lanza juegos desde Android</h3>
+        <p className="text-xs muted">
+          Descarga <strong>VANTS PC</strong> para verificar Riot Vanguard / FACEIT AC en torneos oficiales, o usa{" "}
+          <strong>VANTS Móvil (APK)</strong> para Google Play Juegos y lanzador móvil.
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <a href={VANTS_PC_RELEASES} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-rojo">
+          Descargar VANTS PC ↗
+        </a>
+        <a href={APP_APK} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-ghost">
+          APK Android ↗
+        </a>
+      </div>
+    </section>
+  );
+}
 
 type Estado = "conectada" | "desconectada" | "pendiente" | "error";
 const PROVEEDORES = [
@@ -544,9 +581,15 @@ function Resumen() {
       {/* VANTS Core AI · Scouting & Coaching sobre el perfil propio */}
       <VantsScoutCard getAccessToken={getAuthToken} />
 
-      {/* EXPERIENCIA GOOGLE PLAY JUEGOS + LANZADOR RÁPIDO DE TORNEO */}
-      <TarjetaExperienciaPlayGames />
-      <LanzadorRapidoTorneo compacto />
+      {/* EXPERIENCIA NATIVA ANDROID (solo app móvil) vs CTA LIGERA EN WEB */}
+      {nativo ? (
+        <Suspense fallback={null}>
+          <TarjetaExperienciaPlayGamesLazy />
+          <LanzadorRapidoTorneoLazy compacto />
+        </Suspense>
+      ) : (
+        <TarjetaAppsVantsLigera />
+      )}
 
       {/* CENTRO ORGANIZADO DEL PERFIL (Versión Android / Móvil / Tablet siempre visible; en Web escritorio bajo el hub) */}
       <section className="grid gap-3" aria-labelledby="vants-hub-android-t">
@@ -948,9 +991,16 @@ function Cuentas() {
     } finally { setBusy(null); }
   };
   const vinculos = perfil.data?.vinculos || [];
+  const nativo = esAppNativa();
   return (
     <div className="wrap grid gap-6">
-      <PanelJuegosDispositivo />
+      {nativo ? (
+        <Suspense fallback={null}>
+          <PanelJuegosDispositivoLazy />
+        </Suspense>
+      ) : (
+        <TarjetaAppsVantsLigera />
+      )}
       <div className="border-t pt-6 grid gap-4" style={{ borderColor: "var(--linea-suave)" }}>
         <h3 className="d-3">Cuentas competitivas PC & Consola (OAuth Oficial)</h3>
         <p className="small muted" style={{ maxWidth: "70ch" }}>
@@ -973,7 +1023,7 @@ function Cuentas() {
             return (
               <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
                 <div className="flex items-center gap-3">
-                  {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} /> : <img src={pub(p.logo)} alt="" width={32} height={32} />}
+                  {v?.avatar ? <img src={v.avatar} alt="" width={32} height={32} loading="lazy" /> : <img src={pub(p.logo)} alt="" width={32} height={32} loading="lazy" />}
                   <span className="d-3">{p.nombre}</span>
                   <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
                 </div>
@@ -1365,7 +1415,9 @@ export function Acceso({ modo }: { modo: "entrar" | "registro" | "recuperar" }) 
                     border: "1px solid #3ddc84",
                   }}
                 >
-                  <IconoPlayGames size={22} />
+                  <Suspense fallback={null}>
+                    <IconoPlayGamesLazy size={22} />
+                  </Suspense>
                   <span>{modo === "registro" ? "Registrarse con Google Play Juegos" : "Entrar con Google Play Juegos"}</span>
                 </button>
               )}

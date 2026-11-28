@@ -551,6 +551,107 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 15) Puerta Anti-Cheat Sentinel (vants_bans -> 403 cuenta_bloqueada_anticheat,
+  //     ac_obligatorio = 1 -> 403 anticheat_requerido, badge x-vants-ac desde vants_ac_heartbeats)
+  //     + proxy first-party /api/formularios/* -> env.VANTS_INT (/formularios/*).
+  if (!c.includes("/* VANTS_SENTINEL_AC_GATE_V1 */")) {
+    const OLD_WS_HDR = `      const __wsH = new Headers(request.headers);
+      __wsH.delete("x-vants-nick");
+      __wsH.delete("x-vants-role");
+      __wsH.delete("x-vants-torneo-id");
+      __wsH.delete("x-vants-proxy-secret");
+      __wsH.set("x-vants-nick", __nick);
+      __wsH.set("x-vants-role", __role);
+      __wsH.set("x-vants-torneo-id", __tid);
+      if (env.VANTS_INTERNAL_SECRET) __wsH.set("x-vants-proxy-secret", env.VANTS_INTERNAL_SECRET);
+      return env.TORNEOS_REALTIME.fetch(new Request(__salaUrl.toString(), { method: request.method, headers: __wsH }));
+    }`;
+    const NEW_WS_HDR = `      /* VANTS_SENTINEL_AC_GATE_V1 */
+      let __subWs = "";
+      let __acWs = "none";
+      if (__tok && env.DB) {
+        try {
+          const __uAc = await infoDeSesion(__tok);
+          if (__uAc && __uAc.sub) {
+            __subWs = String(__uAc.sub);
+            const [__banWs, __hbWs] = await Promise.all([
+              env.DB.prepare("SELECT id, motivo FROM vants_bans WHERE activo = 1 AND user_sub = ? LIMIT 1").bind(__subWs).first().catch(() => null),
+              env.DB.prepare("SELECT vanguard_on, faceit_ac_on FROM vants_ac_heartbeats WHERE user_sub = ? AND expires_at > ? LIMIT 1").bind(__subWs, Date.now()).first().catch(() => null)
+            ]);
+            if (__banWs) {
+              return new Response(JSON.stringify({ ok: false, error: "cuenta_bloqueada_anticheat", motivo: __banWs.motivo || "Cuenta bloqueada por VANTS Sentinel" }), {
+                status: 403,
+                headers: { "content-type": "application/json; charset=utf-8" }
+              });
+            }
+            if (__hbWs) {
+              const __vOn = Number(__hbWs.vanguard_on) === 1;
+              const __fOn = Number(__hbWs.faceit_ac_on) === 1;
+              __acWs = __vOn && __fOn ? "both" : __vOn ? "vanguard" : __fOn ? "faceit" : "pc";
+            }
+          }
+        } catch (eAc) {}
+      }
+      if (__role !== "staff" && env.DB) {
+        const __tAc = await env.DB.prepare("SELECT game_slug, ac_obligatorio FROM pt_torneos WHERE slug = ? OR id = ? LIMIT 1").bind(__tid, __tid).first().catch(() => null);
+        if (__tAc && Number(__tAc.ac_obligatorio) === 1) {
+          const __gAc = String(__tAc.game_slug || "").toLowerCase();
+          const __reqAc = __gAc === "valorant" ? "vanguard" : __gAc === "cs2" ? "faceit" : "any";
+          const __okAc = __reqAc === "vanguard" ? (__acWs === "vanguard" || __acWs === "both") : __reqAc === "faceit" ? (__acWs === "faceit" || __acWs === "both") : (__acWs === "vanguard" || __acWs === "faceit" || __acWs === "both");
+          if (!__okAc) {
+            return new Response(JSON.stringify({ ok: false, error: "anticheat_requerido", juego: __gAc || null, requiere: __reqAc }), {
+              status: 403,
+              headers: { "content-type": "application/json; charset=utf-8" }
+            });
+          }
+        }
+      }
+      const __wsH = new Headers(request.headers);
+      __wsH.delete("x-vants-nick");
+      __wsH.delete("x-vants-role");
+      __wsH.delete("x-vants-torneo-id");
+      __wsH.delete("x-vants-proxy-secret");
+      __wsH.delete("x-vants-user-sub");
+      __wsH.delete("x-vants-ac");
+      __wsH.set("x-vants-nick", __nick);
+      __wsH.set("x-vants-role", __role);
+      __wsH.set("x-vants-torneo-id", __tid);
+      __wsH.set("x-vants-ac", __acWs);
+      if (__subWs) __wsH.set("x-vants-user-sub", __subWs);
+      if (env.VANTS_INTERNAL_SECRET) __wsH.set("x-vants-proxy-secret", env.VANTS_INTERNAL_SECRET);
+      return env.TORNEOS_REALTIME.fetch(new Request(__salaUrl.toString(), { method: request.method, headers: __wsH }));
+    }
+
+    if (request.method === "POST" && __redir301.pathname === "/api/torneos/inscribir" && env && env.DB) {
+      const __insTok = (request.headers.get("authorization") || "").replace(/^Bearer\\s+/i, "").trim();
+      if (__insTok) {
+        try {
+          const __uIns = await infoDeSesion(__insTok);
+          if (__uIns && __uIns.sub) {
+            const __banIns = await env.DB.prepare("SELECT id, motivo FROM vants_bans WHERE activo = 1 AND user_sub = ? LIMIT 1").bind(__uIns.sub).first().catch(() => null);
+            if (__banIns) {
+              return new Response(JSON.stringify({ ok: false, error: "cuenta_bloqueada_anticheat", motivo: __banIns.motivo || "Cuenta bloqueada por VANTS Sentinel" }), {
+                status: 403,
+                headers: { "content-type": "application/json; charset=utf-8" }
+              });
+            }
+          }
+        } catch (eIns) {}
+      }
+    }
+
+    if (_vantsInt && (__redir301.pathname === "/api/formularios" || __redir301.pathname.startsWith("/api/formularios/"))) {
+      const __fUrl = new URL(request.url);
+      __fUrl.pathname = __redir301.pathname.replace(/^\\/api/, "");
+      return _vantsInt.fetch(new Request(__fUrl.toString(), request));
+    }`;
+    if (c.includes(OLD_WS_HDR)) {
+      c = c.replace(OLD_WS_HDR, NEW_WS_HDR);
+    } else {
+      throw new Error("vants: bloque VANTS_TORNEOS_LIVE_PROXY_V1 esperado para VANTS_SENTINEL_AC_GATE_V1 no encontrado");
+    }
+  }
+
   return c;
 }
 

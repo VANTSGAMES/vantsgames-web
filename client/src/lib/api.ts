@@ -144,6 +144,7 @@ export interface Tournament {
   estado: string; major: boolean; region: string | null; location_type: string | null;
   prize: { value: number; currency: string } | null; fee: number; max_teams: number | null;
   starts_at: string | null; ends_at: string | null; logo_url: string | null; formato: string | null;
+  ac_obligatorio?: number | boolean;
   is_demo: boolean;
 }
 /** matchPublico() */

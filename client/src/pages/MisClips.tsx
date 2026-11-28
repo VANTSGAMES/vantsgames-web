@@ -20,15 +20,6 @@ import { Empty, Skel, ErrorBox, GameTag } from "@/components/ui-vants";
 import { useFeedback } from "@/components/FeedbackProvider";
 import { hace } from "@/lib/format";
 import { useRol } from "./Vants";
-import {
-  connectYouTubeChannel,
-  disconnectYouTubeChannel,
-  getConnectedYouTubeChannel,
-  listMyYouTubeVideos,
-  uploadVideoToYouTube,
-  type YouTubeChannelInfo,
-  type YouTubeVideoItem,
-} from "@/lib/googleWorkspace";
 
 export type Clip = {
   id: string; origen: "vants" | "twitch" | "kick" | "subido"; plataforma: string; url: string; titulo: string | null; juego: string | null;
@@ -270,16 +261,12 @@ export function SubirClip() {
   const [file, setFile] = useState<File | null>(null);
   const [titulo, setTitulo] = useState("");
   const [juego, setJuego] = useState("valorant");
-  const [subirYoutube, setSubirYoutube] = useState(false);
-  const [ytPrivacidad, setYtPrivacidad] = useState<"public" | "unlisted" | "private">("unlisted");
   const [seo, setSeo] = useState<ClipSeoResponse | null>(null);
   const [seoCargando, setSeoCargando] = useState(false);
-  const [ytUrlCreada, setYtUrlCreada] = useState<string | null>(null);
   const [st, setSt] = useState<{ k: "idle" | "enviando" | "ok" | "error"; m?: string }>({ k: "idle" });
 
   const elegir = (f: File | undefined) => {
     setSt({ k: "idle" });
-    setYtUrlCreada(null);
     if (!f) return setFile(null);
     if (!/^video\//.test(f.type) && !/\.(mp4|webm|mov|mkv|m4v)$/i.test(f.name)) { setFile(null); return setSt({ k: "error", m: "Elige un vídeo MP4, WEBM, MOV o MKV." }); }
     if (f.size > MAX_MB * 1024 * 1024) { setFile(null); return setSt({ k: "error", m: ERR.clip_demasiado_grande }); }
@@ -312,7 +299,6 @@ export function SubirClip() {
     if (!file) return setSt({ k: "error", m: ERR.falta_video });
     if (!juego) return setSt({ k: "error", m: "Elige el juego correcto del clip para que aparezca en su categoría." });
     setSt({ k: "enviando", m: "Preparando el vídeo…" });
-    setYtUrlCreada(null);
     try {
       const { thumb, dur } = await miniaturaDe(file);
       const ext = (file.name.match(/\.(mp4|webm|mov|mkv|m4v)$/i)?.[1] || "mp4").toLowerCase();
@@ -327,25 +313,8 @@ export function SubirClip() {
       setSt({ k: "enviando", m: "Subiendo a VANTS (" + (file.size / 1048576).toFixed(1) + " MB)…" });
       await apiForm("/int/clips/subir", fd);
 
-      let ytMsg = "";
-      if (subirYoutube) {
-        setSt({ k: "enviando", m: "Publicando en tu canal de YouTube Shorts…" });
-        const yt = await uploadVideoToYouTube({
-          file,
-          title: titulo.trim() || "Clip destacado #shorts",
-          description:
-            seo?.description ||
-            `🎮 ${titulo.trim() || "Clip competitivo"}\n🏆 Compite en VANTS GAMES: https://vants.cc\n\n#shorts #${juego} #vants`,
-          tags: seo?.tags || [juego, "vants games", "shorts", "gaming"],
-          privacyStatus: ytPrivacidad,
-          isShort: dur <= 61,
-        });
-        setYtUrlCreada(yt.url);
-        ytMsg = " También se subió a YouTube.";
-      }
-
       setFile(null); setTitulo(""); setSeo(null);
-      setSt({ k: "ok", m: "Clip subido a tu biblioteca y a Clips de la comunidad VANTS." + ytMsg });
+      setSt({ k: "ok", m: "Clip subido a tu biblioteca y a Clips de la comunidad VANTS." });
       qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
       qc.invalidateQueries({ queryKey: ["/api/clips/featured", false] });
       qc.invalidateQueries({ queryKey: ["/int/clips/comunidad", false] });
@@ -355,7 +324,7 @@ export function SubirClip() {
   };
   return (
     <form onSubmit={enviar} className="panel panel-pad grid gap-4 min-w-0 overflow-hidden" data-testid="form-subir-clip">
-      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube cualquier clip de tu PC (hasta 50,5 MB). Optimiza el título con <strong>VANTS IA</strong> y publícalo también en YouTube Shorts.</p></div>
+      <div><h2 className="d-3">Subir desde tu ordenador</h2><p className="small muted mt-1">Sube cualquier clip de tu PC (hasta 50,5 MB) y optimiza el título y tags con <strong>VANTS IA</strong>.</p></div>
       <div className="grid gap-4 sm:grid-cols-2 min-w-0">
         <div className="field sm:col-span-2 min-w-0">
           <label htmlFor="clip-archivo">Vídeo</label>
@@ -412,197 +381,30 @@ export function SubirClip() {
             ))}
           </div>
           {seo.tags.length > 0 && (
-            <span className="text-xs muted">Tags YouTube: {seo.tags.slice(0, 10).join(", ")}</span>
+            <span className="text-xs muted">Tags recomendados: {seo.tags.slice(0, 10).join(", ")}</span>
           )}
         </div>
       )}
 
-      <div className="flex items-center gap-4 flex-wrap">
-        <label className="flex items-center gap-2 small cursor-pointer">
-          <input type="checkbox" checked={subirYoutube} onChange={(e) => setSubirYoutube(e.target.checked)} data-testid="checkbox-subir-youtube" />
-          Publicar también en YouTube Shorts (permiso opcional)
-        </label>
-        {subirYoutube && (
-          <select
-            className="input"
-            style={{ width: "auto", height: 32, padding: "0 .6rem", fontSize: 12 }}
-            value={ytPrivacidad}
-            onChange={(e) => setYtPrivacidad(e.target.value as "public" | "unlisted" | "private")}
-            aria-label="Privacidad en YouTube"
-          >
-            <option value="unlisted">Oculto (revisar antes)</option>
-            <option value="public">Público</option>
-            <option value="private">Privado</option>
-          </select>
-        )}
-      </div>
-
       <div className="flex items-center gap-3 flex-wrap">
-        <button className="btn btn-rojo" disabled={st.k === "enviando" || !file || !juego} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : subirYoutube ? "Subir a VANTS + YouTube" : "Subir clip"}</button>
+        <button className="btn btn-rojo" disabled={st.k === "enviando" || !file || !juego} data-testid="button-subir-clip">{st.k === "enviando" ? "Subiendo…" : "Subir clip"}</button>
         {file && !juego && st.k !== "enviando" && !st.m && <span className="small muted">Elige el juego para poder subir.</span>}
         {st.m && <span className="small" role={st.k === "error" ? "alert" : "status"} style={{ color: st.k === "error" ? "#ff5468" : st.k === "ok" ? "var(--ok)" : undefined }}>{st.m}</span>}
-        {ytUrlCreada && <a href={ytUrlCreada} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">Ver Short en YouTube ↗</a>}
       </div>
     </form>
   );
 }
 
-/* ---------------- YouTube Studio (autorización incremental opcional) ---------------- */
-function PanelYouTubeCanal({ enlacesExistentes, onImportar }: { enlacesExistentes: Set<string>; onImportar: () => void }) {
-  const { toast } = useFeedback();
-  const [canal, setCanal] = useState<YouTubeChannelInfo | null>(() => getConnectedYouTubeChannel());
-  const [videos, setVideos] = useState<YouTubeVideoItem[]>([]);
-  const [cargando, setCargando] = useState(false);
-  const [importandoId, setImportandoId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const cargarVideos = async () => {
-    setCargando(true);
-    setError(null);
-    try {
-      const lista = await listMyYouTubeVideos(9);
-      setVideos(lista);
-    } catch (err: any) {
-      setError(err?.message || "No se pudieron cargar tus vídeos de YouTube.");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  useEffect(() => {
-    if (canal && videos.length === 0) {
-      cargarVideos();
-    }
-  }, [canal]);
-
-  const conectar = async () => {
-    setCargando(true);
-    setError(null);
-    try {
-      const ch = await connectYouTubeChannel();
-      setCanal(ch);
-      const lista = await listMyYouTubeVideos(9);
-      setVideos(lista);
-      toast({ kind: "ok", title: "YouTube conectado", description: `Canal ${ch.title} listo para importar y subir Shorts.` });
-    } catch (err: any) {
-      setError(err?.message || "No se pudo conectar YouTube.");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  const desconectar = async () => {
-    await disconnectYouTubeChannel();
-    setCanal(null);
-    setVideos([]);
-  };
-
-  const importar = async (v: YouTubeVideoItem) => {
-    setImportandoId(v.id);
-    try {
-      const txt = (v.title + " " + v.description).toLowerCase();
-      const juego =
-        txt.includes("valorant") ? "valorant" :
-        txt.includes("cs2") || txt.includes("faceit") ? "cs2" :
-        txt.includes("fortnite") ? "fortnite" :
-        txt.includes("league") || txt.includes("lol") ? "lol" :
-        "valorant";
-      await api("/int/clips", {
-        method: "POST",
-        auth: true,
-        body: { url: v.url, titulo: v.title.slice(0, 100), juego, publico: true },
-      });
-      toast({ kind: "ok", title: "Short importado a VANTS", description: v.title });
-      onImportar();
-    } catch (err) {
-      toast({ kind: "error", title: "No se pudo importar", description: mensaje(err) });
-    } finally {
-      setImportandoId(null);
-    }
-  };
-
+/* ---------------- YouTube Shorts por enlace (cero permisos OAuth sensibles) ---------------- */
+function PanelYouTubeCanal() {
   return (
-    <section className="panel panel-pad grid gap-4" data-testid="clips-youtube-canal">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="d-3">Tu canal de YouTube · Shorts y vídeos</h2>
-          <p className="small muted mt-1">
-            Conexión opcional con permisos mínimos (<code>youtube.readonly</code> + <code>youtube.upload</code>) para importar tus Shorts a VANTS o publicar tus clips de PC directo en YouTube.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {!canal ? (
-            <button type="button" className="btn btn-sm btn-rojo" onClick={conectar} disabled={cargando} data-testid="button-conectar-youtube">
-              {cargando ? "Conectando…" : "Conectar YouTube"}
-            </button>
-          ) : (
-            <>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={cargarVideos} disabled={cargando}>
-                Actualizar
-              </button>
-              <button type="button" className="btn btn-sm btn-ghost" onClick={desconectar}>
-                Desconectar
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {error && <p className="small" role="alert" style={{ color: "#ff5468" }}>{error}</p>}
-
-      {canal && (
-        <>
-          <div className="flex items-center gap-3 flex-wrap text-sm">
-            {canal.thumbnail && <img src={canal.thumbnail} alt="" className="w-10 h-10 object-cover border border-[var(--linea)]" />}
-            <div>
-              <strong>{canal.title}</strong>
-              <div className="text-xs muted">
-                {canal.customUrl ? canal.customUrl + " · " : ""}
-                {canal.subscriberCount != null ? `${canal.subscriberCount.toLocaleString("es")} suscriptores` : ""}
-                {canal.videoCount != null ? ` · ${canal.videoCount} vídeos` : ""}
-              </div>
-            </div>
-          </div>
-
-          {cargando ? (
-            <Skel h={120} n={2} />
-          ) : videos.length === 0 ? (
-            <p className="small muted">No encontramos vídeos recientes en tu canal.</p>
-          ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {videos.map((v) => {
-                const yaEnVants = enlacesExistentes.has(v.url) || enlacesExistentes.has(`https://www.youtube.com/watch?v=${v.id}`);
-                return (
-                  <div key={v.id} className="panel grid content-start">
-                    <div className="relative aspect-video bg-[var(--grafito)] overflow-hidden">
-                      {v.thumbnail && <img src={v.thumbnail} alt="" className="w-full h-full object-cover" loading="lazy" />}
-                      <span className="absolute top-2 left-2 tag">{v.isShort ? "Short" : "YouTube"}</span>
-                    </div>
-                    <div className="p-3 grid gap-2">
-                      <strong className="text-sm line-clamp-2">{v.title}</strong>
-                      <span className="text-xs muted">
-                        {hace(v.publishedAt)}
-                        {v.viewCount != null ? ` · ${v.viewCount.toLocaleString("es")} vistas` : ""}
-                      </span>
-                      <div className="flex items-center gap-2 mt-1">
-                        <a href={v.url} target="_blank" rel="noopener noreferrer" className="link-arrow text-xs">Ver ↗</a>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-ghost ml-auto"
-                          disabled={yaEnVants || importandoId === v.id}
-                          onClick={() => importar(v)}
-                        >
-                          {yaEnVants ? "En VANTS ✓" : importandoId === v.id ? "Importando…" : "Publicar en VANTS"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
+    <section className="panel panel-pad grid gap-2" data-testid="clips-youtube-canal">
+      <div className="eyebrow">YouTube Shorts · Sin permisos extra de Google</div>
+      <h2 className="d-3">Publica tus Shorts de YouTube por enlace directo</h2>
+      <p className="small muted">
+        Para proteger tu cuenta y evitar pantallas de permisos adicionales, no solicitamos acceso OAuth a tu canal de YouTube.
+        Pega cualquier enlace de YouTube o YouTube Shorts en «Publicar por enlace» arriba, o captura clips automáticamente con <strong>VANTS PC</strong>.
+      </p>
     </section>
   );
 }
@@ -728,13 +530,7 @@ export function MiBiblioteca({ conFormulario = true }: { conFormulario?: boolean
     <div className="grid gap-8" data-testid="mi-biblioteca">
       <GuiaCapturaAutomatica />
       {conFormulario && <div className="grid gap-4 lg:grid-cols-2 items-start [&>*]:min-w-0"><SubirClip /><PublicarClip /></div>}
-      <PanelYouTubeCanal
-        enlacesExistentes={enlaces}
-        onImportar={() => {
-          qc.invalidateQueries({ queryKey: ["/int/clips/mios", true] });
-          qc.invalidateQueries({ queryKey: ["/int/clips/comunidad", false] });
-        }}
-      />
+      <PanelYouTubeCanal />
       <div className="flex gap-1.5 flex-wrap" role="group" aria-label="Filtrar por juego">
         {filtros.map((j) => (
           <button

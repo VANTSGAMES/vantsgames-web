@@ -154,7 +154,7 @@ async function obtenerAccessTokenGisInApp(): Promise<string | null> {
     try {
       const client = w.google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CLIENT_ID,
-        scope: "openid email profile",
+        scope: "openid email profile https://www.googleapis.com/auth/drive.file",
         callback: (resp: { access_token?: string; error?: string }) => {
           resolve(resp?.access_token || null);
         },

@@ -38,4 +38,21 @@ describe("clean removal of VANTS AI Studio, Mapa de Arenas LAN, and Firebase", (
     assert.equal(/firebase/i.test(wsSrc), false);
     assert.equal(/firebase/i.test(mwSrc), false);
   });
+
+  it("requests ONLY 4 non-sensitive Google scopes (zero Gmail/Sheets/Docs/Calendar/Drive.readonly scopes)", () => {
+    const wsSrc = readFileSync("client/src/lib/googleWorkspace.ts", "utf8");
+    const authJsSrc = readFileSync("integraciones/src/auth.js", "utf8");
+    for (const src of [wsSrc, authJsSrc]) {
+      assert.match(src, /https:\/\/www\.googleapis\.com\/auth\/drive\.file/);
+      assert.equal(/googleapis\.com\/auth\/(gmail|spreadsheets|documents|calendar|tasks|chat|forms|meetings|drive\.readonly)/i.test(src), false);
+    }
+  });
+
+  it("includes Google API Services User Data Policy (Limited Use) and preserves Riot RSO compliance in privacidad.html", () => {
+    const priv = readFileSync("client/src/content/privacidad.html", "utf8");
+    assert.match(priv, /Google API Services User Data Policy/i);
+    assert.match(priv, /Limited Use/i);
+    assert.match(priv, /drive\.file/i);
+    assert.match(priv, /Riot Sign On/i);
+  });
 });

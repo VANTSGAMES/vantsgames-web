@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRol } from "@/pages/Vants";
 import { Link, useLocation } from "wouter";
 import { NAV } from "@/lib/nav";
@@ -8,8 +8,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi } from "@/lib/useApi";
 import { api, esAppNativa } from "@/lib/api";
 import { CommandPalette } from "./CommandPalette";
-import { PWAInstallButton, OfflineIndicator } from "./PWAInstallButton";
-import { InsigniaBienvenidaPlayGames, LanzadorRapidoTorneo, TarjetaExperienciaPlayGames } from "./DispositivosJuegos";
+import { OfflineIndicator } from "./PWAInstallButton";
+
+const InsigniaBienvenidaPlayGames = lazy(() =>
+  import("./DispositivosJuegos").then((m) => ({ default: m.InsigniaBienvenidaPlayGames })),
+);
+const LanzadorRapidoTorneo = lazy(() =>
+  import("./DispositivosJuegos").then((m) => ({ default: m.LanzadorRapidoTorneo })),
+);
+const TarjetaExperienciaPlayGames = lazy(() =>
+  import("./DispositivosJuegos").then((m) => ({ default: m.TarjetaExperienciaPlayGames })),
+);
+
+const VANTS_PC_URL = "https://github.com/VANTSGAMES/banter/releases/latest";
 
 type Notif = { id: number; tipo: string; titulo: string; cuerpo: string | null; url: string | null; creada: string; leida: boolean };
 
@@ -166,7 +177,7 @@ function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpe
           aria-label="Menú principal"
         >
           <div className="wrap py-5 grid gap-5">
-            <div className="grid sm:grid-cols-2 gap-2.5">
+            <div className={nativo ? "grid sm:grid-cols-2 gap-2.5" : "grid gap-2.5"}>
               <button
                 type="button"
                 className="btn btn-sm w-full justify-between"
@@ -176,17 +187,17 @@ function MobileNav({ path, onOpenSearch, onOpenLauncher }: { path: string; onOpe
                 <span>Buscar torneos y juegos…</span>
                 <span className="text-xs muted" style={{ fontFamily: "var(--f-mono)" }}>🔍</span>
               </button>
-              <button
-                type="button"
-                className="btn btn-sm btn-rojo w-full justify-center"
-                onClick={() => { setOpen(false); onOpenLauncher(); }}
-                data-testid="button-mobile-launcher"
-              >
-                🎮 Abrir juego para Torneo
-              </button>
+              {nativo && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-rojo w-full justify-center"
+                  onClick={() => { setOpen(false); onOpenLauncher(); }}
+                  data-testid="button-mobile-launcher"
+                >
+                  🎮 Abrir juego para Torneo
+                </button>
+              )}
             </div>
-
-            {!nativo && <PWAInstallButton compact />}
 
             {AUTH_ENABLED && status === "anonimo" && (
               <div className="grid grid-cols-2 gap-2">
@@ -427,7 +438,6 @@ export function Header({ onOpenSearch, onOpenLauncher }: { onOpenSearch: () => v
             </svg>
             <span className="sr-only">Buscar</span>
           </button>
-          {!nativo && <span className="hidden sm:inline-flex"><PWAInstallButton /></span>}
           <AccountButton />
           <MobileNav path={path} onOpenSearch={onOpenSearch} onOpenLauncher={onOpenLauncher} />
         </div>
@@ -438,7 +448,7 @@ export function Header({ onOpenSearch, onOpenLauncher }: { onOpenSearch: () => v
 
 const APP_APK = "https://vants.cc/VANTSMovil.apk";
 
-/** Columnas del footer: reflejan la navegación principal + legal y app. */
+/** Columnas del footer: reflejan la navegación principal + legal y apps separadas (PC / Móvil). */
 const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?: boolean; ocultarEnApp?: boolean }[] }[] = [
   { titulo: "Competición", enlaces: [
     { label: "Torneos activos", to: "/torneos" },
@@ -457,14 +467,15 @@ const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?
   { titulo: "Planes & Empresas", enlaces: [
     { label: "Membresías", to: "/membresias" },
     { label: "Pase de Temporada S4", to: "/pase-s4" },
-    { label: "Insignias", to: "/insignias" },
+    { label: "Workspace Pro", to: "/workspace" },
+    { label: "Formularios oficiales", to: "/formularios" },
     { label: "Empresas y marcas", to: "/empresas" },
   ]},
-  { titulo: "Legal & App", enlaces: [
+  { titulo: "Legal & Apps", enlaces: [
     { label: "Mi perfil del jugador", to: "/perfil" },
     { label: "Privacidad", to: "/privacidad" },
     { label: "Términos", to: "/terminos" },
-    { label: "Soporte (abrir ticket)", to: "/perfil/soporte" },
+    { label: "VANTS PC (Windows)", to: VANTS_PC_URL, externo: true, ocultarEnApp: true },
     { label: "App Android (APK)", to: APP_APK, externo: true, ocultarEnApp: true },
   ]},
 ];
@@ -540,15 +551,24 @@ export function Shell({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const [searchOpen, setSearchOpen] = useState(false);
   const [launcherOpen, setLauncherOpen] = useState(false);
+  const nativo = esAppNativa();
   useEffect(() => { window.scrollTo({ top: 0 }); }, [path]);
   return (
     <div className="min-h-screen flex flex-col vants-shell-body">
-      <InsigniaBienvenidaPlayGames />
+      {nativo && (
+        <Suspense fallback={null}>
+          <InsigniaBienvenidaPlayGames />
+        </Suspense>
+      )}
       <Header onOpenSearch={() => setSearchOpen(true)} onOpenLauncher={() => setLauncherOpen(true)} />
       <main id="contenido" className="flex-1">{children}</main>
       <Footer />
-      <BarraInferiorMovil path={path} onOpenLauncher={() => setLauncherOpen(true)} />
-      <CajonLanzadorTorneo abierto={launcherOpen} onCerrar={() => setLauncherOpen(false)} />
+      {nativo && <BarraInferiorMovil path={path} onOpenLauncher={() => setLauncherOpen(true)} />}
+      {nativo && (
+        <Suspense fallback={null}>
+          <CajonLanzadorTorneo abierto={launcherOpen} onCerrar={() => setLauncherOpen(false)} />
+        </Suspense>
+      )}
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <OfflineIndicator />
     </div>

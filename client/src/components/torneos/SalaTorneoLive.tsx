@@ -4,10 +4,12 @@ import { esAppNativa, getAuthToken } from "@/lib/api";
 import { AUTH_ENABLED, useAuth } from "@/lib/auth";
 
 export type RolSala = "staff" | "player" | "spectator";
+export type EstadoAcSala = "vanguard" | "faceit" | "both" | "pc" | "none";
 
 export interface ParticipanteSala {
   nick: string;
   role: RolSala;
+  ac?: EstadoAcSala;
 }
 
 export interface MarcadorPartida {
@@ -41,6 +43,7 @@ export interface EventoSalaFeed {
   tipo: "chat" | "sistema" | "error" | "arbitro" | "caster";
   de?: string;
   role?: RolSala;
+  ac?: EstadoAcSala;
   para?: string;
   accion?: string;
   escalado?: boolean;
@@ -51,6 +54,56 @@ export interface EventoSalaFeed {
 export interface SalaTorneoLiveProps {
   torneoId: string;
   torneoNombre?: string;
+  acObligatorio?: boolean;
+  juegoSlug?: string;
+}
+
+const VANTS_PC_RELEASES = "https://github.com/VANTSGAMES/banter/releases/latest";
+
+function normalizarAc(raw: unknown): EstadoAcSala {
+  if (raw === "vanguard" || raw === "faceit" || raw === "both" || raw === "pc") return raw;
+  return "none";
+}
+
+function etiquetaAc(ac?: EstadoAcSala): { label: string; bg: string; color: string; border: string } {
+  if (ac === "both") {
+    return {
+      label: "🛡️ Vanguard + FACEIT ON",
+      bg: "rgba(65,217,141,0.16)",
+      color: "#41d98d",
+      border: "rgba(65,217,141,0.45)",
+    };
+  }
+  if (ac === "vanguard") {
+    return {
+      label: "🛡️ Vanguard ON",
+      bg: "rgba(65,217,141,0.16)",
+      color: "#41d98d",
+      border: "rgba(65,217,141,0.45)",
+    };
+  }
+  if (ac === "faceit") {
+    return {
+      label: "🛡️ FACEIT AC ON",
+      bg: "rgba(65,217,141,0.16)",
+      color: "#41d98d",
+      border: "rgba(65,217,141,0.45)",
+    };
+  }
+  if (ac === "pc") {
+    return {
+      label: "🖥️ VANTS PC",
+      bg: "rgba(245,192,68,0.14)",
+      color: "#f5c044",
+      border: "rgba(245,192,68,0.38)",
+    };
+  }
+  return {
+    label: "Sin VANTS PC",
+    bg: "rgba(161,161,170,0.1)",
+    color: "#a1a1aa",
+    border: "rgba(161,161,170,0.25)",
+  };
 }
 
 /** Construye la URL WebSocket hacia el proxy oficial `/api/torneos-live/sala/:id/ws`. */
@@ -101,7 +154,7 @@ function etiquetaRol(role: RolSala): { label: string; bg: string; color: string;
   };
 }
 
-export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) {
+export function SalaTorneoLive({ torneoId, torneoNombre, acObligatorio = false, juegoSlug }: SalaTorneoLiveProps) {
   const { status: authStatus, login } = useAuth();
   const [estadoWs, setEstadoWs] = useState<"conectando" | "conectado" | "reconectando">("conectando");
   const [yo, setYo] = useState<ParticipanteSala | null>(null);
@@ -185,23 +238,13 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
             setYo({
               nick: String(ev.yo.nick),
               role: ev.yo.role === "staff" || ev.yo.role === "player" ? ev.yo.role : "spectator",
+              ac: normalizarAc(ev.yo.ac),
             });
           }
           if (Array.isArray(ev.presentes)) setPresentes(ev.presentes);
           if (ev.marcador && typeof ev.marcador === "object") setMarcador(ev.marcador as MarcadorSala);
-          if (!hydratedRef.current && Array.isArray(ev.historial) && ev.historial.length > 0) {
-            hydratedRef.current = true;
-            setMensajes(
-              ev.historial.map((h: any) => ({
-                id: nextId(),
-                tipo: "chat" as const,
-                de: String(h.de || "jugador"),
-                role: h.role === "staff" || h.role === "player" ? h.role : "spectator",
-                texto: String(h.texto || ""),
-                ts: h.ts,
-              })),
-            );
-          }
+          // Chat 100% efímero: nunca se hidrata historial persistido
+          hydratedRef.current = true;
           return;
         }
 
@@ -230,6 +273,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
             tipo: "chat",
             de: String(ev.de || "espectador"),
             role: ev.role === "staff" || ev.role === "player" ? ev.role : "spectator",
+            ac: normalizarAc(ev.ac),
             texto: String(ev.texto || ""),
             ts: ev.ts,
           });
@@ -413,7 +457,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
         <div className="flex flex-wrap items-center gap-2">
           {yo && yoBadge && (
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs"
+              className="flex flex-wrap items-center gap-1.5 px-2.5 py-1 text-xs"
               style={{ background: "#0a0a0b", border: "1px solid #27272d" }}
               data-testid="sala-live-me"
             >
@@ -424,6 +468,18 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
               >
                 {yoBadge.label}
               </span>
+              {(() => {
+                const acb = etiquetaAc(yo.ac);
+                return (
+                  <span
+                    className="px-1.5 py-0.5 text-[10px] font-bold tracking-wider"
+                    style={{ background: acb.bg, color: acb.color, border: `1px solid ${acb.border}` }}
+                    data-testid="sala-live-my-ac"
+                  >
+                    {acb.label}
+                  </span>
+                );
+              })()}
             </div>
           )}
 
@@ -459,6 +515,29 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
         </div>
       </div>
 
+      {/* Aviso de Anti-Cheat obligatorio cuando ac_obligatorio = 1 */}
+      {acObligatorio && (
+        <div
+          className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs"
+          style={{ background: "#170b0e", borderBottom: "1px solid rgba(255,13,46,0.38)", color: "#f4f4f5" }}
+          data-testid="sala-live-ac-obligatorio"
+        >
+          <span>
+            🛡️ <strong>Anti-Cheat obligatorio</strong>: este torneo exige <strong>VANTS PC</strong> activo con{" "}
+            {juegoSlug === "valorant" ? "Riot Vanguard" : juegoSlug === "cs2" ? "FACEIT Anti-Cheat" : "anti-cheat oficial"} encendido.
+          </span>
+          <a
+            href={VANTS_PC_RELEASES}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider"
+            style={{ background: "#ff0d2e", color: "#ffffff" }}
+          >
+            Abrir / Descargar VANTS PC ↗
+          </a>
+        </div>
+      )}
+
       {/* Lista colapsable de presencia */}
       {mostrarPresentes && (
         <div
@@ -471,6 +550,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
           ) : (
             presentes.map((p, idx) => {
               const b = etiquetaRol(p.role);
+              const acb = etiquetaAc(p.ac);
               return (
                 <span
                   key={`${p.nick}-${idx}`}
@@ -479,6 +559,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
                 >
                   <span style={{ width: 6, height: 6, borderRadius: "9999px", background: b.color }} />
                   <span>{p.nick}</span>
+                  <span className="text-[10px]" style={{ color: acb.color }}>{acb.label}</span>
                 </span>
               );
             })
@@ -791,6 +872,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
             }
 
             const rb = etiquetaRol(m.role || "spectator");
+            const acb = etiquetaAc(m.ac);
             return (
               <div
                 key={m.id}
@@ -798,7 +880,7 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
                 style={{ background: "#111113", border: "1px solid #1e1e24" }}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                     <span
                       className="text-xs font-bold truncate"
                       style={{ color: m.role === "staff" ? "#ff5468" : m.role === "player" ? "#41d98d" : "#e4e4e7" }}
@@ -813,6 +895,12 @@ export function SalaTorneoLive({ torneoId, torneoNombre }: SalaTorneoLiveProps) 
                         {rb.label}
                       </span>
                     )}
+                    <span
+                      className="px-1 py-0 text-[9px] font-semibold tracking-wider"
+                      style={{ background: acb.bg, color: acb.color, border: `1px solid ${acb.border}` }}
+                    >
+                      {acb.label}
+                    </span>
                   </div>
                   <span className="text-[10px] num shrink-0" style={{ color: "#71717a" }}>
                     {formatearHora(m.ts)}
