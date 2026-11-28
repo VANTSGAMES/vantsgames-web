@@ -652,6 +652,41 @@ async function infoDeSesion(token) {
     }
   }
 
+  // 16) Exponer `ac_obligatorio` (0/1) desde `pt_torneos` en GET /api/tournaments y /api/tournaments/:slug
+  if (!c.includes("/* VANTS_TOURNAMENT_AC_FIELD_V1 */")) {
+    const ANCHOR_R301 = `      let __r301 = await fetchWorker(__reqV, env, ctx);`;
+    const ENRICH_AC = `${ANCHOR_R301}
+      /* VANTS_TOURNAMENT_AC_FIELD_V1 */
+      if (
+        request.method === "GET" &&
+        env && env.DB &&
+        __r301 && __r301.ok &&
+        (__redir301.pathname === "/api/tournaments" || __redir301.pathname.startsWith("/api/tournaments/")) &&
+        (__r301.headers.get("content-type") || "").includes("application/json")
+      ) {
+        try {
+          const __tBody = await __r301.clone().json();
+          const __acRows = await env.DB.prepare("SELECT slug FROM pt_torneos WHERE ac_obligatorio = 1").all().catch(() => null);
+          const __acSet = new Set(((__acRows && __acRows.results) || []).map((r) => String(r.slug)));
+          if (__tBody && __tBody.data) {
+            if (Array.isArray(__tBody.data.items)) {
+              for (const __it of __tBody.data.items) {
+                if (__it && __it.slug) __it.ac_obligatorio = __acSet.has(String(__it.slug)) ? 1 : 0;
+              }
+            } else if (__tBody.data.slug) {
+              __tBody.data.ac_obligatorio = __acSet.has(String(__tBody.data.slug)) ? 1 : 0;
+            }
+            const __nh = new Headers(__r301.headers);
+            __nh.delete("content-length");
+            return new Response(JSON.stringify(__tBody), { status: __r301.status, headers: __nh });
+          }
+        } catch (eTac) {}
+      }`;
+    if (c.includes(ANCHOR_R301)) {
+      c = c.replace(ANCHOR_R301, ENRICH_AC);
+    }
+  }
+
   return c;
 }
 

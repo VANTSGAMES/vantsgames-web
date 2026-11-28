@@ -1,0 +1,54 @@
+name: "Torneos · activar/desactivar ac_obligatorio (D1)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "Slug exacto del torneo en pt_torneos (ej. torneo-apertura-cs2-circuito-vants)"
+        required: true
+      ac_obligatorio:
+        description: "Activar (1) o desactivar (0) Anti-Cheat obligatorio"
+        required: true
+        type: choice
+        options:
+          - "1"
+          - "0"
+        default: "1"
+
+permissions:
+  contents: read
+
+jobs:
+  toggle-ac:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integraciones
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 8f2424e95fec4860e19257226f209fbc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validar entrada y actualizar pt_torneos.ac_obligatorio en D1
+        env:
+          TORNEO_SLUG: ${{ inputs.slug }}
+          AC_VAL: ${{ inputs.ac_obligatorio }}
+        run: |
+          if ! [[ "$TORNEO_SLUG" =~ ^[a-z0-9-]+$ ]]; then
+            echo "Slug inválido: solo minúsculas, números y guiones." >&2
+            exit 1
+          fi
+          if [ "$AC_VAL" != "0" ] && [ "$AC_VAL" != "1" ]; then
+            echo "ac_obligatorio debe ser 0 o 1." >&2
+            exit 1
+          fi
+
+          npx -y wrangler@4 d1 execute vants-db --remote --yes \
+            --command "UPDATE pt_torneos SET ac_obligatorio = ${AC_VAL}, updated_at = datetime('now') WHERE slug = '${TORNEO_SLUG}';"
+
+          npx -y wrangler@4 d1 execute vants-db --remote --yes \
+            --command "SELECT slug, nombre, game_slug, estado, ac_obligatorio FROM pt_torneos WHERE slug = '${TORNEO_SLUG}';"

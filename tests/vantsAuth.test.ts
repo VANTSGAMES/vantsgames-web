@@ -708,6 +708,7 @@ async function main(request, env, ctx) {
 }`;
   const patched = parchearVantsWorker(sample);
   assert.match(patched, /VANTS_SENTINEL_AC_GATE_V1/);
+  assert.match(patched, /VANTS_TOURNAMENT_AC_FIELD_V1/);
   assert.match(patched, /cuenta_bloqueada_anticheat/);
   assert.match(patched, /anticheat_requerido/);
   assert.match(patched, /\/api\/formularios\//);
