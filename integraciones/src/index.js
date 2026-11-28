@@ -371,6 +371,7 @@ async function rutas(req, env, url) {
         faceit: !!env.FACEIT_API_KEY, twitch: !!(env.TWITCH_CLIENT_ID && env.TWITCH_CLIENT_SECRET),
         kick: !!(env.KICK_CLIENT_ID && env.KICK_CLIENT_SECRET), discord: !!env.DISCORD_BOT_TOKEN, db: !!env.DB,
         epic: !!(env.EPIC_CLIENT_ID && env.EPIC_CLIENT_SECRET), fortnite: !!env.FORTNITE_API_KEY,
+        riot: !!env.RIOT_API_KEY,
         gemini: !!env.GEMINI_API_KEY,
         webhooks_discord: ['REGISTROS', 'COMUNIDAD', 'B2B', 'TICKETS'].filter((k) => env['DISCORD_WEBHOOK_' + k]).length,
       },

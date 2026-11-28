@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { rutasVantsAi, preEvaluarAlianzaB2B, compactarTelemetriaJson } from "../integraciones/src/vantsAi.js";
+import { datosValorant, metricasValorant, purgarDatosRiot, rutasJuegos } from "../integraciones/src/juegos.js";
 import { vantsAiApi, VantsAiError } from "../client/src/lib/vantsAiApi.ts";
 
 function createAiMockD1() {
@@ -485,5 +486,81 @@ test("rutasVantsAi /ai/scout/jugador falls back to ROUTER_MODEL on EXPERT_MODEL 
     globalThis.fetch = fetchOrig;
   }
 });
+
+test("VALORANT RSO compliance: datosValorant returns rso_pendiente without opt-in/RIOT_API_KEY and purgarDatosRiot deletes cached data", async () => {
+  const executedSql: string[] = [];
+  let updatedStats: string | null = null;
+  let fetchCalled = false;
+  const fetchOrig = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    fetchCalled = true;
+    throw new Error("should not call external API without RSO opt-in and RIOT_API_KEY");
+  }) as any;
+
+  const mockDb = {
+    prepare(sql: string) {
+      let bound: any[] = [];
+      const stmt: any = {
+        bind(...p: any[]) {
+          bound = p;
+          return stmt;
+        },
+        async first() {
+          executedSql.push(sql);
+          return null;
+        },
+        async all() {
+          executedSql.push(sql);
+          if (/SELECT id, stats FROM players/i.test(sql)) {
+            return { results: [{ id: "p-1", stats: JSON.stringify({ valorant: { tier_id: 21 }, faceit: { elo: 2100 } }) }] };
+          }
+          return { results: [] };
+        },
+        async run() {
+          executedSql.push(sql);
+          if (/UPDATE players SET stats = \?/i.test(sql)) {
+            updatedStats = bound[0];
+          }
+          return { success: true };
+        },
+      };
+      return stmt;
+    },
+  };
+
+  try {
+    const res = await datosValorant({ DB: mockDb }, "google-oauth2|player-1", false);
+    assert.equal(res.ok, false);
+    assert.equal(res.motivo, "rso_pendiente");
+    assert.equal(res.opt_in, false);
+    assert.equal(fetchCalled, false);
+    assert.equal(metricasValorant(res), null);
+
+    // POST /riot with manual Riot ID returns rso_pendiente cleanly without writing unverified handles
+    const H = { json: jsonHelper, usuario: async () => "google-oauth2|player-1" };
+    const reqManual = new Request("https://int.vants.cc/riot", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ riot: "Feispla#000" }),
+    });
+    const rManual = await rutasJuegos(reqManual, { DB: mockDb }, new URL(reqManual.url), "/riot", "POST", H);
+    assert.equal(rManual!.status, 200);
+    const bodyManual = (await rManual!.json()) as any;
+    assert.equal(bodyManual.ok, false);
+    assert.equal(bodyManual.motivo, "rso_pendiente");
+
+    // Opt-out purge deletes vants_links, integ_riot, integ_logros_ok v.%, user_game_accounts, and players.stats.valorant
+    const purgeRes = await purgarDatosRiot(mockDb, "google-oauth2|player-1");
+    assert.equal(purgeRes.ok, true);
+    assert.ok(executedSql.some((s) => /DELETE FROM vants_links/i.test(s)));
+    assert.ok(executedSql.some((s) => /DELETE FROM integ_riot/i.test(s)));
+    assert.ok(executedSql.some((s) => /DELETE FROM integ_logros_ok/i.test(s) && s.includes("v.%")));
+    assert.ok(executedSql.some((s) => /DELETE FROM user_game_accounts/i.test(s)));
+    assert.deepEqual(JSON.parse(updatedStats!), { faceit: { elo: 2100 } });
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
 
 

@@ -19,6 +19,9 @@ jobs:
       - name: Sintaxis
         run: |
           node --check src/index.js
+          node --check src/juegos.js
+          node --check src/perfiles.js
+          node --check src/insignias.js
           node --check src/vantsAi.js
           node --check src/comms.js
       - name: Migraciones D1 (idempotentes)
@@ -31,10 +34,11 @@ jobs:
           done
       - name: Deploy
         run: npx -y wrangler@4 deploy
-      - name: Secretos de Epic / Fortnite, VANTS Identity y VANTS Core AI
+      - name: Secretos de Epic / Fortnite, Riot Games, VANTS Identity y VANTS Core AI
         env:
           EPIC_CLIENT_SECRET: ${{ secrets.EPIC_CLIENT_SECRET }}
           FORTNITE_API_KEY: ${{ secrets.FORTNITE_API_KEY }}
+          RIOT_API_KEY: ${{ secrets.RIOT_API_KEY }}
           VANTS_AUTH_PRIVATE_JWK: ${{ secrets.VANTS_AUTH_PRIVATE_JWK }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -48,6 +52,7 @@ jobs:
         run: |
           if [ -n "$EPIC_CLIENT_SECRET" ]; then printf '%s' "$EPIC_CLIENT_SECRET" | npx -y wrangler@4 secret put EPIC_CLIENT_SECRET; fi
           if [ -n "$FORTNITE_API_KEY" ]; then printf '%s' "$FORTNITE_API_KEY" | npx -y wrangler@4 secret put FORTNITE_API_KEY; fi
+          if [ -n "$RIOT_API_KEY" ]; then printf '%s' "$RIOT_API_KEY" | npx -y wrangler@4 secret put RIOT_API_KEY; fi
           if [ -n "$VANTS_AUTH_PRIVATE_JWK" ]; then printf '%s' "$VANTS_AUTH_PRIVATE_JWK" | npx -y wrangler@4 secret put VANTS_AUTH_PRIVATE_JWK; fi
           if [ -n "$GOOGLE_OAUTH_CLIENT_SECRET" ]; then printf '%s' "$GOOGLE_OAUTH_CLIENT_SECRET" | npx -y wrangler@4 secret put GOOGLE_OAUTH_CLIENT_SECRET; fi
           if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | npx -y wrangler@4 secret put RESEND_API_KEY; fi

@@ -200,6 +200,9 @@ export default function Membresias() {
               </tbody>
             </table>
           </div>
+          <p className="small muted mt-3" data-testid="nota-riot-gratis">
+            Nota de transparencia: el acceso a tus estadísticas oficiales de Riot Games / VALORANT (mediante Riot Sign On) es siempre 100 % gratuito para todos los jugadores. Los planes de pago cubren únicamente cosméticos, insignias, herramientas propias de VANTS y cuotas de coaching IA.
+          </p>
         </section>
       </div>
       <BadgeGrid />
@@ -292,7 +295,7 @@ function MisLogros() {
     <div className="wrap grid gap-10">
       <div className="grid gap-4">
         <h2 className="d-2">Logros de juego</h2>
-        <p className="small muted -mt-2">1000 logros: 500 de FACEIT CS2 (se activan al vincular FACEIT) y 500 de VALORANT (se activan con tu Riot ID). Se calculan con tus datos reales.</p>
+        <p className="small muted -mt-2">1000 logros: 500 de FACEIT CS2 (se activan al vincular FACEIT) y 500 de VALORANT (se activan mediante Riot Sign On). Se calculan con tus datos oficiales.</p>
         <LogrosJuegos />
       </div>
       <div className="grid gap-4">
@@ -308,7 +311,7 @@ function MisLogros() {
 export function Progreso() {
   return (
     <>
-      <PageHead eyebrow="Progreso" title="Mi progreso" lead="Tu progreso de jugador en VANTS, FACEIT y VALORANT. FACEIT se activa al vincular la cuenta y VALORANT al conectar tu Riot ID." />
+      <PageHead eyebrow="Progreso" title="Mi progreso" lead="Tu progreso de jugador en VANTS, FACEIT y VALORANT. FACEIT se activa al vincular la cuenta y VALORANT mediante consentimiento explícito con Riot Sign On (RSO)." />
       <AuthGate what="tu progreso"><MiProgreso /></AuthGate>
     </>
   );

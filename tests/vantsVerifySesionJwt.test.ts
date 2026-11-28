@@ -4,7 +4,7 @@ import { parchearVantsWorker } from "../script/ci/parchear-auth-dual.mjs";
 
 /**
  * verifySesionJwt es el segundo verificador de sesión del Worker `vants` (además de infoDeSesion):
- * protege /api/account/perfil, /api/account/progreso, /api/valorant/rango y los clips destacados.
+ * protege /api/account/perfil, /api/account/progreso y los clips destacados.
  * Antes solo aceptaba el emisor de Auth0, así que las sesiones de VANTS Identity (el único login
  * que ofrece hoy la web) recibían 401 `sin_sesion` al guardar el nombre público.
  */

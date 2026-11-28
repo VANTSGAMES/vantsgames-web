@@ -86,8 +86,15 @@ export async function evaluar(env, ident, { conValorant = true } = {}) {
   const nivelF = ident.ranking ? Number(ident.ranking.nivel) || 0 : 0;
   let tierV = 0;
   if (conValorant) {
-    const subRiot = ident.subs.find((x) => x.startsWith('google-oauth2|')) || ident.subs[0];
-    if (subRiot) { const d = await datosValorant(env, subRiot).catch(() => null); tierV = (d && Number(d.tier_id)) || 0; if (d && d.riot) plats.add('riot'); }
+    const riotLink = (ident.links || []).find((l) => l.platform === 'riot' && Number(l.verified) && l.platform_user_id);
+    const subRiot = riotLink ? riotLink.auth0_sub : (ident.subs.find((x) => x.startsWith('google-oauth2|')) || ident.subs[0]);
+    if (subRiot) {
+      const d = await datosValorant(env, subRiot).catch(() => null);
+      if (d && d.ok && d.opt_in && d.fuente === 'riot_official') {
+        tierV = Number(d.tier_id) || 0;
+        if (d.riot) plats.add('riot');
+      }
+    }
   }
   const { lista } = await identidades(db);
   const top = [...lista].sort((a, b) => (b.xp || 0) - (a.xp || 0)).slice(0, 10);

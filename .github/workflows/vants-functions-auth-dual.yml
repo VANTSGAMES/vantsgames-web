@@ -92,6 +92,7 @@ jobs:
           grep -c "VANTS_FN_DUAL_2" src/worker.js
           grep -c "VANTS_FN_DUAL_3" src/worker.js
           grep -c "VANTS_FN_STRIPE_ENV_V1" src/worker.js
+          grep -c "VANTS_FN_RIOT_OPTOUT_V1" src/worker.js
 
       - name: Prueba en seco
         working-directory: fn

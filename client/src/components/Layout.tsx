@@ -469,18 +469,26 @@ const COLUMNAS: { titulo: string; enlaces: { label: string; to: string; externo?
   ]},
 ];
 
+const RIOT_DISCLAIMER =
+  "VANTS GAMES isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.";
+
 export function Footer() {
   const nativo = esAppNativa();
   if (nativo) {
     return (
       <footer className="mt-8 border-t" style={{ borderColor: "var(--linea-suave)", background: "var(--negro)" }}>
-        <div className="wrap py-4 flex flex-wrap gap-x-4 gap-y-1.5 items-center justify-between text-xs muted">
-          <span>VANTS Movil · Circuito Oficial</span>
-          <span className="flex items-center gap-4">
-            <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
-            <Link href="/terminos" className="hover:text-white">Términos</Link>
-            <Link href="/perfil/soporte" className="hover:text-white">Soporte</Link>
-          </span>
+        <div className="wrap py-4 grid gap-2 text-xs muted">
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center justify-between">
+            <span>VANTS Movil · Circuito Oficial</span>
+            <span className="flex items-center gap-4">
+              <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
+              <Link href="/terminos" className="hover:text-white">Términos</Link>
+              <Link href="/perfil/soporte" className="hover:text-white">Soporte</Link>
+            </span>
+          </div>
+          <p className="text-[11px] leading-relaxed opacity-80" data-testid="riot-legal-disclaimer">
+            {RIOT_DISCLAIMER}
+          </p>
         </div>
       </footer>
     );
@@ -511,13 +519,18 @@ export function Footer() {
           </div>
         ))}
       </div>
-      <div className="wrap py-5 flex flex-wrap gap-x-6 gap-y-2 justify-between small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
-        <span>© {new Date().getFullYear()} VANTS GAMES.</span>
-        <span className="flex gap-4">
-          <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
-          <Link href="/terminos" className="hover:text-white">Términos</Link>
-          <Link href="/perfil" className="hover:text-white">Mi perfil</Link>
-        </span>
+      <div className="wrap py-5 grid gap-3 small muted border-t" style={{ borderColor: "var(--linea-suave)" }}>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 justify-between">
+          <span>© {new Date().getFullYear()} VANTS GAMES.</span>
+          <span className="flex gap-4">
+            <Link href="/privacidad" className="hover:text-white">Privacidad</Link>
+            <Link href="/terminos" className="hover:text-white">Términos</Link>
+            <Link href="/perfil" className="hover:text-white">Mi perfil</Link>
+          </span>
+        </div>
+        <p className="text-xs leading-relaxed opacity-85" data-testid="riot-legal-disclaimer">
+          {RIOT_DISCLAIMER}
+        </p>
       </div>
     </footer>
   );

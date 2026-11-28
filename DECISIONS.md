@@ -7,7 +7,7 @@
 5. **Auth desactivada en preview.** Auth0 solo admite callbacks registrados. Sin sesión, lo privado muestra "inicia sesión" y no se renderiza ningún dato privado.
 6. **Integraciones con estado real.** Las cuentas vinculadas leen el diagnóstico de `/fn/linker/`: conectada, desconectada, pendiente o error. Hoy faltan los `*_CLIENT_ID` de los proveedores.
 7. **Clips.** La vitrina destacada viene de `/api/clips/featured` (publicada por VANTS-Clipper); los recientes, del canal de YouTube real.
-8. **Rankings.** Se muestran solo los que calcula el backend (`/api/gpr`). VANTS Ranked aparece vacío hasta que el backend publique la temporada.
+8. **Rankings.** Se muestran únicamente los rankings oficiales calculados por el backend de VANTS (FACEIT CS2, VANTS Ranked y resultados de torneos).
 
 ## Pendiente del propietario
 

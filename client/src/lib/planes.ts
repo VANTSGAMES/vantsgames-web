@@ -99,7 +99,7 @@ export interface ComparisonRow {
 }
 
 export const PLAN_COMPARISON: readonly ComparisonRow[] = [
-  { feature: "Perfil competitivo y ranking FACEIT / Riot", gratis: "Incluido", pro: "Incluido", creator: "Incluido", pase: "Incluido" },
+  { feature: "Perfil competitivo y estadísticas oficiales (FACEIT / Riot RSO)", gratis: "100 % gratis", pro: "100 % gratis", creator: "100 % gratis", pase: "100 % gratis" },
   { feature: "Inscripción a torneos abiertos", gratis: "Estándar", pro: "Sin fee", creator: "Sin fee", pase: "Sin fee" },
   { feature: "Crear torneos propios de comunidad", gratis: "—", pro: "Incluido", creator: "Incluido", pase: "Temporada S4" },
   { feature: "App VANTS Clipper PC + recorte local 9:16", gratis: "Local gratis", pro: "Incluido", creator: "Incluido", pase: "Incluido" },

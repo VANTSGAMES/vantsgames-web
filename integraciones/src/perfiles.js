@@ -34,7 +34,7 @@ export async function identidades(db) {
 
   const fotos = new Map((await todas(db, 'SELECT pid, url, actualizado, datos IS NOT NULL AS tiene FROM integ_foto')).map((f) => [f.pid, f]));
   const [links, players, perfiles, ranking, miembros, riot] = await Promise.all([
-    todas(db, 'SELECT auth0_sub, platform, handle, platform_user_id, avatar_url FROM vants_links'),
+    todas(db, 'SELECT auth0_sub, platform, handle, platform_user_id, avatar_url, verified FROM vants_links'),
     todas(db, 'SELECT id, auth0_sub, discord_user_id, auth_user_id, display_name, username, xp, role, avatar_url, creado_at, stats FROM players'),
     todas(db, 'SELECT auth0_sub, nickname, redes, banner, vitrina, updated_at FROM perfiles_publicos'),
     todas(db, 'SELECT auth0_sub, faceit_id, nick, avatar, pais, nivel, elo, partidas, winrate, kd, actualizado FROM integ_ranking'),
@@ -134,12 +134,15 @@ export async function perfilPublico(env, pid) {
   const roster = await todas(db, "SELECT r.rol, r.juego, t.slug, t.nombre, t.tag, t.logo_url FROM integ_roster r LEFT JOIN pt_teams t ON t.slug = 'vants' WHERE r.pid = ?", pid);
   const codigos = new Set(logros.map((l) => l.code));
   const nF = [...codigos].filter((c) => c.startsWith('f.')).length, nV = [...codigos].filter((c) => c.startsWith('v.')).length;
-  // VALORANT: Riot ID guardado en la web (HenrikDev) o rango que sincronizó el bot.
+  // VALORANT: únicamente con consentimiento explícito (opt-in) vía Riot Sign On (RSO) y API oficial.
   let valorant = null;
-  const subRiot = riot[0] ? riot[0].auth0_sub : id.subs.find((x) => x.startsWith('google-oauth2|')) || id.subs[0];
+  const riotLink = (id.links || []).find((l) => l.platform === 'riot' && Number(l.verified) && l.platform_user_id);
+  const subRiot = riotLink ? riotLink.auth0_sub : (riot[0] ? riot[0].auth0_sub : id.subs.find((x) => x.startsWith('google-oauth2|')) || id.subs[0]);
   if (subRiot) {
     const d = await datosValorant(env, subRiot).catch(() => null);
-    if (d && (d.tier_id || d.riot)) valorant = { riot: d.riot || null, tier: d.tier || null, tier_id: d.tier_id || null, rr: d.rr ?? null, icono: iconoTier(d.tier_id), pico: d.pico || null, fuente: d.fuente || null };
+    if (d && d.ok && d.opt_in && d.fuente === 'riot_official' && (d.tier_id || d.riot)) {
+      valorant = { riot: d.riot || null, tier: d.tier || null, tier_id: d.tier_id || null, rr: d.rr ?? null, icono: iconoTier(d.tier_id), pico: d.pico || null, fuente: d.fuente };
+    }
   }
   const fortnite = await fortnitePublico(env, id.subs).catch(() => null);
   const rk = id.ranking;

@@ -97,9 +97,12 @@ function ActivarJuego({ juego }: { juego: "faceit" | "valorant" }) {
       <Link href="/perfil/cuentas" className="btn btn-sm btn-rojo">Vincular FACEIT</Link>
     </div>
   ) : (
-    <div className="panel panel-pad grid gap-3" data-testid="activar-valorant">
-      <p className="small muted">Los 500 logros de VALORANT se activan al conectar tu cuenta de Riot con tu Riot ID.</p>
-      <RiotIdForm compacto />
+    <div className="panel panel-pad flex flex-wrap items-center justify-between gap-3" data-testid="activar-valorant">
+      <div className="grid gap-1">
+        <p className="small muted">Los 500 logros de VALORANT se activan exclusivamente con tu consentimiento (opt-in) mediante Riot Sign On (RSO).</p>
+        <p className="text-xs muted">Conexión oficial con Riot Sign On en revisión.</p>
+      </div>
+      <Link href="/perfil/cuentas" className="btn btn-sm btn-rojo">Gestionar en Mis cuentas</Link>
     </div>
   );
 }
@@ -143,9 +146,6 @@ export function LogrosJuegos({ inicial = "faceit" as Juego }: { inicial?: Juego 
             </div>
           )}
           {g && !g.activo && <ActivarJuego juego={juego} />}
-          {juego === "valorant" && e?.valorant.activo && e.valorant.fuente === "bot" && (
-            <p className="small muted">Rango leído del bot de Discord. Las estadísticas por partida, agente y mapa se completan cuando el servidor tenga acceso a la API de VALORANT.</p>
-          )}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="field"><label htmlFor="lg-f">Mostrar</label><select id="lg-f" className="input" value={filtro} onChange={(ev) => setFiltro(ev.target.value as any)}><option value="todos">Todos</option><option value="ok">Conseguidos</option><option value="pend">Pendientes</option></select></div>
             <div className="field"><label htmlFor="lg-c">Categoría</label><select id="lg-c" className="input" value={categoria} onChange={(ev) => setCategoria(ev.target.value)}><option value="">Todas</option>{cats.map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
@@ -196,7 +196,7 @@ export function ResumenLogros() {
           const g = est.data![j];
           return (
             <Link key={j} href="/logros" className="panel panel-pad grid gap-2 hover:bg-[var(--grafito-2)] transition-colors">
-              <div className="flex justify-between items-center"><span className="eyebrow">{j === "faceit" ? "FACEIT CS2" : "VALORANT"}</span>{g.activo ? <span className="tag tag-ok">Activo</span> : <span className="tag">{j === "faceit" ? "Vincula FACEIT" : "Añade tu Riot ID"}</span>}</div>
+              <div className="flex justify-between items-center"><span className="eyebrow">{j === "faceit" ? "FACEIT CS2" : "VALORANT"}</span>{g.activo ? <span className="tag tag-ok">Activo</span> : <span className="tag">{j === "faceit" ? "Vincula FACEIT" : "Riot Sign On (RSO)"}</span>}</div>
               <div className="num d-3">{g.conseguidos}<span className="muted">/500</span></div>
               <div className="h-1.5 bg-[var(--grafito-2)]"><div className="h-1.5" style={{ width: (100 * g.conseguidos) / 500 + "%", background: "var(--rojo)" }} /></div>
             </Link>
@@ -248,43 +248,59 @@ export function InsigniasVants1000() {
   );
 }
 
-/* ------------------------------------------------------------------ Riot ID */
-const ERR_RIOT: Record<string, string> = {
-  riot_invalido: "Usa el formato Nombre#TAG (por ejemplo Kick Feispla#000).",
-  riot_no_encontrado: "Riot no tiene ninguna cuenta con ese Riot ID. Revisa el nombre y el tag.",
-  sin_sesion: "Inicia sesión para guardar tu Riot ID.",
-};
-export function RiotIdForm({ compacto = false }: { compacto?: boolean }) {
+/* ------------------------------------------------------------------ Riot Sign On (RSO) */
+export function RiotRsoEstado({ compacto = false }: { compacto?: boolean }) {
   const qc = useQueryClient();
   const { status } = useAuth();
-  const q = useApi<{ riot: string | null; verificado: boolean; hdev: boolean }>(status === "autenticado" ? "/int/riot" : null, { auth: true });
-  const [v, setV] = useState("");
-  const [st, setSt] = useState<{ k: "idle" | "guardando" | "ok" | "error"; m?: string }>({ k: "idle" });
-  useEffect(() => { if (q.data?.riot) setV(q.data.riot); }, [q.data?.riot]);
-  const refrescar = () => Promise.all(["/int/riot", "/int/progreso", "/int/logros/estado"].map((k) => qc.invalidateQueries({ queryKey: [k, true] })));
-  const guardar = async (ev: FormEvent) => {
-    ev.preventDefault();
-    setSt({ k: "guardando" });
+  const q = useApi<{ riot: string | null; opt_in: boolean; verificado: boolean; rso_activo: boolean; motivo: string | null }>(
+    status === "autenticado" ? "/int/riot" : null,
+    { auth: true },
+  );
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const refrescar = () =>
+    Promise.all(["/int/riot", "/int/progreso", "/int/logros/estado", "/api/account/perfil"].map((k) => qc.invalidateQueries({ queryKey: [k, true] })));
+
+  const desvincular = async () => {
+    setBusy(true);
+    setMsg(null);
     try {
-      const r = await api<any>("/int/riot", { method: "POST", auth: true, body: { riot: v.trim() } });
+      await api("/fn/linker/api/link/unlink", { method: "POST", auth: true, body: { platform: "riot" } }).catch(() => null);
+      await api("/int/riot", { method: "POST", auth: true, body: { opt_out: true } });
       await refrescar();
-      const d = r.valorant;
-      setSt({ k: "ok", m: d && d.tier ? "Conectado: " + d.tier + (d.rr != null ? " · " + d.rr + " RR" : "") : "Riot ID guardado." });
-    } catch (e: any) { setSt({ k: "error", m: ERR_RIOT[e.code] || "No se pudo guardar (" + e.code + ")." }); }
+      setMsg("Cuenta de Riot desvinculada (opt-out) y estadísticas en caché eliminadas.");
+    } catch (e: any) {
+      setMsg("No se pudo desvincular (" + (e.code || "error") + ").");
+    } finally {
+      setBusy(false);
+    }
   };
-  const quitar = async () => { setSt({ k: "guardando" }); try { await api("/int/riot", { method: "POST", auth: true, body: { riot: "" } }); setV(""); await refrescar(); setSt({ k: "idle" }); } catch (e: any) { setSt({ k: "error", m: "No se pudo quitar (" + e.code + ")." }); } };
+
   return (
-    <form onSubmit={guardar} className={compacto ? "grid gap-3" : "panel panel-pad grid gap-4 max-w-xl"} data-testid="form-riot">
-      {!compacto && <><h2 className="d-3">Cuenta de VALORANT (Riot ID)</h2><p className="small muted">Escribe tu Riot ID para activar tu rango, estadísticas, Mi progreso y los 500 logros de VALORANT.</p></>}
-      <div className="flex flex-wrap gap-2 items-end">
-        <div className="field grow"><label htmlFor="riot-id">Riot ID</label><input id="riot-id" className="input" value={v} onChange={(e) => setV(e.target.value)} placeholder="Nombre#TAG" maxLength={24} required data-testid="input-riot" /></div>
-        <button className="btn btn-rojo" disabled={st.k === "guardando"} data-testid="button-guardar-riot">{st.k === "guardando" ? "Conectando…" : q.data?.riot ? "Actualizar" : "Conectar"}</button>
-        {q.data?.riot && <button type="button" className="btn" onClick={quitar} disabled={st.k === "guardando"}>Quitar</button>}
-      </div>
-      {st.k === "ok" && <span className="small" style={{ color: "var(--ok)" }} role="status">{st.m}</span>}
-      {st.k === "error" && <span className="small" style={{ color: "#ff5468" }} role="alert">{st.m}</span>}
-      {q.data?.riot && st.k === "idle" && <span className="small muted">Guardado: <b style={{ color: "var(--gris-1)" }}>{q.data.riot}</b>{q.data.verificado ? " · verificado con Riot" : ""}</span>}
-    </form>
+    <div className={compacto ? "grid gap-3" : "panel panel-pad grid gap-4 max-w-xl"} data-testid="estado-riot-rso">
+      {!compacto && (
+        <>
+          <h2 className="d-3">Cuenta de VALORANT (Riot Sign On)</h2>
+          <p className="small muted">La conexión con VALORANT se realiza exclusivamente mediante Riot Sign On (RSO) con consentimiento explícito (opt-in).</p>
+        </>
+      )}
+      {q.data?.opt_in ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="small muted">
+            RSO activo: <b style={{ color: "var(--gris-1)" }}>{q.data.riot || "Cuenta Riot verificada"}</b>
+          </span>
+          <button type="button" className="btn btn-sm" onClick={desvincular} disabled={busy} data-testid="button-optout-riot">
+            {busy ? "Desvinculando…" : "Desvincular (Opt-Out)"}
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="small muted">Conexión oficial con Riot Sign On en revisión.</span>
+          <Link href="/perfil/cuentas" className="btn btn-sm btn-rojo">Ir a Mis cuentas</Link>
+        </div>
+      )}
+      {msg && <span className="small muted" role="status">{msg}</span>}
+    </div>
   );
 }
 
@@ -335,20 +351,21 @@ export function PanelFaceitProgreso({ p }: { p: Progreso["faceit"] }) {
 export function PanelValorantProgreso({ p }: { p: Progreso["valorant"] }) {
   if (!p.activo) return (
     <div className="panel panel-pad grid gap-3" data-testid="progreso-valorant-inactivo">
-      <div className="eyebrow">VALORANT · inactivo</div>
-      <p className="small muted">Se activa al conectar tu cuenta de Riot: rango, RR, ELO, pico, estadísticas y 500 logros.</p>
-      {p.riot && p.aviso === "hdev_no_config" && <p className="small muted">Riot ID guardado ({p.riot}). Los datos aparecerán en cuanto el servidor tenga acceso a la API de VALORANT.</p>}
-      <RiotIdForm compacto />
+      <div className="eyebrow">VALORANT · Riot Sign On (RSO)</div>
+      <p className="small muted">
+        Las estadísticas oficiales de VALORANT y los 500 logros se activan exclusivamente mediante consentimiento explícito (opt-in) con Riot Sign On.
+      </p>
+      <RiotRsoEstado compacto />
     </div>
   );
   return (
     <div className="panel panel-pad grid gap-4" data-testid="progreso-valorant">
-      <div className="flex items-center justify-between gap-3"><span className="eyebrow">VALORANT{p.region ? " · " + p.region.toUpperCase() : ""}</span><span className="tag tag-ok">Activo</span></div>
+      <div className="flex items-center justify-between gap-3"><span className="eyebrow">VALORANT{p.region ? " · " + p.region.toUpperCase() : ""}</span><span className="tag tag-ok">RSO Activo</span></div>
       <div className="flex items-center gap-4 flex-wrap">
         {p.icono && <img src={p.icono} alt="" width={64} height={64} data-testid="valorant-icono" />}
         <div>
           <div className="d-2" data-testid="valorant-rango">{p.tier || "Sin clasificar"}</div>
-          <div className="small muted">{p.riot || "Cuenta de Discord"} · <b className="num" style={{ color: "var(--blanco)" }}>{fmt(p.rr)}</b> RR · ELO {fmt(p.elo)}</div>
+          <div className="small muted">{p.riot || "Cuenta Riot verificada"}{p.rr != null ? <> · <b className="num" style={{ color: "var(--blanco)" }}>{fmt(p.rr)}</b> RR</> : null}</div>
         </div>
         {p.pico && <div className="ml-auto flex items-center gap-2">{p.pico_icono && <img src={p.pico_icono} alt="" width={36} height={36} />}<div className="small"><div className="eyebrow">Pico</div>{p.pico}</div></div>}
       </div>
@@ -360,7 +377,6 @@ export function PanelValorantProgreso({ p }: { p: Progreso["valorant"] }) {
           ))}
         </div>
       )}
-      {p.fuente === "bot" && <p className="small muted">Rango sincronizado por el bot de Discord. Las estadísticas por partida se completan cuando el servidor tenga acceso a la API de VALORANT.</p>}
       {p.partidas.length > 0 && (
         <div className="overflow-x-auto" data-testid="valorant-partidas">
           <table className="w-full small">
@@ -376,7 +392,7 @@ export function PanelValorantProgreso({ p }: { p: Progreso["valorant"] }) {
         </div>
       )}
       <div className="grid gap-1.5"><div className="flex justify-between small"><span>Logros VALORANT</span><span className="num">{p.logros.conseguidos} / {p.logros.total}</span></div><Barra pct={(100 * p.logros.conseguidos) / p.logros.total} /></div>
-      <details><summary className="small muted cursor-pointer">Cambiar Riot ID</summary><div className="mt-3"><RiotIdForm compacto /></div></details>
+      <div className="pt-1"><RiotRsoEstado compacto /></div>
     </div>
   );
 }

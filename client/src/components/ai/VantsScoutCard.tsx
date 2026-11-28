@@ -177,8 +177,8 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
 
       {!reporte && !error && !loading && (
         <p style={{ marginTop: 12, fontSize: 13, color: "#8e8e96", lineHeight: 1.5 }}>
-          Cruza tus datos reales de FACEIT CS2, VALORANT, Fortnite y VANTS Ranked para calcular tu
-          índice de rendimiento, detectar fortalezas y generar un plan de entrenamiento de 7 días.
+          Analiza tus estadísticas verificadas de FACEIT CS2, VALORANT (solo si autorizaste tu cuenta con Riot Sign On),
+          Fortnite y VANTS Ranked para detectar fortalezas y generar un plan constructivo de entrenamiento de 7 días.
         </p>
       )}
 
@@ -233,7 +233,7 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
           >
             <div style={{ background: "#18181b", border: "1px solid #2a2a2f", padding: 14 }}>
               <div style={{ fontSize: 11, color: "#8e8e96", textTransform: "uppercase" }}>
-                Performance Score
+                Índice de Progreso
               </div>
               <div style={{ fontSize: 32, fontWeight: 800, color: scoreColor, lineHeight: 1.1 }}>
                 {reporte.performance_score}
@@ -243,7 +243,7 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
 
             <div style={{ background: "#18181b", border: "1px solid #2a2a2f", padding: 14 }}>
               <div style={{ fontSize: 11, color: "#8e8e96", textTransform: "uppercase" }}>
-                Tier Sugerido
+                Nivel de Desarrollo
               </div>
               <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>
                 {reporte.tier_sugerido}
@@ -253,7 +253,7 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
             {reporte.rol_ideal && (
               <div style={{ background: "#18181b", border: "1px solid #2a2a2f", padding: 14 }}>
                 <div style={{ fontSize: 11, color: "#8e8e96", textTransform: "uppercase" }}>
-                  Rol Ideal
+                  Rol Sugerido
                 </div>
                 <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4 }}>
                   {reporte.rol_ideal}
@@ -262,7 +262,7 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
             )}
           </div>
 
-          {/* Veredicto de scouting */}
+          {/* Veredicto de coaching constructivo */}
           <div
             style={{
               background: "#18181b",
@@ -272,7 +272,7 @@ export function VantsScoutCard({ getAccessToken, pid, nick }: VantsScoutCardProp
               color: "#e4e4e7",
             }}
           >
-            <strong style={{ color: "#fff" }}>Recomendación ({jugadorNick}):</strong>{" "}
+            <strong style={{ color: "#fff" }}>Recomendación de coaching ({jugadorNick}):</strong>{" "}
             {reporte.recomendacion_fichaje}
           </div>
 

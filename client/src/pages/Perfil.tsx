@@ -6,7 +6,7 @@ import { PLANES } from "./Membresias";
 import { FilaInsignias, Sello3D, SelloAvatar, Insignia3D, pngInsignia, useCatalogoInsignias } from "@/components/Insignia3D";
 import { useMisInsignias } from "./Membresias";
 import { TarjetaEpic, PanelFortnite, useCuentaEpic } from "@/components/Fortnite";
-import { ResumenLogros, PanelValorantPerfil, RiotIdForm } from "./Juegos";
+import { ResumenLogros, PanelValorantPerfil } from "./Juegos";
 import {
   IconoPlayGames,
   LanzadorRapidoTorneo,
@@ -930,6 +930,18 @@ function Cuentas() {
     setBusy(plataforma);
     try {
       await api("/fn/linker/api/link/unlink", { method: "POST", auth: true, body: { platform: plataforma } });
+      if (plataforma === "riot") {
+        await api("/int/riot", { method: "POST", auth: true, body: { opt_out: true } }).catch(() => null);
+        await Promise.all(
+          ["/int/riot", "/int/progreso", "/int/logros/estado"].map((k) =>
+            qc.invalidateQueries({ queryKey: [k, true] }),
+          ),
+        );
+        setAviso({
+          ok: true,
+          m: "Cuenta de Riot Games desvinculada (opt-out) y todas tus estadísticas en caché de VALORANT fueron eliminadas.",
+        });
+      }
       await qc.invalidateQueries({ queryKey: ["/api/account/perfil", true] });
     } catch (e: any) {
       setErr((x) => ({ ...x, [plataforma]: e.code }));
@@ -942,7 +954,7 @@ function Cuentas() {
       <div className="border-t pt-6 grid gap-4" style={{ borderColor: "var(--linea-suave)" }}>
         <h3 className="d-3">Cuentas competitivas PC & Consola (OAuth Oficial)</h3>
         <p className="small muted" style={{ maxWidth: "70ch" }}>
-          Una cuenta solo figura como conectada cuando el servidor completa la autorización oficial del proveedor (OAuth). Los datos escritos a mano no cuentan como vinculación.
+          Una cuenta solo figura como conectada cuando el servidor completa la autorización oficial del proveedor (OAuth / Riot Sign On). Los datos escritos a mano no cuentan como vinculación y puedes revocar tu consentimiento (opt-out) en cualquier momento.
         </p>
         {aviso && <p className="small" role="status" style={{ color: aviso.ok ? "var(--ok)" : "#ff5468" }} data-testid="aviso-vinculo">{aviso.m}</p>}
         <div className="grid-auto grid md:grid-cols-2">
@@ -957,6 +969,7 @@ function Cuentas() {
             else if (linker.data && !configurado) estado = "pendiente";
             else estado = "desconectada";
             const ui = ESTADO_UI[estado];
+            const esRiot = p.id === "riot";
             return (
               <div key={p.id} className="p-5 grid gap-3" data-testid={"cuenta-" + p.id}>
                 <div className="flex items-center gap-3">
@@ -964,17 +977,32 @@ function Cuentas() {
                   <span className="d-3">{p.nombre}</span>
                   <span className={ui.c + " ml-auto"} data-testid={"estado-" + p.id}>{linker.isLoading || perfil.isLoading ? "…" : ui.l}</span>
                 </div>
-                {estado === "conectada" && v && <p className="small muted">Cuenta verificada: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b></p>}
-                {estado === "pendiente" && <p className="small muted">La vinculación oficial con {p.nombre} se activará cuando la app de {p.nombre} esté registrada en el servidor.</p>}
+                {estado === "conectada" && v && (
+                  <p className="small muted">
+                    Cuenta verificada{esRiot ? " vía Riot Sign On (opt-in)" : ""}: <b style={{ color: "var(--gris-1)" }}>{v.usuario}</b>
+                    {esRiot && " · Al desvincular se eliminan al instante todas las estadísticas de VALORANT en caché."}
+                  </p>
+                )}
+                {estado === "pendiente" && (
+                  <p className="small muted">
+                    {esRiot
+                      ? "Conexión oficial con Riot Sign On en revisión. Cuando esté activa podrás autorizar (opt-in) y desvincular (opt-out) tu cuenta desde aquí."
+                      : `La vinculación oficial con ${p.nombre} se activará cuando la app de ${p.nombre} esté registrada en el servidor.`}
+                  </p>
+                )}
+                {estado === "desconectada" && esRiot && (
+                  <p className="small muted">
+                    Solo procesamos tu PUUID, Riot ID e historial personal de VALORANT si otorgas tu consentimiento explícito mediante Riot Sign On (RSO).
+                  </p>
+                )}
                 {estado === "error" && <p className="small" style={{ color: "#ff5468" }}>{err[p.id] === "sin_url" ? "No se pudo abrir la vinculación: tu sesión no está activa. Inicia sesión de nuevo e inténtalo." : err[p.id] ? "No se pudo completar la operación (" + err[p.id] + ")." : "El servicio de vinculación no respondió."}</p>}
-                {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : "Conectar " + p.nombre}</button>}
-                {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : "Desconectar"}</button>}
+                {estado === "desconectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => conectar(p.linker)} data-testid={"button-conectar-" + p.id}>{busy === p.id ? "Abriendo…" : esRiot ? "Conectar con Riot Sign On (Opt-In)" : "Conectar " + p.nombre}</button>}
+                {estado === "conectada" && <button className="btn btn-sm w-fit" disabled={busy === p.id} onClick={() => desconectar(p.linker)} data-testid={"button-desconectar-" + p.id}>{busy === p.id ? "Quitando…" : esRiot ? "Desvincular (Opt-Out)" : "Desconectar"}</button>}
               </div>
             );
           })}
           <TarjetaEpic />
         </div>
-        <div className="mt-2"><RiotIdForm /></div>
       </div>
     </div>
   );

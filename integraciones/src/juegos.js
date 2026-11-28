@@ -1,19 +1,17 @@
-// VANTS · Integraciones · juegos (FACEIT CS2 + VALORANT)
+// VANTS · Integraciones · juegos (FACEIT CS2 + VALORANT vía Riot Games API oficial)
 // -----------------------------------------------------------------------------
 //   · Catálogo de 1000 logros de juego (500 FACEIT CS2 + 500 VALORANT). Cada
 //     logro desbloquea su insignia VANTS (1000 insignias, una por logro).
 //     Los de FACEIT solo se activan con FACEIT vinculado; los de VALORANT solo
-//     con un Riot ID guardado.
-//   · Riot ID (Nombre#TAG) → rango, RR, ELO, pico, nivel de cuenta y
-//     estadísticas de VALORANT vía HenrikDev (secreto HENRIKDEV_API_KEY). Si
-//     la clave no está configurada se usa el rango que sincronizó el bot de
-//     Discord (players.stats.valorant) para la cuenta de Discord vinculada.
+//     con consentimiento explícito (opt-in) vía Riot Sign On (RSO) y RIOT_API_KEY.
+//   · Capa VALORANT preparada exclusivamente para APIs oficiales de Riot Games:
+//     account-v1, val-match-v1, val-content-v1, val-ranked-v1 y val-status-v1.
 //   · Mi progreso: VANTS + FACEIT + VALORANT.
 //   · Equipo de FACEIT vinculado por enlace (faceit.com/…/teams/<id>).
-// La vinculación de cuentas FACEIT (linker) NO se toca: solo se lee vants_links.
+// La vinculación de cuentas (linker OAuth/RSO) se lee de vants_links.
 
-const HDEV = 'https://api.henrikdev.xyz';
-const REGIONES = ['latam', 'na', 'br', 'eu', 'ap', 'kr'];
+const RIOT_ACCOUNT_HOSTS = ['americas', 'europe', 'asia'];
+const RIOT_VAL_SHARDS = ['latam', 'na', 'br', 'eu', 'ap', 'kr'];
 const n0 = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const nn = (v) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 
@@ -238,7 +236,7 @@ export async function equipoFaceit(env, teamId, H, partidasUsuario) {
   });
 }
 
-/* ================================================================ VALORANT */
+/* ================================================================ VALORANT (Riot Games API oficial + RSO opt-in) */
 
 export function riotValido(s) {
   const t = String(s || '').trim();
@@ -250,80 +248,249 @@ export function riotValido(s) {
   return { nombre, tag };
 }
 
-async function hdev(env, ruta) {
-  const r = await fetch(HDEV + ruta, { headers: { Authorization: env.HENRIKDEV_API_KEY, Accept: 'application/json' }, signal: AbortSignal.timeout(10000) });
+const valContentCache = new Map();
+
+// Cliente exclusivo de la API oficial de Riot Games (account-v1, val-match-v1, val-content-v1, val-ranked-v1, val-status-v1).
+async function riotFetch(env, host, ruta) {
+  const key = String(env.RIOT_API_KEY || '').trim();
+  if (!key) return null;
+  const r = await fetch('https://' + host + '.api.riotgames.com' + ruta, {
+    headers: { 'X-Riot-Token': key, Accept: 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
   if (r.status === 404) return null;
-  if (r.status === 429) throw new Error('hdev_429');
-  if (!r.ok) throw new Error('hdev_' + r.status);
+  if (r.status === 429) throw new Error('riot_429');
+  if (!r.ok) throw new Error('riot_' + r.status);
   return r.json();
 }
 
-// Datos del bot de Discord (rango sincronizado) para la cuenta de Discord vinculada.
-async function valorantDelBot(db, sub) {
-  const d = await db.prepare("SELECT platform_user_id FROM vants_links WHERE auth0_sub = ? AND platform = 'discord'").bind(sub).first();
-  const ids = [];
-  if (d && d.platform_user_id) ids.push(d.platform_user_id);
-  const filas = await db.prepare(
-    "SELECT stats FROM players WHERE auth0_sub = ? OR discord_user_id = ? OR auth_user_id = ?"
-  ).bind(sub, ids[0] || '-', 'discord:' + (ids[0] || '-')).all();
-  for (const f of filas.results || []) {
-    try {
-      const s = JSON.parse(f.stats || '{}');
-      if (s && s.valorant && s.valorant.tier_id) return s.valorant;
-    } catch { /* stats corruptos */ }
+// Consulta de catálogo oficial val-content-v1 (agentes, mapas y actos) con caché en memoria (6 h).
+async function riotValContent(env, shard) {
+  const hit = valContentCache.get(shard);
+  if (hit && Date.now() - hit.at < 21_600_000) return hit.data;
+  const d = await riotFetch(env, shard, '/val/content/v1/contents?locale=es-MX').catch(() => null);
+  if (!d) return null;
+  const agentes = new Map();
+  for (const ch of d.characters || []) {
+    if (ch && ch.id && ch.name) agentes.set(String(ch.id).toLowerCase(), String(ch.name));
   }
-  return null;
+  const mapas = new Map();
+  for (const mp of d.maps || []) {
+    if (mp && mp.assetPath && mp.name) mapas.set(String(mp.assetPath).toLowerCase(), String(mp.name));
+    if (mp && mp.id && mp.name) mapas.set(String(mp.id).toLowerCase(), String(mp.name));
+  }
+  const actActivo = (d.acts || []).find((a) => a && a.isActive && a.type === 'act') || null;
+  const data = { agentes, mapas, actId: actActivo ? actActivo.id : null };
+  valContentCache.set(shard, { at: Date.now(), data });
+  return data;
 }
 
-// Consulta completa de VALORANT para un Riot ID (HenrikDev), con caché en D1 (10 min).
-async function consultaValorant(env, fila) {
-  const nom = encodeURIComponent(fila.nombre), tag = encodeURIComponent(fila.tag);
-  let region = fila.region || null;
-  const cuenta = await hdev(env, '/valorant/v2/account/' + nom + '/' + tag).catch((e) => { if (String(e.message) === 'hdev_429') throw e; return null; });
-  if (cuenta && cuenta.data && cuenta.data.region) region = String(cuenta.data.region).toLowerCase();
-  let mmr = null;
-  for (const reg of region ? [region, ...REGIONES.filter((r) => r !== region)] : REGIONES) {
-    const j = await hdev(env, '/valorant/v3/mmr/' + reg + '/pc/' + nom + '/' + tag).catch((e) => { if (String(e.message) === 'hdev_429') throw e; return null; });
-    if (j && j.data) { mmr = j.data; region = reg; break; }
+// Comprueba el estado oficial del shard mediante val-status-v1.
+export async function riotValStatus(env, shard = 'latam') {
+  const key = String(env.RIOT_API_KEY || '').trim();
+  if (!key) return { ok: false, motivo: 'rso_pendiente' };
+  const s = RIOT_VAL_SHARDS.includes(shard) ? shard : 'latam';
+  const data = await riotFetch(env, s, '/val/status/v1/platform-data').catch(() => null);
+  return data ? { ok: true, shard: s, status: data } : { ok: false, motivo: 'riot_status_no_disponible' };
+}
+
+// Verifica si el usuario otorgó consentimiento explícito (opt-in) mediante Riot Sign On (RSO).
+export async function vinculoRsoRiot(db, sub) {
+  if (!db || !sub) return null;
+  const row = await db.prepare(
+    "SELECT auth0_sub, handle, platform_user_id, verified, connected_at FROM vants_links WHERE auth0_sub = ? AND platform = 'riot' LIMIT 1"
+  ).bind(sub).first().catch(() => null);
+  if (!row || !Number(row.verified) || !row.platform_user_id) return null;
+  return {
+    auth0_sub: row.auth0_sub,
+    handle: row.handle || null,
+    puuid: String(row.platform_user_id),
+    connected_at: row.connected_at || null,
+  };
+}
+
+// Elimina de forma inmediata el vínculo RSO y todas las cachés/datos de VALORANT en D1 (Opt-Out).
+export async function purgarDatosRiot(db, sub) {
+  if (!db || !sub) return { ok: false };
+  await db.prepare("DELETE FROM vants_links WHERE auth0_sub = ? AND platform = 'riot'").bind(sub).run().catch(() => null);
+  await db.prepare('DELETE FROM integ_riot WHERE auth0_sub = ?').bind(sub).run().catch(() => null);
+  await db.prepare("DELETE FROM integ_logros_ok WHERE auth0_sub = ? AND code LIKE 'v.%'").bind(sub).run().catch(() => null);
+  await db.prepare("DELETE FROM user_game_accounts WHERE user_id = ? AND game = 'riot'").bind(sub).run().catch(() => null);
+  const filas = await db.prepare('SELECT id, stats FROM players WHERE auth0_sub = ?').bind(sub).all().catch(() => ({ results: [] }));
+  for (const f of filas.results || []) {
+    if (!f || !f.stats) continue;
+    try {
+      const s = JSON.parse(f.stats);
+      if (s && typeof s === 'object' && 'valorant' in s) {
+        delete s.valorant;
+        await db.prepare('UPDATE players SET stats = ? WHERE id = ?').bind(JSON.stringify(s), f.id).run().catch(() => null);
+      }
+    } catch { /* stats JSON no válido */ }
   }
-  if (!cuenta && !mmr) return { ok: false, error: 'riot_no_encontrado' };
-  let partidas = [];
-  if (region) {
-    const pj = await hdev(env, '/valorant/v1/stored-matches/' + region + '/' + nom + '/' + tag + '?mode=competitive&size=100').catch(() => null);
-    partidas = ((pj && pj.data) || []).map((x) => {
-      const s = x.stats || {}, meta = x.meta || {}, teams = x.teams || {};
-      const equipo = String(s.team || '').toLowerCase();
-      const otro = equipo === 'red' ? 'blue' : 'red';
-      const shots = s.shots || {};
-      const rondas = n0(teams[equipo]) + n0(teams[otro]);
-      return {
-        id: meta.id || null, mapa: (meta.map && meta.map.name) || null, agente: (s.character && s.character.name) || null,
-        victoria: n0(teams[equipo]) > n0(teams[otro]), marcador: teams[equipo] != null ? teams[equipo] + ' / ' + teams[otro] : null,
-        kills: n0(s.kills), muertes: n0(s.deaths), asistencias: n0(s.assists),
-        headshots: n0(shots.head), disparos: n0(shots.head) + n0(shots.body) + n0(shots.leg),
-        dano: n0(s.damage && s.damage.made), acs: rondas ? Math.round(n0(s.score) / rondas) : null,
-        fecha: meta.started_at || null,
-      };
+  return { ok: true, eliminado: true };
+}
+
+// Consulta oficial de VALORANT usando exclusivamente APIs de Riot Games para un jugador con RSO verificado.
+async function consultaValorantOficial(env, rso, regionPrevia) {
+  const puuid = encodeURIComponent(rso.puuid);
+  let riotHandle = rso.handle || null;
+  let nombre = null;
+  let tag = null;
+
+  // 1) account-v1: resuelve gameName#tagLine oficial a partir del PUUID verificado por RSO
+  for (const host of RIOT_ACCOUNT_HOSTS) {
+    const acc = await riotFetch(env, host, '/riot/account/v1/accounts/by-puuid/' + puuid).catch((e) => {
+      if (String(e.message) === 'riot_429') throw e;
+      return null;
+    });
+    if (acc && acc.gameName && acc.tagLine) {
+      nombre = String(acc.gameName);
+      tag = String(acc.tagLine);
+      riotHandle = nombre + '#' + tag;
+      break;
+    }
+  }
+
+  // 2) val-match-v1: historial personal del jugador autenticado (solo competitivas)
+  const ordenShards = regionPrevia && RIOT_VAL_SHARDS.includes(regionPrevia)
+    ? [regionPrevia, ...RIOT_VAL_SHARDS.filter((s) => s !== regionPrevia)]
+    : RIOT_VAL_SHARDS;
+
+  let shard = null;
+  let matchlist = null;
+  for (const s of ordenShards) {
+    const ml = await riotFetch(env, s, '/val/match/v1/matchlists/by-puuid/' + puuid).catch((e) => {
+      if (String(e.message) === 'riot_429') throw e;
+      return null;
+    });
+    if (ml && Array.isArray(ml.history)) {
+      shard = s;
+      matchlist = ml.history;
+      break;
+    }
+  }
+
+  if (!shard) {
+    return {
+      ok: true,
+      fuente: 'riot_official',
+      opt_in: true,
+      riot: riotHandle,
+      nombre,
+      tag,
+      puuid: rso.puuid,
+      region: regionPrevia || null,
+      nivel_cuenta: null,
+      tarjeta: null,
+      tier_id: null,
+      tier: null,
+      rr: null,
+      elo: null,
+      pico_id: null,
+      pico: null,
+      competitivas: 0,
+      victorias: 0,
+      partidas: [],
+    };
+  }
+
+  const content = await riotValContent(env, shard);
+  const compIds = matchlist
+    .filter((h) => h && h.matchId && (!h.queueId || String(h.queueId).toLowerCase() === 'competitive'))
+    .slice(0, 10)
+    .map((h) => h.matchId);
+
+  const detalles = await Promise.all(
+    compIds.map((mid) => riotFetch(env, shard, '/val/match/v1/matches/' + encodeURIComponent(mid)).catch(() => null))
+  );
+
+  let tierActual = null;
+  let picoTier = null;
+  let nivelCuenta = null;
+  const partidas = [];
+
+  for (const m of detalles) {
+    if (!m || !Array.isArray(m.players)) continue;
+    const me = m.players.find((pl) => pl && pl.puuid === rso.puuid);
+    if (!me) continue;
+    const tier = nn(me.competitiveTier);
+    if (tier && tier >= 3) {
+      if (tierActual == null) tierActual = tier;
+      picoTier = Math.max(picoTier || 0, tier);
+    }
+    if (nivelCuenta == null && me.accountLevel != null) nivelCuenta = nn(me.accountLevel);
+
+    const miEquipo = (m.teams || []).find((t) => t && t.teamId === me.teamId);
+    const otroEquipo = (m.teams || []).find((t) => t && t.teamId !== me.teamId);
+    const rondas = n0(me.stats && me.stats.roundsPlayed) || (n0(miEquipo && miEquipo.roundsWon) + n0(otroEquipo && otroEquipo.roundsWon));
+    const mapaRaw = String((m.matchInfo && m.matchInfo.mapId) || '');
+    const mapaNombre = (content && content.mapas.get(mapaRaw.toLowerCase())) || (mapaRaw.split('/').pop() || null);
+    const agenteId = String(me.characterId || '').toLowerCase();
+    const agenteNombre = (content && content.agentes.get(agenteId)) || null;
+
+    // Estadísticas personales de precisión/daño exclusivamente del jugador opt-in en roundResults
+    let headshots = 0, bodyshots = 0, legshots = 0, dano = 0;
+    for (const rr of m.roundResults || []) {
+      const ps = (rr && rr.playerStats || []).find((x) => x && x.puuid === rso.puuid);
+      if (!ps) continue;
+      for (const dm of ps.damage || []) {
+        headshots += n0(dm.headshots);
+        bodyshots += n0(dm.bodyshots);
+        legshots += n0(dm.legshots);
+        dano += n0(dm.damage);
+      }
+    }
+
+    partidas.push({
+      id: (m.matchInfo && m.matchInfo.matchId) || null,
+      mapa: mapaNombre,
+      agente: agenteNombre,
+      victoria: Boolean(miEquipo && miEquipo.won),
+      marcador: miEquipo && otroEquipo ? n0(miEquipo.roundsWon) + ' / ' + n0(otroEquipo.roundsWon) : null,
+      kills: n0(me.stats && me.stats.kills),
+      muertes: n0(me.stats && me.stats.deaths),
+      asistencias: n0(me.stats && me.stats.assists),
+      headshots,
+      disparos: headshots + bodyshots + legshots,
+      dano,
+      acs: rondas ? Math.round(n0(me.stats && me.stats.score) / rondas) : null,
+      fecha: m.matchInfo && m.matchInfo.gameStartMillis ? new Date(Number(m.matchInfo.gameStartMillis)).toISOString() : null,
     });
   }
-  const cur = (mmr && mmr.current) || {};
-  const peak = (mmr && mmr.peak) || {};
-  const temporadas = (mmr && mmr.seasonal) || [];
-  const d = cuenta && cuenta.data;
+
+  // 3) val-ranked-v1: consulta leaderboard del acto activo solo si el jugador alcanzó rango alto (Inmortal/Radiante)
+  let rrRanked = null;
+  let victoriasActo = null;
+  if (content && content.actId && tierActual && tierActual >= 24) {
+    const lb = await riotFetch(env, shard, '/val/ranked/v1/leaderboards/by-act/' + encodeURIComponent(content.actId) + '?size=200&startIndex=0').catch(() => null);
+    const entry = lb && Array.isArray(lb.players) ? lb.players.find((pl) => pl && pl.puuid === rso.puuid) : null;
+    if (entry) {
+      rrRanked = nn(entry.rankedRating);
+      victoriasActo = nn(entry.numberOfWins);
+    }
+  }
+
+  const victoriasRecientes = partidas.filter((p) => p.victoria).length;
   return {
     ok: true,
-    fuente: 'henrikdev',
-    riot: fila.nombre + '#' + fila.tag,
-    puuid: (d && d.puuid) || null,
-    region,
-    nivel_cuenta: d ? nn(d.account_level) : null,
-    tarjeta: (d && d.card && (d.card.small || d.card.wide)) || null,
-    tier_id: nn(cur.tier && cur.tier.id), tier: cur.tier && cur.tier.id ? (TIERS_VALO[cur.tier.id] || cur.tier.name) : null,
-    rr: nn(cur.rr), elo: nn(cur.elo),
-    pico_id: nn(peak.tier && peak.tier.id), pico: peak.tier && peak.tier.id ? (TIERS_VALO[peak.tier.id] || peak.tier.name) : null,
-    pico_temporada: (peak.season && peak.season.short) || null,
-    competitivas: temporadas.reduce((a, t) => a + n0(t.games), 0),
-    victorias: temporadas.reduce((a, t) => a + n0(t.wins), 0),
+    fuente: 'riot_official',
+    opt_in: true,
+    riot: riotHandle,
+    nombre,
+    tag,
+    puuid: rso.puuid,
+    region: shard,
+    nivel_cuenta: nivelCuenta,
+    tarjeta: null,
+    tier_id: tierActual,
+    tier: tierActual ? (TIERS_VALO[tierActual] || null) : null,
+    rr: rrRanked,
+    elo: null,
+    pico_id: picoTier,
+    pico: picoTier ? (TIERS_VALO[picoTier] || null) : null,
+    pico_temporada: null,
+    competitivas: partidas.length,
+    victorias: victoriasActo != null ? Math.max(victoriasActo, victoriasRecientes) : victoriasRecientes,
     partidas,
   };
 }
@@ -332,64 +499,84 @@ export function iconoTier(id) {
   return id ? 'https://media.valorant-api.com/competitivetiers/03621f52-342b-cf4e-4f86-9350a49c6d04/' + id + '/largeicon.png' : null;
 }
 
-export async function datosValorant(env, sub, forzar) {
-  const db = env.DB;
-  const fila = await db.prepare('SELECT * FROM integ_riot WHERE auth0_sub = ?').bind(sub).first();
-  const bot = await valorantDelBot(db, sub).catch(() => null);
-  const desdeBot = bot ? {
-    ok: true, fuente: 'bot', riot: fila ? fila.nombre + '#' + fila.tag : null, region: bot.region || null,
-    tier_id: nn(bot.tier_id), tier: TIERS_VALO[nn(bot.tier_id)] || bot.tier || null, rr: nn(bot.rr), elo: nn(bot.elo),
-    pico_id: null, pico: null, nivel_cuenta: null, competitivas: null, victorias: null, partidas: [], actualizado: bot.actualizado || null,
-  } : null;
-  if (!fila) return desdeBot ? { ...desdeBot, sin_riot_id: true } : null;
-  const key = String(env.HENRIKDEV_API_KEY || '').trim();
-  if (!key) {
-    return desdeBot ? { ...desdeBot, aviso: 'hdev_no_config' } : { ok: true, fuente: 'pendiente', riot: fila.nombre + '#' + fila.tag, aviso: 'hdev_no_config', partidas: [] };
+export async function datosValorant(env, sub, forzar = false) {
+  const db = env && env.DB;
+  const rso = await vinculoRsoRiot(db, sub).catch(() => null);
+  const key = String((env && env.RIOT_API_KEY) || '').trim();
+
+  // Cumplimiento Riot Games: nunca consultar ni mostrar datos sin RSO opt-in verificado + RIOT_API_KEY oficial.
+  if (!rso || !key) {
+    return {
+      ok: false,
+      motivo: 'rso_pendiente',
+      opt_in: Boolean(rso),
+      rso_activo: Boolean(rso && key),
+      riot: rso ? rso.handle : null,
+      partidas: [],
+    };
   }
-  const fresco = fila.datos && fila.actualizado && Date.now() - Date.parse(fila.actualizado.replace(' ', 'T') + 'Z') < 600_000;
-  if (fresco && !forzar) { try { return JSON.parse(fila.datos); } catch { /* recalcular */ } }
+
+  const fila = await db.prepare('SELECT * FROM integ_riot WHERE auth0_sub = ?').bind(sub).first().catch(() => null);
+  const fresco = fila && fila.datos && fila.actualizado && Date.now() - Date.parse(fila.actualizado.replace(' ', 'T') + 'Z') < 600_000;
+  if (fresco && !forzar) {
+    try {
+      const cached = JSON.parse(fila.datos);
+      if (cached && cached.ok && cached.opt_in === true && cached.fuente === 'riot_official' && cached.puuid === rso.puuid) {
+        return cached;
+      }
+    } catch { /* recalcular */ }
+  }
+
   try {
-    const d = await consultaValorant(env, fila);
-    if (d.ok) {
-      d.actualizado = new Date().toISOString();
-      await db.prepare("UPDATE integ_riot SET datos = ?, region = ?, puuid = ?, verificado = 1, actualizado = datetime('now') WHERE auth0_sub = ?").bind(JSON.stringify(d), d.region, d.puuid, sub).run();
-      return d;
-    }
-    return { ok: false, error: d.error, riot: fila.nombre + '#' + fila.tag, partidas: [] };
+    const d = await consultaValorantOficial(env, rso, fila ? fila.region : null);
+    d.actualizado = new Date().toISOString();
+    const partes = String(d.riot || rso.handle || 'Riot#RSO').split('#');
+    const nom = d.nombre || partes[0] || 'Riot';
+    const tg = d.tag || partes[1] || 'RSO';
+    await db.prepare(
+      "INSERT INTO integ_riot (auth0_sub, nombre, tag, region, puuid, verificado, datos, actualizado) VALUES (?, ?, ?, ?, ?, 1, ?, datetime('now')) " +
+      "ON CONFLICT(auth0_sub) DO UPDATE SET nombre = excluded.nombre, tag = excluded.tag, region = excluded.region, puuid = excluded.puuid, verificado = 1, datos = excluded.datos, actualizado = datetime('now')"
+    ).bind(sub, nom, tg, d.region, d.puuid, JSON.stringify(d)).run().catch(() => null);
+    return d;
   } catch (e) {
-    if (fila.datos) { try { return { ...JSON.parse(fila.datos), aviso: String(e.message) }; } catch { /* nada */ } }
-    return desdeBot ? { ...desdeBot, aviso: String(e.message) } : { ok: false, error: String(e.message), riot: fila.nombre + '#' + fila.tag, partidas: [] };
+    if (fila && fila.datos) {
+      try {
+        const cached = JSON.parse(fila.datos);
+        if (cached && cached.ok && cached.opt_in === true && cached.fuente === 'riot_official' && cached.puuid === rso.puuid) {
+          return { ...cached, aviso: String(e.message || e) };
+        }
+      } catch { /* sin caché válida */ }
+    }
+    return { ok: false, motivo: 'riot_api_error', error: String(e.message || e), opt_in: true, riot: rso.handle, partidas: [] };
   }
 }
 
 export function metricasValorant(d) {
-  if (!d || !d.ok || d.fuente === 'pendiente') return null;
+  if (!d || !d.ok || !d.opt_in || d.fuente !== 'riot_official') return null;
   const v = {};
   v.tier = d.tier_id || 0; v.pico = Math.max(d.pico_id || 0, d.tier_id || 0); v.elo = d.elo; v.rr = d.rr;
   v.nivel_cuenta = d.nivel_cuenta; v.partidas = d.competitivas; v.victorias = d.victorias;
   const P = d.partidas || [];
-  if (d.fuente === 'henrikdev') {
-    let k = 0, de = 0, hs = 0, sh = 0, as = 0, dn = 0, mk = 0, macs = 0, w = 0;
-    for (const p of P) {
-      k += p.kills; de += p.muertes; hs += p.headshots; sh += p.disparos; as += p.asistencias; dn += p.dano;
-      mk = Math.max(mk, p.kills); macs = Math.max(macs, p.acs || 0); if (p.victoria) w++;
-      if (p.agente) {
-        const a = 'agente_' + slug(p.agente);
-        v[a + '_partidas'] = (v[a + '_partidas'] || 0) + 1;
-        if (p.victoria) v[a + '_victorias'] = (v[a + '_victorias'] || 0) + 1;
-        v[a + '_kills'] = (v[a + '_kills'] || 0) + p.kills;
-      }
-      if (p.mapa) {
-        const m = 'mapa_' + slug(p.mapa);
-        v[m + '_partidas'] = (v[m + '_partidas'] || 0) + 1;
-        if (p.victoria) v[m + '_victorias'] = (v[m + '_victorias'] || 0) + 1;
-      }
+  let k = 0, de = 0, hs = 0, sh = 0, as = 0, dn = 0, mk = 0, macs = 0, w = 0;
+  for (const p of P) {
+    k += p.kills; de += p.muertes; hs += p.headshots; sh += p.disparos; as += p.asistencias; dn += p.dano;
+    mk = Math.max(mk, p.kills); macs = Math.max(macs, p.acs || 0); if (p.victoria) w++;
+    if (p.agente) {
+      const a = 'agente_' + slug(p.agente);
+      v[a + '_partidas'] = (v[a + '_partidas'] || 0) + 1;
+      if (p.victoria) v[a + '_victorias'] = (v[a + '_victorias'] || 0) + 1;
+      v[a + '_kills'] = (v[a + '_kills'] || 0) + p.kills;
     }
-    v.kills = k; v.headshots = hs; v.asistencias = as; v.dano = dn; v.max_kills = mk; v.max_acs = macs;
-    v.kd = de ? Math.round((k / de) * 100) / 100 : (k ? k : null);
-    v.hs = sh ? Math.round((hs / sh) * 1000) / 10 : null;
-    v.partidas = Math.max(n0(v.partidas), P.length); v.victorias = Math.max(n0(v.victorias), w);
+    if (p.mapa) {
+      const m = 'mapa_' + slug(p.mapa);
+      v[m + '_partidas'] = (v[m + '_partidas'] || 0) + 1;
+      if (p.victoria) v[m + '_victorias'] = (v[m + '_victorias'] || 0) + 1;
+    }
   }
+  v.kills = k; v.headshots = hs; v.asistencias = as; v.dano = dn; v.max_kills = mk; v.max_acs = macs;
+  v.kd = de ? Math.round((k / de) * 100) / 100 : (k ? k : null);
+  v.hs = sh ? Math.round((hs / sh) * 1000) / 10 : null;
+  v.partidas = Math.max(n0(v.partidas), P.length); v.victorias = Math.max(n0(v.victorias), w);
   return v;
 }
 
@@ -425,7 +612,17 @@ export async function estadoLogros(env, sub, H) {
   const cuenta = (j) => cat.filter((l) => l.j === j && ok.has(l.c)).length;
   return {
     faceit: { activo: !!vf, vinculado: !!lf, error: errF, valores: vf || {}, conseguidos: cuenta('faceit'), total: 500, nick: mf && mf.nick, nivel: mf && mf.nivel, elo: mf && mf.elo },
-    valorant: { activo: !!vv, riot: dv ? dv.riot : null, fuente: dv ? dv.fuente : null, aviso: dv ? dv.aviso || null : null, valores: vv || {}, conseguidos: cuenta('valorant'), total: 500, datos: dv },
+    valorant: {
+      activo: !!vv,
+      opt_in: Boolean(dv && dv.opt_in),
+      riot: dv ? dv.riot : null,
+      fuente: dv && dv.ok ? dv.fuente : null,
+      aviso: dv ? (dv.motivo || dv.aviso || null) : null,
+      valores: vv || {},
+      conseguidos: cuenta('valorant'),
+      total: 500,
+      datos: dv,
+    },
     conseguidos: Object.fromEntries(ok),
     nuevos: nuevos.length,
   };
@@ -456,6 +653,7 @@ export async function rutasJuegos(req, env, url, p, m, H) {
     const pl = await db.prepare('SELECT xp, display_name, username FROM players WHERE auth0_sub = ? ORDER BY xp DESC LIMIT 1').bind(sub).first();
     const f = e.faceit, v = e.valorant, d = v.datos;
     const vf = f.valores || {};
+    const valoOk = Boolean(v.activo && d && d.ok && d.opt_in && d.fuente === 'riot_official');
     return H.json({
       ok: true,
       vants: { xp: (pl && pl.xp) || 0, logros: Object.keys(e.conseguidos).length, total: 1000 },
@@ -466,38 +664,47 @@ export async function rutasJuegos(req, env, url, p, m, H) {
         logros: { conseguidos: f.conseguidos, total: 500 },
       },
       valorant: {
-        activo: v.activo, riot: v.riot, fuente: v.fuente, aviso: v.aviso,
-        tier_id: d && d.tier_id, tier: d && d.tier, icono: iconoTier(d && d.tier_id), rr: d && d.rr, elo: d && d.elo,
-        pico: d && d.pico, pico_id: d && d.pico_id, pico_icono: iconoTier(d && d.pico_id), nivel_cuenta: d && d.nivel_cuenta, tarjeta: d && d.tarjeta,
-        region: d && d.region, competitivas: d && d.competitivas, victorias: d && d.victorias,
-        stats: v.activo && d && d.fuente === 'henrikdev' ? { kills: v.valores.kills, kd: v.valores.kd, hs: v.valores.hs, max_kills: v.valores.max_kills, max_acs: v.valores.max_acs } : null,
-        partidas: (d && d.partidas ? d.partidas.slice(0, 10) : []),
+        activo: valoOk, opt_in: v.opt_in, riot: v.riot, fuente: valoOk ? d.fuente : null, aviso: v.aviso,
+        tier_id: valoOk ? d.tier_id : null, tier: valoOk ? d.tier : null, icono: valoOk ? iconoTier(d.tier_id) : null, rr: valoOk ? d.rr : null, elo: valoOk ? d.elo : null,
+        pico: valoOk ? d.pico : null, pico_id: valoOk ? d.pico_id : null, pico_icono: valoOk ? iconoTier(d.pico_id) : null, nivel_cuenta: valoOk ? d.nivel_cuenta : null, tarjeta: valoOk ? d.tarjeta : null,
+        region: valoOk ? d.region : null, competitivas: valoOk ? d.competitivas : null, victorias: valoOk ? d.victorias : null,
+        stats: valoOk ? { kills: v.valores.kills, kd: v.valores.kd, hs: v.valores.hs, max_kills: v.valores.max_kills, max_acs: v.valores.max_acs } : null,
+        partidas: valoOk && d.partidas ? d.partidas.slice(0, 10) : [],
         logros: { conseguidos: v.conseguidos, total: 500 },
       },
     });
   }
 
   if (p === '/riot' && m === 'GET') {
-    const f = await db.prepare('SELECT nombre, tag, region, verificado, actualizado FROM integ_riot WHERE auth0_sub = ?').bind(sub).first();
-    return H.json({ ok: true, riot: f ? f.nombre + '#' + f.tag : null, region: f ? f.region : null, verificado: !!(f && f.verificado), hdev: !!String(env.HENRIKDEV_API_KEY || '').trim() });
+    const rso = await vinculoRsoRiot(db, sub);
+    const key = !!String(env.RIOT_API_KEY || '').trim();
+    return H.json({
+      ok: true,
+      riot: rso ? rso.handle : null,
+      opt_in: Boolean(rso),
+      verificado: Boolean(rso),
+      rso_activo: Boolean(rso && key),
+      motivo: rso && key ? null : 'rso_pendiente',
+    });
+  }
+  if (p === '/riot' && m === 'DELETE') {
+    await purgarDatosRiot(db, sub);
+    return H.json({ ok: true, riot: null, opt_in: false, eliminado: true });
   }
   if (p === '/riot' && m === 'POST') {
     const b = await req.json().catch(() => ({}));
-    if (!b.riot) {
-      await db.prepare('DELETE FROM integ_riot WHERE auth0_sub = ?').bind(sub).run();
-      return H.json({ ok: true, riot: null });
+    if (b.opt_out === true || !b.riot) {
+      await purgarDatosRiot(db, sub);
+      return H.json({ ok: true, riot: null, opt_in: false, eliminado: true });
     }
-    const r = riotValido(b.riot);
-    if (!r) return H.json({ ok: false, error: 'riot_invalido' }, 400);
-    await db.prepare(
-      "INSERT INTO integ_riot (auth0_sub, nombre, tag, region, verificado, datos, actualizado) VALUES (?, ?, ?, NULL, 0, NULL, NULL) ON CONFLICT(auth0_sub) DO UPDATE SET nombre = excluded.nombre, tag = excluded.tag, region = NULL, verificado = 0, datos = NULL, actualizado = NULL"
-    ).bind(sub, r.nombre, r.tag).run();
-    const d = await datosValorant(env, sub, true);
-    if (d && d.ok === false && d.error === 'riot_no_encontrado') return H.json({ ok: false, error: 'riot_no_encontrado', riot: r.nombre + '#' + r.tag }, 404);
-    return H.json({ ok: true, riot: r.nombre + '#' + r.tag, valorant: d });
+    return H.json({
+      ok: false,
+      motivo: 'rso_pendiente',
+      detalle: 'Conexión oficial con Riot Sign On en revisión. La vinculación se realiza exclusivamente mediante Riot Sign On (RSO).',
+    });
   }
   if (p === '/valorant' && m === 'GET') {
-    return H.json({ ok: true, valorant: await datosValorant(env, sub, url.searchParams.get('forzar') === '1') });
+    return H.json(await datosValorant(env, sub, url.searchParams.get('forzar') === '1'));
   }
 
   if (p === '/faceit/equipo' && m === 'POST') {

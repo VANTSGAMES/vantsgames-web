@@ -87,13 +87,14 @@ jobs:
           jq -r '[.result.bindings[].name, "VANTS_INT"] | unique | sort | join(",")' settings.json > bindings-antes.txt
           echo "bindings esperados: $(cat bindings-antes.txt)"; echo "version anterior: $V"
 
-      - name: Parche CSP + VANTS Identity dual (/auth/* proxy + infoDeSesion)
+      - name: Parche CSP + VANTS Identity dual + cumplimiento Riot Games
         # El worker LIVE define la CSP del sitio y la verificación de sesión:
         # 1) script-src += https://static.cloudflareinsights.com (beacon de Web Analytics).
         # 2) frame-src lista cerrada (Twitch/Kick/YouTube + Google OAuth/Picker).
         # 3) Proxy first-party /auth/* -> VANTS_INT + verificación dual en infoDeSesion.
         # 4) Verificación dual en verifySesionJwt (/api/account/perfil, /api/account/progreso,
-        #    /api/valorant/rango, clips destacados): sin ella, guardar el nick daba 401 sin_sesion.
+        #    clips destacados): sin ella, guardar el nick daba 401 sin_sesion.
+        # 5) Cumplimiento Riot Games (App ID 907444): elimina rutas/cachés no oficiales de VALORANT y GPR.
         # Si la línea base cambia en el futuro, falla ruidosamente.
         working-directory: vants
         run: |
@@ -130,6 +131,8 @@ jobs:
           grep -c "VANTS_AUTH_DUAL_V2" src/worker.js
           grep -c "VANTS_SEO_KICK_ABSORB_V1" src/worker.js
           grep -c "VANTS_AI_CORE_PROXY_V1" src/worker.js
+          grep -c "VANTS_RIOT_COMPLIANCE_V1" src/worker.js
+          ! grep -qiE "api\.henrikdev|HENRIKDEV_API_KEY|valorantesports\.com|parseGprHtml|handleGpr|esportsCache|gprCache|valoCacheMod|/api/valorant/rango|/api/valorant/esports|/api/gpr" src/worker.js
 
       - name: Prueba en seco
         working-directory: vants
@@ -165,12 +168,14 @@ jobs:
           [ "$D" = "$(cat bindings-antes.txt)" ] || { echo "Bindings distintos: $D"; ok=0; }
           U=https://vants.cc
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/); [ "$c" = 200 ] || { echo "/ -> $c"; ok=0; }
-          c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/gpr); [ "$c" = 200 ] && jq -e .ok r.json >/dev/null || { echo "/api/gpr -> $c"; ok=0; }
+          c=$(curl -s -A ci -o r.json -w '%{http_code}' $U/api/tournaments); [ "$c" = 200 ] && jq -e '.ok == true' r.json >/dev/null || { echo "/api/tournaments -> $c"; ok=0; }
           c=$(curl -s -A ci -o jwks.json -w '%{http_code}' $U/auth/.well-known/jwks.json); [ "$c" = 200 ] && jq -e '.keys[0].kid' jwks.json >/dev/null || { echo "/auth/.well-known/jwks.json -> $c"; ok=0; }
           c=$(curl -s -A ci -o oidc.json -w '%{http_code}' $U/.well-known/openid-configuration); [ "$c" = 200 ] && jq -e '.issuer' oidc.json >/dev/null || { echo "/.well-known/openid-configuration -> $c"; ok=0; }
           gs=$(curl -s -A ci -o /dev/null -w '%{http_code} %{redirect_url}' $U/auth/google/start)
           case "$gs" in "302 https://accounts.google.com/o/oauth2/v2/auth"*) ;; *) echo "/auth/google/start -> $gs"; ok=0 ;; esac
-          c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/riot.txt); [ "$c" = 200 ] || { echo "/riot.txt -> $c"; ok=0; }
+          c=$(curl -s -A ci -o riot.txt -w '%{http_code}|%{content_type}' $U/riot.txt)
+          case "$c" in "200|text/plain"*) ;; *) echo "/riot.txt -> $c"; ok=0 ;; esac
+          [ "$(cat riot.txt)" = "383dea30-3123-4203-b2f8-367829724230" ] || { echo "/riot.txt body inesperado"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/googlec8812910616d7748.html); [ "$c" = 200 ] || { echo "/googlec8812910616d7748.html -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/sitemap.xml); [ "$c" = 200 ] || { echo "/sitemap.xml -> $c"; ok=0; }
           c=$(curl -s -A ci -o /dev/null -w '%{http_code}' $U/kick/webhook); [ "$c" = 410 ] || { echo "/kick/webhook -> $c"; ok=0; }
@@ -183,7 +188,7 @@ jobs:
               echo "Eliminando Worker obsoleto $W"
               curl -sS -X DELETE -H "$H" "https://api.cloudflare.com/client/v4/accounts/8f2424e95fec4860e19257226f209fbc/workers/scripts/$W" || true
             done
-            echo "Producción OK (VANTS Identity Google OIDC + Discovery + JWKS + SEO/Kick verificados y Workers #5/#6/#7/#8 eliminados)"
+            echo "Producción OK (VANTS Identity + cumplimiento Riot Games App 907444 verificados)"
             exit 0
           fi
           echo "Fallo: vuelvo a la versión $ANTERIOR"

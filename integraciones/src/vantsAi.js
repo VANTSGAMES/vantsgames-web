@@ -303,7 +303,8 @@ async function recolectarTelemetriaReal(env, H, { sub, targetPid, targetQuery })
     if (!ident) return { encontrado: false };
 
     const faceitLink = ident.links.find((l) => l.platform === "faceit" && l.platform_user_id);
-    const subRiot = ident.subs.find((x) => x.startsWith("google-oauth2|")) || ident.subs[0];
+    const riotLink = ident.links.find((l) => l.platform === "riot" && Number(l.verified) && l.platform_user_id);
+    const subRiot = riotLink ? riotLink.auth0_sub : null;
     const subPrincipal = ident.subs[0] || sub;
 
     const [perfil, faceitDeep, valoRaw, mmRecientes] = await Promise.all([
@@ -317,17 +318,20 @@ async function recolectarTelemetriaReal(env, H, { sub, targetPid, targetQuery })
         : [],
     ]);
 
-    const valoMetricas = metricasValorant(valoRaw);
+    const valoOptInOk = Boolean(valoRaw && valoRaw.ok && valoRaw.opt_in && valoRaw.fuente === "riot_official");
+    const valoMetricas = valoOptInOk ? metricasValorant(valoRaw) : null;
 
-    const ultimas5Compactas = (valoRaw?.partidas || []).slice(0, 5).map((pm) => ({
-      mapa: pm.mapa ?? null,
-      agente: pm.agente ?? null,
-      kills: pm.kills ?? null,
-      deaths: pm.muertes ?? pm.deaths ?? null,
-      assists: pm.asistencias ?? pm.assists ?? null,
-      acs: pm.acs ?? null,
-      resultado: typeof pm.victoria === "boolean" ? (pm.victoria ? "W" : "L") : (pm.resultado ?? pm.marcador ?? null),
-    }));
+    const ultimas5Compactas = valoOptInOk
+      ? (valoRaw.partidas || []).slice(0, 5).map((pm) => ({
+          mapa: pm.mapa ?? null,
+          agente: pm.agente ?? null,
+          kills: pm.kills ?? null,
+          deaths: pm.muertes ?? pm.deaths ?? null,
+          assists: pm.asistencias ?? pm.assists ?? null,
+          acs: pm.acs ?? null,
+          resultado: typeof pm.victoria === "boolean" ? (pm.victoria ? "W" : "L") : (pm.resultado ?? pm.marcador ?? null),
+        }))
+      : [];
 
     const equiposCompactos = (perfil?.equipos || []).slice(0, 6).map((eq) => ({
       nombre: eq.nombre,
@@ -362,7 +366,7 @@ async function recolectarTelemetriaReal(env, H, { sub, targetPid, targetQuery })
             entry_wins: faceitDeep.valores.entry,
           }
         : perfil?.faceit || null,
-      valorant: valoRaw?.ok
+      valorant: valoOptInOk
         ? {
             riot: valoRaw.riot,
             region: valoRaw.region,
@@ -551,8 +555,10 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
       system_instruction: {
         parts: [{
           text:
-            "Eres Director de Scouting y Coach de Esports en VANTS GAMES. " +
-            "Analiza ÚNICAMENTE los datos reales entregados (FACEIT CS2, VALORANT, Fortnite, VANTS Ranked MM y XP). " +
+            "Eres Coach Personal de Esports y Analista de Desarrollo en VANTS GAMES. " +
+            "Analiza ÚNICAMENTE los datos reales entregados (FACEIT CS2, VALORANT con consentimiento RSO opt-in, Fortnite, VANTS Ranked MM y XP). " +
+            "Mantén siempre un tono constructivo, respetuoso y orientado a la mejora personal del jugador: jamás uses etiquetas despectivas, burlas ni calificaciones públicas humillantes. " +
+            "Para tier_sugerido usa categorías constructivas de progreso (por ejemplo: 'En desarrollo', 'Competitivo Amateur', 'Semi-Pro', 'Nivel Pro'). " +
             "No inventes estadísticas faltantes. Devuelve un JSON estricto en español.",
         }],
       },
@@ -664,9 +670,10 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
         system_instruction: {
           parts: [{
             text:
-              "Eres el Director de Scouting y Analítica de VANTS GAMES. " +
-              "Basa tu análisis estrictamente en la telemetría real adjunta. " +
-              "Si el jugador no tiene cuentas vinculadas, indícale cómo vincular FACEIT/Riot en vants.cc/perfil/cuentas.",
+              "Eres Coach Personal de Esports y Analista de Desarrollo de VANTS GAMES. " +
+              "Basa tu análisis estrictamente en la telemetría real adjunta (los datos de VALORANT solo se incluyen si el jugador activó opt-in oficial con Riot Sign On). " +
+              "Mantén un tono constructivo de mejora personal sin etiquetas despectivas ni calificaciones públicas negativas. " +
+              "Si el jugador no tiene cuentas vinculadas, indícale cómo conectar FACEIT o Riot Sign On en vants.cc/perfil/cuentas.",
           }],
         },
         contents: [{ role: "user", parts: [{ text: `${prompt}\n\nDatos reales de VANTS:\n${compactarTelemetriaJson(telemetria, 6000)}` }] }],

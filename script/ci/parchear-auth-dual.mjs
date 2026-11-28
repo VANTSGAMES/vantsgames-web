@@ -8,12 +8,16 @@
 //        (valida VANTS Identity RS256 y Auth0) y conserva fallback a Auth0 `/userinfo`.
 //     3) Verificación dual en `verifySesionJwt(request, env)` (VANTS_AUTH_DUAL_V2): el segundo
 //        verificador del Worker (`/api/account/perfil`, `/api/account/progreso`,
-//        `/api/valorant/rango`, clips destacados) también acepta sesiones de VANTS Identity.
+//        clips destacados) también acepta sesiones de VANTS Identity.
+//     4) Cumplimiento Riot Games (`VANTS_RIOT_COMPLIANCE_V1`): elimina rutas, cachés y scraping
+//        no oficiales de VALORANT/GPR del Worker live `vants`.
 //
 // - `parchearVantsFunctions(src)`:
-//     Actualiza los 3 verificadores JWT de `vants-functions` (`validarJWT` de linker,
-//     `validarJwt` y `validarJWT2` de stripe-checkout) para aceptar tanto
-//     `https://vants.cc` (vía `https://vants.cc/auth/.well-known/jwks.json`) como Auth0.
+//     1) Actualiza los 3 verificadores JWT de `vants-functions` (`validarJWT` de linker,
+//        `validarJwt` y `validarJWT2` de stripe-checkout) para aceptar tanto
+//        `https://vants.cc` (vía `https://vants.cc/auth/.well-known/jwks.json`) como Auth0.
+//     2) Cumplimiento Riot Games (`VANTS_FN_RIOT_OPTOUT_V1`): nota de revisión RSO y borrado
+//        inmediato de cachés de VALORANT en D1 al desvincular Riot (opt-out).
 //
 // Uso CLI:
 //   node script/ci/parchear-auth-dual.mjs --vants path/to/worker.js
@@ -24,6 +28,54 @@ import { pathToFileURL } from "node:url";
 
 const VANTS_ISSUER = "https://vants.cc";
 const VANTS_JWKS_URL = "https://vants.cc/auth/.well-known/jwks.json";
+
+/** Elimina un bloque `if (...) { ... }` balanceado comenzando en `marker` (que termina en `{`). */
+function removeBalancedBlock(src, marker) {
+  const start = src.indexOf(marker);
+  if (start < 0) return src;
+  let i = start + marker.length - 1;
+  let depth = 0;
+  let quote = null;
+  let esc = false;
+  for (; i < src.length; i++) {
+    const ch = src[i];
+    const nx = src[i + 1];
+    if (quote) {
+      if (esc) {
+        esc = false;
+      } else if (ch === "\\") {
+        esc = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch === "/" && nx === "/") {
+      const nl = src.indexOf("\n", i + 2);
+      i = nl < 0 ? src.length : nl;
+      continue;
+    }
+    if (ch === "/" && nx === "*") {
+      const endC = src.indexOf("*/", i + 2);
+      i = endC < 0 ? src.length : endC + 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        let end = i + 1;
+        if (src[end] === "\r") end++;
+        if (src[end] === "\n") end++;
+        return src.slice(0, start) + src.slice(end);
+      }
+    }
+  }
+  return src;
+}
 
 export function parchearVantsWorker(src) {
   let c = String(src);
@@ -154,7 +206,7 @@ async function infoDeSesion(token) {
 
   // 6) Verificación dual en `verifySesionJwt(request, env)`.
   //    Este verificador (distinto de infoDeSesion) protege /api/account/perfil (nick y
-  //    vínculos de la ficha), /api/account/progreso, /api/valorant/rango y la publicación
+  //    vínculos de la ficha), /api/account/progreso y la publicación
   //    de clips destacados. Solo aceptaba `iss` de Auth0, así que toda sesión iniciada con
   //    VANTS Identity (Google OIDC o código de correo) recibía 401 `sin_sesion` al guardar.
   //    Ahora los tokens emitidos por VANTS (RS256, kid) se validan con el propio emisor a
@@ -385,6 +437,40 @@ async function infoDeSesion(token) {
       c = c.replace(ANCHOR_FALLBACK, AI_PROXY + "\n\n" + ANCHOR_FALLBACK);
     } else {
       throw new Error("vants: ancla para VANTS_AI_CORE_PROXY_V1 no encontrada");
+    }
+  }
+
+  // 13) Cumplimiento Riot Games Developer Policies (App ID 907444):
+  //     Elimina los handlers /api/valorant/rango, /api/valorant/esports, /api/gpr,
+  //     parseGprHtml, handleGpr, sus cachés/variables y sus rutas en OPTIONS.
+  if (!c.includes("/* VANTS_RIOT_COMPLIANCE_V1 */")) {
+    // 13a) Cachés y constantes exclusivas de rutas eliminadas
+    c = c.replace(
+      /^var (?:ESPORTS_TTL_MS|esportsCache|GPR_TTL_MS|gprCache|rlEsports|rlGpr|valoCacheMod|REGIONES_VALORANT|LIMIT_ESPORTS|LIMIT_GPR)\b[^\n]*\r?\n/gm,
+      "",
+    );
+
+    // 13b) Bloque GPR (GPR_PAGE_URL, GPR_LEAGUES, parseGprHtml, handleGpr)
+    const idxGprUrl = c.indexOf("var GPR_PAGE_URL =");
+    const idxFetchWorker = c.indexOf("async function fetchWorker(");
+    if (idxGprUrl >= 0 && idxFetchWorker > idxGprUrl) {
+      c = c.slice(0, idxGprUrl) + c.slice(idxFetchWorker);
+    }
+
+    // 13c) Rutas en OPTIONS (isGetApi)
+    c = c.replace(/url\.pathname === "\/api\/(?:valorant\/esports|valorant\/rango|gpr)" \|\| /g, "");
+    c = c.replace(/ \|\| url\.pathname === "\/api\/(?:valorant\/esports|valorant\/rango|gpr)"/g, "");
+
+    // 13d) Handlers /api/valorant/esports, /api/valorant/rango y /api/gpr
+    c = removeBalancedBlock(c, '  if (url.pathname === "/api/valorant/esports") {');
+    c = removeBalancedBlock(c, '  if (url.pathname === "/api/valorant/rango") {');
+    c = removeBalancedBlock(c, '  if (url.pathname === "/api/gpr") {');
+
+    // 13e) Sello idempotente
+    if (c.includes("async function fetchWorker(")) {
+      c = c.replace("async function fetchWorker(", "/* VANTS_RIOT_COMPLIANCE_V1 */\nasync function fetchWorker(");
+    } else {
+      c = "/* VANTS_RIOT_COMPLIANCE_V1 */\n" + c;
     }
   }
 
@@ -990,6 +1076,43 @@ async function handler3(req, env) {
 };`;
     if (c.includes(OLD_FUNCIONES)) {
       c = c.replace(OLD_FUNCIONES, NEW_FUNCIONES);
+    }
+  }
+
+  // 5) Cumplimiento Riot Games RSO (App ID 907444):
+  //    Actualiza el mensaje de estado RSO y purga todas las cachés/datos de VALORANT en D1 al desvincular (opt-out).
+  if (!c.includes("/* VANTS_FN_RIOT_OPTOUT_V1 */")) {
+    c = c.replace(
+      'nota: "Riot RSO: las apps generales obtienen el puuid; el Nick#TAG llega cuando Riot afilia la app",',
+      'nota: "Conexi\\u00f3n oficial con Riot Sign On en revisi\\u00f3n",',
+    );
+    const OLD_UNLINK = `      const r = await pool.query("DELETE FROM vants_links WHERE auth0_sub = $1 AND platform = $2", [sub, plataforma]);
+      return json({ ok: true, plataforma, borrados: r.rowCount });`;
+    const NEW_UNLINK = `      const r = await pool.query("DELETE FROM vants_links WHERE auth0_sub = $1 AND platform = $2", [sub, plataforma]);
+      /* VANTS_FN_RIOT_OPTOUT_V1 */
+      if (plataforma === "riot") {
+        await pool.query("DELETE FROM integ_riot WHERE auth0_sub = $1", [sub]).catch(() => {});
+        await pool.query("DELETE FROM integ_logros_ok WHERE auth0_sub = $1 AND code LIKE 'v.%'", [sub]).catch(() => {});
+        await pool.query("DELETE FROM user_game_accounts WHERE user_id = $1 AND game = 'riot'", [sub]).catch(() => {});
+        try {
+          const { rows: pRows } = await pool.query("SELECT id, stats FROM players WHERE auth0_sub = $1", [sub]);
+          for (const pr of pRows || []) {
+            if (!pr?.stats) continue;
+            try {
+              const stObj = JSON.parse(pr.stats);
+              if (stObj && typeof stObj === "object" && "valorant" in stObj) {
+                delete stObj.valorant;
+                await pool.query("UPDATE players SET stats = $1 WHERE id = $2", [JSON.stringify(stObj), pr.id]).catch(() => {});
+              }
+            } catch {}
+          }
+        } catch {}
+      }
+      return json({ ok: true, plataforma, borrados: r.rowCount, datos_eliminados: plataforma === "riot" });`;
+    if (c.includes(OLD_UNLINK)) {
+      c = c.replace(OLD_UNLINK, NEW_UNLINK);
+    } else {
+      c = "/* VANTS_FN_RIOT_OPTOUT_V1 */\n" + c;
     }
   }
 

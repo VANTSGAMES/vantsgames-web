@@ -561,8 +561,118 @@ async function validarJWT2(token) {
   assert.match(f1, /VANTS_FN_DUAL_1/);
   assert.match(f1, /VANTS_FN_DUAL_2/);
   assert.match(f1, /VANTS_FN_DUAL_3/);
+  assert.match(f1, /VANTS_FN_RIOT_OPTOUT_V1/);
   assert.equal(parchearVantsFunctions(f1), f1);
   // Syntax check via Function constructor (ESM-free body)
   assert.doesNotThrow(() => new Function(v1));
   assert.doesNotThrow(() => new Function(f1));
 });
+
+test("parchearVantsWorker VANTS_RIOT_COMPLIANCE_V1 strips unofficial VALORANT/GPR routes, caches, and OPTIONS entries", () => {
+  const legacyHost = "api." + "henrik" + "dev.xyz";
+  const legacyGprSite = "valorant" + "esports.com";
+  const sampleLive = `var AUTH0_TENANT = "vants.eu.auth0.com";
+async function infoDeSesion(token) {
+  if (!token) return null;
+  try {
+    const ui = await fetch("https://" + AUTH0_TENANT + "/userinfo", {
+      headers: { [AUTH_HEADER]: "Bearer " + token }
+    });
+    if (!ui.ok) return null;
+    const info = await ui.json();
+    return info && info.sub ? info : null;
+  } catch (e) {
+    return null;
+  }
+}
+async function verifySesionJwt(request, env) {
+  if (payload.iss && payload.iss !== "https://" + AUTH0_TENANT + "/") return null;
+  return null;
+}
+var ESPORTS_TTL_MS = 5 * 6e4;
+var esportsCache = { at: 0, body: null, status: 200 };
+var TEAMS_TTL_MS = 6e4;
+var GPR_TTL_MS = 60 * 6e4;
+var gprCache = { at: 0, body: null };
+var rlEsports = /* @__PURE__ */ new Map();
+var rlGpr = /* @__PURE__ */ new Map();
+var valoCacheMod = /* @__PURE__ */ new Map();
+var REGIONES_VALORANT = ["latam", "na", "br", "eu", "ap", "kr"];
+var GPR_PAGE_URL = "https://${legacyGprSite}/es-ES/gpr/2026/current";
+function parseGprHtml(html) { return { regions: [], total: 0 }; }
+__name(parseGprHtml, "parseGprHtml");
+async function handleGpr() { return { ok: false }; }
+__name(handleGpr, "handleGpr");
+async function fetchWorker(request, env, ctx) {
+  const url = new URL(request.url);
+  const isGetApi = url.pathname === "/api/valorant/esports" || url.pathname === "/api/valorant/rango" || url.pathname === "/api/teams" || url.pathname === "/api/gpr" || url.pathname === "/api/tournaments";
+  if (url.pathname === "/api/valorant/esports") {
+    await fetch("https://${legacyHost}/valorant/v1/esports/schedule");
+    return new Response("x");
+  }
+  if (url.pathname === "/api/teams-live") {
+    return new Response("teams");
+  }
+  if (url.pathname === "/api/valorant/rango") {
+    const key = env["HENRIK" + "DEV_API_KEY"];
+    await fetch("https://${legacyHost}/valorant/v3/mmr/latam/pc/a/b", { headers: { Authorization: key } });
+    return new Response("rango");
+  }
+  if (url.pathname === "/api/account/perfil") {
+    return new Response("perfil");
+  }
+  if (url.pathname === "/api/gpr") {
+    const p = await handleGpr();
+    return new Response(JSON.stringify(p));
+  }
+  return new Response("ok");
+}
+async function handleFetch(request, env, ctx) {
+    // 2. Activar Sitemap para Google y rutas de Kick
+    const rInicial = await manejarRutasSeoYKick(request, env);
+    if (rInicial) return rInicial;
+}`;
+
+  const patched = parchearVantsWorker(sampleLive);
+  assert.match(patched, /VANTS_RIOT_COMPLIANCE_V1/);
+  assert.equal(patched.includes(legacyHost), false);
+  assert.equal(patched.includes(legacyGprSite), false);
+  assert.equal(patched.includes("parseGprHtml"), false);
+  assert.equal(patched.includes("handleGpr"), false);
+  assert.equal(patched.includes("esportsCache"), false);
+  assert.equal(patched.includes("gprCache"), false);
+  assert.equal(patched.includes("valoCacheMod"), false);
+  assert.equal(patched.includes("/api/valorant/esports"), false);
+  assert.equal(patched.includes("/api/valorant/rango"), false);
+  assert.equal(patched.includes("/api/gpr"), false);
+  // Preserves legitimate routes
+  assert.equal(patched.includes("/api/teams-live"), true);
+  assert.equal(patched.includes("/api/account/perfil"), true);
+  assert.equal(patched.includes("TEAMS_TTL_MS"), true);
+  // Idempotent & syntactically valid
+  assert.equal(parchearVantsWorker(patched), patched);
+  assert.doesNotThrow(() => new Function(patched));
+});
+
+test("parchearVantsFunctions VANTS_FN_RIOT_OPTOUT_V1 updates Riot review note and adds D1 cache purge on unlink", () => {
+  const sampleFn = `var riot = {
+  nota: "Riot RSO: las apps generales obtienen el puuid; el Nick#TAG llega cuando Riot afilia la app",
+};
+/* VANTS_FN_DUAL_1 */
+/* VANTS_FN_DUAL_2 */
+/* VANTS_FN_DUAL_3 */
+/* VANTS_FN_STRIPE_ENV_V1 */
+async function unlinkHandler(pool, sub, plataforma) {
+      const r = await pool.query("DELETE FROM vants_links WHERE auth0_sub = $1 AND platform = $2", [sub, plataforma]);
+      return json({ ok: true, plataforma, borrados: r.rowCount });
+}`;
+  const patched = parchearVantsFunctions(sampleFn);
+  assert.match(patched, /VANTS_FN_RIOT_OPTOUT_V1/);
+  assert.match(patched, /Conexi\\u00f3n oficial con Riot Sign On en revisi\\u00f3n/);
+  assert.match(patched, /DELETE FROM integ_riot WHERE auth0_sub = \$1/);
+  assert.match(patched, /DELETE FROM integ_logros_ok WHERE auth0_sub = \$1 AND code LIKE 'v\.%'/);
+  assert.match(patched, /datos_eliminados: plataforma === "riot"/);
+  assert.equal(parchearVantsFunctions(patched), patched);
+  assert.doesNotThrow(() => new Function(patched));
+});
+
