@@ -43,6 +43,14 @@ function createAiMockD1() {
           metadata_json,
           action_json: null,
         });
+      } else if (q.includes("'internal_torneo'")) {
+        if (q.includes("'arbitro'")) {
+          const [id, auth0_sub, priority, prompt, response, metadata_json] = params;
+          tasks.set(id, { id, auth0_sub, user_role: "internal_torneo", target_agent: "arbitro", priority, status: "completed", prompt, response, metadata_json, action_json: null });
+        } else {
+          const [id, auth0_sub, prompt, response, metadata_json] = params;
+          tasks.set(id, { id, auth0_sub, user_role: "internal_torneo", target_agent: "caster", priority: 2, status: "completed", prompt, response, metadata_json, action_json: null });
+        }
       } else {
         const [id, auth0_sub, user_role, target_agent, priority, status, prompt, response, metadata_json, action_json] = params;
         tasks.set(id, {
@@ -561,6 +569,169 @@ test("VALORANT RSO compliance: datosValorant returns rso_pendiente without opt-i
     globalThis.fetch = fetchOrig;
   }
 });
+
+test("Fase 4: /ai/torneo/arbitro rechaza no-owner (403), devuelve veredicto JSON, audita D1 y escala disputa a VantsBus", async () => {
+  const db = createAiMockD1();
+  const busEvents: any[] = [];
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    accion: "escalar_staff",
+                    respuesta: "Hemos registrado la denuncia de pausa ilegal y el staff ya fue notificado.",
+                    motivo_staff: "Posible abuso de pausa técnica durante semifinal",
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as any;
+
+  try {
+    const env = {
+      DB: db,
+      GEMINI_API_KEY: "test-gemini-key",
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+      VANTS_BUS_SECRET: "bus-secret-32chars-xxxxxxxxxxxxxx",
+      VANTS_BUS_PROJECT: "vants-ai",
+      VANTS_BUS_SERVICE: {
+        async fetch(req: Request) {
+          busEvents.push({
+            project: req.headers.get("X-VANTS-Project"),
+            sig: req.headers.get("X-VANTS-Signature"),
+            body: await req.json(),
+          });
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        },
+      },
+    };
+    const H = {
+      json: jsonHelper,
+      usuarioClaims: async () => ({ sub: "google-oauth2|regular-player" }),
+    };
+
+    // 1) Jugador regular por web JWT recibe 403 solo_interno
+    const reqNoOwner = new Request("https://int.vants.cc/ai/torneo/arbitro", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ torneoId: "copa-cs2", autor: "Player1", consulta: "Pausa ilegal" }),
+    });
+    const r403 = await rutasVantsAi(reqNoOwner, env, new URL(reqNoOwner.url), "/ai/torneo/arbitro", "POST", H);
+    assert.equal(r403!.status, 403);
+    assert.equal(((await r403!.json()) as any).error, "solo_interno");
+
+    // 2) Llamada interna desde SalaTorneo (X-Vants-Internal + X-Vants-Staff: 1)
+    const reqInt = new Request("https://int.vants.cc/ai/torneo/arbitro", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({
+        torneoId: "copa-cs2",
+        torneo: { id: "copa-cs2", nombre: "Copa VANTS CS2", reglas: "Pausa técnica máx 5 min" },
+        autor: "CapitanA",
+        consulta: "El rival lleva 12 minutos en pausa ilegal y no responde",
+      }),
+    });
+    const rOk = await rutasVantsAi(reqInt, env, new URL(reqInt.url), "/ai/torneo/arbitro", "POST", H);
+    assert.equal(rOk!.status, 200);
+    const data = (await rOk!.json()) as any;
+    assert.equal(data.ok, true);
+    assert.equal(data.veredicto.accion, "escalar_staff");
+    assert.ok(data.task_id);
+
+    // Verifica auditoría D1 con target_agent = 'arbitro' y priority = 5
+    const saved = db.tasks.get(data.task_id);
+    assert.equal(saved?.target_agent, "arbitro");
+    assert.equal(saved?.priority, 5);
+
+    // Verifica escalado a VantsBus con evento tournament.dispute
+    assert.equal(busEvents.length, 1);
+    assert.equal(busEvents[0].body.type, "tournament.dispute");
+    assert.equal(busEvents[0].body.data.torneo_id, "copa-cs2");
+    assert.equal(busEvents[0].body.data.autor, "CapitanA");
+    assert.match(busEvents[0].sig, /^[0-9a-f]{64}$/);
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
+test("Fase 4: /ai/torneo/caster rechaza no-owner (403), genera crónica corta y audita en D1", async () => {
+  const db = createAiMockD1();
+  const fetchOrig = globalThis.fetch;
+
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        candidates: [
+          {
+            content: {
+              parts: [{ text: "¡VANTS Alpha domina 13-9 a Caracas Five y avanza a la Gran Final!" }],
+            },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as any;
+
+  try {
+    const env = {
+      DB: db,
+      GEMINI_API_KEY: "test-gemini-key",
+      VANTS_INTERNAL_SECRET: "internal-secret-32chars-xxxxxxxxx",
+    };
+    const H = {
+      json: jsonHelper,
+      usuarioClaims: async () => ({ sub: "google-oauth2|regular-player" }),
+    };
+
+    const reqNoOwner = new Request("https://int.vants.cc/ai/torneo/caster", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ torneoId: "copa-cs2", equipo_a: "A", equipo_b: "B" }),
+    });
+    const r403 = await rutasVantsAi(reqNoOwner, env, new URL(reqNoOwner.url), "/ai/torneo/caster", "POST", H);
+    assert.equal(r403!.status, 403);
+
+    const reqInt = new Request("https://int.vants.cc/ai/torneo/caster", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "X-Vants-Internal": env.VANTS_INTERNAL_SECRET,
+        "X-Vants-Staff": "1",
+      },
+      body: JSON.stringify({
+        torneoId: "copa-cs2",
+        matchId: "copa-cs2-s-0",
+        equipo_a: "VANTS Alpha",
+        equipo_b: "Caracas Five",
+        score_a: 13,
+        score_b: 9,
+      }),
+    });
+    const rOk = await rutasVantsAi(reqInt, env, new URL(reqInt.url), "/ai/torneo/caster", "POST", H);
+    assert.equal(rOk!.status, 200);
+    const data = (await rOk!.json()) as any;
+    assert.equal(data.ok, true);
+    assert.match(data.cronica, /VANTS Alpha/);
+    assert.equal(db.tasks.get(data.task_id)?.target_agent, "caster");
+  } finally {
+    globalThis.fetch = fetchOrig;
+  }
+});
+
 
 
 

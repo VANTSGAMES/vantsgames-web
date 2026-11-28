@@ -28,23 +28,109 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - name: Generar wrangler.jsonc con D1 real (vants-db)
+      - name: Generar wrangler.jsonc con D1 real (vants-db) y Service Bindings
         run: |
           set -euo pipefail
           sed 's/PEGA_AQUI_EL_ID_DE_LA_D1/11e5d82c-307b-44ba-9682-501d8df593d3/g; s/"database_name": "vants"/"database_name": "vants-db"/g' wrangler.ejemplo.jsonc > wrangler.jsonc
+      - name: Typecheck TypeScript (cloudflare/tsconfig.json)
+        run: |
+          npm i --no-save --no-audit --no-fund typescript @cloudflare/workers-types
+          npx tsc -p tsconfig.json
       - name: Prueba en seco vants-recursos
         run: npx -y wrangler@4 deploy --dry-run --outdir seco
       - name: Deploy vants-recursos
         run: npx -y wrangler@4 deploy
-      - name: Verificar cierre de rutas de control
+      - name: Sincronizar secretos VANTS_INTERNAL_SECRET y TORNEOS_ADMIN_SECRET (sin exponer valores)
+        env:
+          GH_VANTS_INTERNAL_SECRET: ${{ secrets.VANTS_INTERNAL_SECRET }}
+          GH_TORNEOS_ADMIN_SECRET: ${{ secrets.TORNEOS_ADMIN_SECRET }}
+          PAT1: ${{ secrets.VANTS_GH_PAT_SECRETS }}
+          PAT2: ${{ secrets.GHPAT_VANTS }}
         run: |
+          set -euo pipefail
+          node -e '
+            const crypto = require("node:crypto");
+            const { spawnSync } = require("node:child_process");
+            const acct = process.env.CLOUDFLARE_ACCOUNT_ID;
+            const tok = process.env.CLOUDFLARE_API_TOKEN;
+            const api = `https://api.cloudflare.com/client/v4/accounts/${acct}/workers/scripts/vants-recursos`;
+            const hdr = { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" };
+
+            async function cfGetSecretNames() {
+              const r = await fetch(`${api}/settings`, { headers: hdr });
+              const j = await r.json().catch(() => null);
+              if (!r.ok || !j?.success) throw new Error(`settings vants-recursos: HTTP ${r.status}`);
+              return new Set((j.result?.bindings || []).filter((b) => b.type === "secret_text").map((b) => b.name));
+            }
+            async function cfPutSecret(name, text) {
+              const r = await fetch(`${api}/secrets`, {
+                method: "PUT",
+                headers: hdr,
+                body: JSON.stringify({ name, text, type: "secret_text" }),
+              });
+              const j = await r.json().catch(() => null);
+              if (!r.ok || !j?.success) throw new Error(`put ${name}: HTTP ${r.status}`);
+            }
+            function findPat() {
+              for (const p of [process.env.PAT1, process.env.PAT2]) {
+                if (!p) continue;
+                const r = spawnSync("gh", ["secret", "list", "--repo", "VANTSGAMES/vantsgames-web"], {
+                  env: { ...process.env, GH_TOKEN: p },
+                  encoding: "utf8",
+                });
+                if (r.status === 0) return p;
+              }
+              return null;
+            }
+            (async () => {
+              const cfSecrets = await cfGetSecretNames();
+              const intSec = String(process.env.GH_VANTS_INTERNAL_SECRET || "").trim();
+              if (intSec) {
+                await cfPutSecret("VANTS_INTERNAL_SECRET", intSec);
+                console.log("VANTS_INTERNAL_SECRET sincronizado en vants-recursos");
+              } else {
+                console.log("VANTS_INTERNAL_SECRET en vants-recursos:", cfSecrets.has("VANTS_INTERNAL_SECRET") ? "ya existe" : "pendiente");
+              }
+
+              const admSec = String(process.env.GH_TORNEOS_ADMIN_SECRET || "").trim();
+              if (admSec) {
+                await cfPutSecret("TORNEOS_ADMIN_SECRET", admSec);
+                console.log("TORNEOS_ADMIN_SECRET sincronizado desde GitHub Secret en vants-recursos");
+              } else if (!cfSecrets.has("TORNEOS_ADMIN_SECRET")) {
+                const generado = crypto.randomBytes(32).toString("hex");
+                await cfPutSecret("TORNEOS_ADMIN_SECRET", generado);
+                console.log("TORNEOS_ADMIN_SECRET generado y cargado en vants-recursos");
+                const pat = findPat();
+                if (pat) {
+                  const r = spawnSync("gh", ["secret", "set", "TORNEOS_ADMIN_SECRET", "--repo", "VANTSGAMES/vantsgames-web"], {
+                    input: generado,
+                    env: { ...process.env, GH_TOKEN: pat },
+                    encoding: "utf8",
+                  });
+                  if (r.status === 0) console.log("TORNEOS_ADMIN_SECRET guardado en GitHub Secrets (VANTSGAMES/vantsgames-web)");
+                }
+              } else {
+                console.log("TORNEOS_ADMIN_SECRET ya existe en vants-recursos (preservado)");
+              }
+            })().catch((e) => { console.error(e.message || e); process.exit(1); });
+          '
+      - name: Verificar salud, bindings y cierre de rutas de control
+        run: |
+          set -euo pipefail
           sleep 4
-          c=$(curl -s -X POST -o /dev/null -w '%{http_code}' https://vants-recursos.vants.workers.dev/webhooks/faceit)
+          U="https://vants-recursos.vants.workers.dev"
+          curl -fsS "$U/salud" | tee salud.json
+          jq -e '.ok == true and .bindings.db == true and .bindings.sala == true and .bindings.workflow == true and .bindings.queue == true and .bindings.ai == true and .bindings.bus == true and .secretos.admin == true and .secretos.internal == true' salud.json >/dev/null
+          curl -fsS "$U/sala/smoke/estado" | jq -e '.ok == true' >/dev/null
+          c=$(curl -s -X POST -o /dev/null -w '%{http_code}' "$U/webhooks/faceit")
           echo "/webhooks/faceit sin secreto -> $c"
           case "$c" in 401|503) ;; *) echo "Se esperaba 401 o 503, recibido $c"; exit 1 ;; esac
-          c2=$(curl -s -o /dev/null -w '%{http_code}' https://vants-recursos.vants.workers.dev/torneos/test/estado-instancia)
-          echo "/torneos/test/estado-instancia sin secreto -> $c2"
-          case "$c2" in 401|503) ;; *) echo "Se esperaba 401 o 503, recibido $c2"; exit 1 ;; esac
+          for route in "GET /torneos/test/estado-instancia" "POST /torneos/test/iniciar" "POST /torneos/test/aviso"; do
+            m=${route%% *}; p=${route#* }
+            cc=$(curl -s -X "$m" -o /dev/null -w '%{http_code}' "$U$p")
+            echo "$m $p sin secreto -> $cc"
+            [ "$cc" = "401" ] || { echo "Se esperaba 401, recibido $cc"; exit 1; }
+          done
 
   deploy-bus:
     name: Deploy vants-bus (deleteOlderThan ts < ?)

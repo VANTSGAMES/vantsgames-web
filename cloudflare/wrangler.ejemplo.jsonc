@@ -64,7 +64,15 @@
     ]
   },
 
-  // Secreto opcional para validar el webhook (wrangler secret put WEBHOOK_SECRETO).
+  // Service Bindings internos (sin error 1042 entre Workers de la misma cuenta):
+  //   - VANTS_INT_SERVICE → VANTS Core AI (/ai/torneo/arbitro, /ai/torneo/caster)
+  //   - VANTS_BUS_SERVICE → VANTS-BUS (/events)
+  "services": [
+    { "binding": "VANTS_INT_SERVICE", "service": "vants-integraciones" },
+    { "binding": "VANTS_BUS_SERVICE", "service": "vants-bus" }
+  ],
+
+  // Secretos (wrangler secret put): WEBHOOK_SECRETO, VANTS_INTERNAL_SECRET, TORNEOS_ADMIN_SECRET, FACEIT_API_KEY.
   "vars": {},
   "keep_vars": true
 }

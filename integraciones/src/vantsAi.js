@@ -827,5 +827,114 @@ export async function rutasVantsAi(req, env, url, p, m, H) {
     return H.json({ ok: true, task_id: taskId, status: nuevoEstado, ejecucion });
   }
 
+  // POST /ai/torneo/arbitro — Árbitro IA en tiempo real para SalaTorneo
+  if (p === "/ai/torneo/arbitro" && m === "POST") {
+    if (!owner) return H.json({ ok: false, error: "solo_interno" }, 403);
+    const b = await req.json().catch(() => ({}));
+    const consulta = String(b.consulta || "").trim().slice(0, 600);
+    if (consulta.length < 2) return H.json({ ok: false, error: "consulta_vacia" }, 400);
+
+    const contexto = {
+      torneo: b.torneo || {},
+      marcador: b.marcador || null,
+      autor: String(b.autor || "jugador").slice(0, 32),
+      historial_chat: Array.isArray(b.historial) ? b.historial.slice(-6) : [],
+    };
+
+    const raw = await callGemini(env, ROUTER_MODEL(env), {
+      system_instruction: {
+        parts: [{
+          text:
+            "Eres el Árbitro Oficial de VANTS GAMES en una sala de torneo en vivo. " +
+            "Responde en español, máximo 2-3 frases claras y neutrales. " +
+            "Usa accion='responder' para dudas normales de formato, horarios, check-in o marcador. " +
+            "Usa accion='advertir' ante insultos leves o spam. " +
+            "Usa accion='escalar_staff' SOLO ante disputas graves (acusación de cheats, crash de servidor, error de resultado oficial, abandono). " +
+            "Nunca inventes premios ni reglas que no estén en el contexto.",
+        }],
+      },
+      contents: [{
+        role: "user",
+        parts: [{ text: `Consulta de ${contexto.autor}: ${consulta}\n\nContexto:\n${JSON.stringify(contexto)}` }],
+      }],
+      generationConfig: {
+        maxOutputTokens: 320,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: "OBJECT",
+          properties: {
+            accion: { type: "STRING", enum: ["responder", "advertir", "escalar_staff"] },
+            respuesta: { type: "STRING" },
+            motivo_staff: { type: "STRING", nullable: true },
+          },
+          required: ["accion", "respuesta"],
+        },
+      },
+    }, 20000);
+
+    const veredicto = JSON.parse(raw);
+    const taskId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO integ_ai_tasks (id, auth0_sub, user_role, target_agent, priority, status, prompt, response, metadata_json)
+       VALUES (?, ?, 'internal_torneo', 'arbitro', ?, 'completed', ?, ?, ?)`
+    ).bind(
+      taskId,
+      sub,
+      veredicto.accion === "escalar_staff" ? 5 : 2,
+      `[${b.torneo?.id || b.torneoId || "torneo"}] ${contexto.autor}: ${consulta}`,
+      JSON.stringify(veredicto),
+      JSON.stringify({ torneo_id: b.torneo?.id || b.torneoId || null, accion: veredicto.accion }),
+    ).run().catch(() => null);
+
+    if (veredicto.accion === "escalar_staff") {
+      await publicarBusAi(env, "tournament.dispute", {
+        torneo_id: b.torneo?.id || b.torneoId || "desconocido",
+        torneo_nombre: b.torneo?.nombre || "Torneo VANTS",
+        autor: contexto.autor,
+        consulta,
+        motivo: veredicto.motivo_staff || veredicto.respuesta,
+      });
+    }
+
+    return H.json({ ok: true, task_id: taskId, veredicto });
+  }
+
+  // POST /ai/torneo/caster — Crónica instantánea post-partida para SalaTorneo y Discord
+  if (p === "/ai/torneo/caster" && m === "POST") {
+    if (!owner) return H.json({ ok: false, error: "solo_interno" }, 403);
+    const b = await req.json().catch(() => ({}));
+
+    const texto = await callGemini(env, ROUTER_MODEL(env), {
+      system_instruction: {
+        parts: [{
+          text:
+            "Eres Caster oficial de esports de VANTS GAMES (LATAM). " +
+            "Redacta un resumen en vivo de máximo 280 caracteres en español celebrando el resultado de la partida. " +
+            "Usa solo los equipos, marcador y datos reales entregados; no inventes jugadas.",
+        }],
+      },
+      contents: [{
+        role: "user",
+        parts: [{ text: `Resultado de partida:\n${JSON.stringify(b)}` }],
+      }],
+      generationConfig: { maxOutputTokens: 180 },
+    }, 20000);
+
+    const cronica = texto.trim().slice(0, 360);
+    const taskId = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO integ_ai_tasks (id, auth0_sub, user_role, target_agent, priority, status, prompt, response, metadata_json)
+       VALUES (?, ?, 'internal_torneo', 'caster', 2, 'completed', ?, ?, ?)`
+    ).bind(
+      taskId,
+      sub,
+      `Caster: ${b.torneoId || b.matchId || "partida"}`,
+      cronica,
+      JSON.stringify({ torneo_id: b.torneoId || null, match_id: b.matchId || null }),
+    ).run().catch(() => null);
+
+    return H.json({ ok: true, task_id: taskId, cronica });
+  }
+
   return H.json({ ok: false, error: "no_encontrado" }, 404);
 }
